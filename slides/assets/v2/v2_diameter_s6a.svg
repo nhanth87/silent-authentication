@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="380" viewBox="0 0 800 380">
+  <rect width="800" height="380" fill="#FFF8E7" rx="8"/>
+  
+  <defs>
+    <marker id="s6a-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+    <marker id="s6a-arr-rev" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+
+  <text x="400.0" y="28" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15"
+        font-weight="bold" fill="#1A1A2E">4G/5G path — Diameter S6a (DEA/HSS)</text>
+
+  <rect x="80" y="110" width="200" height="90" rx="6" fill="#FFFFFF" stroke="#0D7377" stroke-width="2"/>
+  <text x="180.0" y="132" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#0D7377">Digicom Verifier</text>
+  <line x1="88" y1="140" x2="272" y2="140" stroke="#0D7377" stroke-width="1" opacity="0.4"/>
+
+  <text x="92" y="158" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">jDiameter client</text>
+
+  <text x="92" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">S6a interface</text>
+
+  <rect x="520" y="110" width="200" height="90" rx="6" fill="#FFFFFF" stroke="#1A1A2E" stroke-width="2"/>
+  <text x="620.0" y="132" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#1A1A2E">DEA / HSS</text>
+  <line x1="528" y1="140" x2="712" y2="140" stroke="#1A1A2E" stroke-width="1" opacity="0.4"/>
+
+  <text x="532" y="158" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">4G/5G subscriber</text>
+
+  <text x="532" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">authentication DB</text>
+
+  <line x1="280" y1="140" x2="514" y2="140" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#s6a-arr)"/>
+  <text x="400.0" y="132" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">IDR (Insert-Subscriber-Data-Request)</text>
+  
+
+  <line x1="520" y1="170" x2="274" y2="170" stroke="#078930" stroke-width="2"
+        marker-end="url(#s6a-arr)"/>
+  <text x="400.0" y="162" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">IDA (Insert-Subscriber-Data-Answer)</text>
+  
+
+  <line x1="280" y1="200" x2="514" y2="200" stroke="#C9A227" stroke-width="2"
+        marker-end="url(#s6a-arr)"/>
+  <text x="400.0" y="192" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">AIR (Authentication-Information-Request)</text>
+  
+
+  <line x1="520" y1="230" x2="274" y2="230" stroke="#078930" stroke-width="2"
+        marker-end="url(#s6a-arr)"/>
+  <text x="400.0" y="222" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">AIA (Authentication-Information-Answer)</text>
+  
+
+  <rect x="100" y="270" width="600" height="60" rx="6" fill="#0D737710" stroke="#0D7377" stroke-width="1"/>
+  <text x="400" y="292" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">
+    IDR/IDA — inspect subscriber data · reachable, location, profile
+  </text>
+  <text x="400" y="312" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">
+    AIR/AIA — auth vectors · SIM-swap freshness (mirror MAP SAI)
+  </text>
+
+</svg>

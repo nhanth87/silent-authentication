@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>SS7 — Digicom-ET SAS</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('sas-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {theme:{extend:{colors:{
+      ink:{DEFAULT:'#0c1220',panel:'#141c2b',line:'#243044',mute:'#7a8ba3'},
+      signal:{DEFAULT:'#e8a317',dim:'#b87f0f'}
+    },fontFamily:{display:['"DM Sans"','system-ui','sans-serif'],mono:['"JetBrains Mono"','ui-monospace','monospace']}}}};
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="/admin/static/htmx.min.js"></script>
+  <link rel="stylesheet" href="/admin/static/admin.css"/>
+  <script defer src="/admin/static/sas-shell.js"></script>
+</head>
+<body class="min-h-full bg-ink font-display text-slate-200 antialiased"
+      style="background-image:radial-gradient(ellipse 80% 50% at 10% -10%,rgba(232,163,23,0.08),transparent),radial-gradient(ellipse 60% 40% at 100% 0%,rgba(56,100,160,0.12),transparent)">
+  <header class="sticky top-0 z-40 border-b border-ink-line/80 bg-ink/90 backdrop-blur">
+    <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div class="flex items-center gap-3">
+        <span class="h-8 w-1 rounded-full bg-signal" aria-hidden="true"></span>
+        <h1 class="text-lg font-semibold text-slate-100">SS7 control room</h1>
+      </div>
+      <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-mute">{{NAV_LINKS}}</nav>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-8">
+    {{NOTICE}}
+    <section aria-labelledby="live-heading">
+      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p class="text-xs uppercase tracking-[0.25em] text-signal">Live network</p>
+          <h2 id="live-heading" class="mt-1 text-2xl font-semibold text-slate-50">Peer truth, not process state</h2>
+          <p class="mt-1 text-sm text-ink-mute">LIVE requires both an established SCTP association and an ACTIVE M3UA AS.</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="hx-live-badge">5s live poll</span>
+          <button type="button" hx-get="/admin/ss7/status" hx-target="#ss7-live" hx-swap="innerHTML"
+                  class="rounded-md border border-ink-line px-3 py-1.5 text-xs text-slate-300 hover:border-signal hover:text-signal">
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div id="ss7-live" class="ss7-live"
+           hx-get="/admin/ss7/status" hx-trigger="every 5s" hx-swap="innerHTML">{{SS7_STATUS_HTML}}</div>
+    </section>
+
+    <section class="mt-12" aria-labelledby="config-heading">
+      <p class="text-xs uppercase tracking-[0.25em] text-signal">JSON source of truth</p>
+      <div class="mt-2 ss7-config-shell">
+        <div>
+          <h2 id="config-heading" class="text-xl font-semibold text-slate-50">Active stack document</h2>
+          <p class="mt-1 max-w-3xl text-sm text-ink-mute">
+            Edit the complete SCTP, M3UA, SCCP and MAP topology. No duplicate host, port or point-code fields are kept outside this document.
+          </p>
+        </div>
+        <form method="post" action="/admin/ss7" class="mt-5">
+          <label class="sr-only" for="ss7-json">SS7 configuration JSON</label>
+          <textarea id="ss7-json" name="stackJson" rows="25" spellcheck="false"
+                    class="w-full rounded-lg border border-ink-line bg-ink-panel p-4 font-mono text-xs leading-relaxed text-slate-200 focus:border-signal focus:outline-none focus:ring-1 focus:ring-signal/30">{{SS7_JSON}}</textarea>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <button type="submit" name="action" value="save"
+                    class="rounded-md border border-ink-line px-4 py-2 text-sm text-slate-200 hover:border-signal hover:text-signal">Save JSON</button>
+            <button type="submit" name="action" value="saveApply"
+                    class="rounded-md bg-signal px-4 py-2 text-sm font-semibold text-ink hover:bg-signal-dim">Save &amp; apply</button>
+            <button type="submit" name="action" value="apply"
+                    class="rounded-md border border-ink-line px-4 py-2 text-sm text-slate-200 hover:border-signal hover:text-signal">Apply saved JSON</button>
+            <button type="submit" name="action" value="start"
+                    class="rounded-md border border-ink-line px-4 py-2 text-sm text-slate-200 hover:border-signal hover:text-signal">Start SS7</button>
+            <button type="submit" name="action" value="stop"
+                    class="rounded-md border border-rose-500/50 px-4 py-2 text-sm text-rose-200 hover:border-rose-400">Stop SS7</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

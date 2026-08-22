@@ -1,0 +1,1130 @@
+/* Digicom OTA ops tokens — dark default; light via html[data-theme="light"]. */
+:root {
+  --color-ink: #0c1220;
+  --color-ink-panel: #141c2b;
+  --color-ink-line: #243044;
+  --color-ink-mute: #7a8ba3;
+  --color-signal: #e8a317;
+  --color-signal-dim: #b87f0f;
+  --color-fg: #e2e8f0;
+  --color-fg-strong: #f8fafc;
+  --color-fg-soft: #cbd5e1;
+  --color-badge-ok-bg: rgba(6, 78, 59, 0.5);
+  --color-badge-ok-border: rgba(16, 185, 129, 0.4);
+  --color-badge-ok-fg: #34d399;
+  --color-state-ok: #34d399;
+  --color-state-warn: #fbbf24;
+  --header-bg: rgba(12, 18, 32, 0.9);
+  /* Matches Tailwind max-w-6xl on <main>; nested blocks use full-width-in-main rules below. */
+  --admin-content-max: 72rem;
+}
+
+html[data-theme="light"] {
+  --color-ink: #eef1f6;
+  --color-ink-panel: #ffffff;
+  --color-ink-line: #c9d2e0;
+  --color-ink-mute: #5a6b82;
+  --color-signal: #c4840a;
+  --color-signal-dim: #a06c08;
+  --color-fg: #1e293b;
+  --color-fg-strong: #0f172a;
+  --color-fg-soft: #334155;
+  --color-badge-ok-bg: rgba(16, 185, 129, 0.12);
+  --color-badge-ok-border: rgba(5, 150, 105, 0.45);
+  --color-badge-ok-fg: #047857;
+  --color-state-ok: #047857;
+  --color-state-warn: #b45309;
+  --header-bg: rgba(238, 241, 246, 0.92);
+}
+
+/* Remap Tailwind CDN ink/signal utilities so light theme stays Digicom ops (amber accent).
+ * Opacity variants (bg-ink/40, bg-ink-panel/40, …) are SEPARATE classes — listing .bg-ink
+ * alone leaves nested black holes on light pages (CDR ledger, dashboard tiles). */
+html[data-theme="light"] body.bg-ink,
+html[data-theme="light"] .bg-ink,
+html[data-theme="light"] [class*="bg-ink/"] { background-color: var(--color-ink) !important; color: var(--color-fg); }
+html[data-theme="light"] .bg-ink\/90,
+html[data-theme="light"] [class~="bg-ink/90"] { background-color: var(--header-bg) !important; }
+html[data-theme="light"] .bg-ink-panel,
+html[data-theme="light"] [class*="bg-ink-panel"] { background-color: var(--color-ink-panel) !important; }
+html[data-theme="light"] .border-ink-line,
+html[data-theme="light"] [class*="border-ink-line"] { border-color: var(--color-ink-line) !important; }
+html[data-theme="light"] .text-ink-mute { color: var(--color-ink-mute) !important; }
+html[data-theme="light"] .text-signal { color: var(--color-signal) !important; }
+html[data-theme="light"] .bg-signal { background-color: var(--color-signal) !important; }
+html[data-theme="light"] .hover\:bg-signal-dim:hover { background-color: var(--color-signal-dim) !important; }
+/* text-ink on dark = near-black on amber buttons; never remap to page plate (--color-ink flips in light). */
+html[data-theme="light"] .text-ink { color: var(--color-fg-strong) !important; }
+html[data-theme="light"] .text-slate-50,
+html[data-theme="light"] .text-slate-100 { color: var(--color-fg-strong) !important; }
+html[data-theme="light"] .text-slate-200,
+html[data-theme="light"] .text-slate-300 { color: var(--color-fg-soft) !important; }
+html[data-theme="light"] .divide-ink-line > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--color-ink-line);
+}
+
+/* Form controls inside form-card: use panel surface, never nested pure-black bg-ink holes. */
+.form-card input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.form-card select,
+.form-card textarea,
+.filter-bar input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.filter-bar select,
+.filter-bar textarea {
+  background-color: var(--color-ink-panel) !important;
+  color: var(--color-fg-strong);
+}
+
+.theme-toggle {
+  appearance: none;
+  border: 1px solid var(--color-ink-line);
+  background: var(--color-ink-panel);
+  color: var(--color-ink-mute);
+  border-radius: 0.375rem;
+  padding: 0.2rem 0.55rem;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.theme-toggle:hover {
+  color: var(--color-signal);
+  border-color: var(--color-signal);
+}
+html[data-theme="light"] .theme-toggle-label::after { content: " · dark"; }
+html:not([data-theme="light"]) .theme-toggle-label::after { content: " · light"; }
+
+/* Minimal companions for Tailwind CDN admin — toast motion, htmx indicator, layout. */
+.htmx-indicator { opacity: 0; transition: opacity 200ms ease; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { opacity: 1; }
+
+/* Visible HTMX affordance — amber chip matching Digicom signal accent */
+.hx-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(232, 163, 23, 0.45);
+  background: rgba(232, 163, 23, 0.1);
+  color: var(--color-signal);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.hx-live-badge::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-signal);
+  box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.25);
+  animation: hx-pulse 1.6s ease-in-out infinite;
+}
+@keyframes hx-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hx-live-badge::before { animation: none; }
+}
+tbody.hx-table-live.htmx-swapping,
+tbody.hx-table-live.htmx-settling {
+  outline: 1px solid rgba(232, 163, 23, 0.35);
+  outline-offset: -1px;
+}
+
+#ota-toast-host,
+#ussd-toast-host {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(420px, 92vw);
+  pointer-events: none;
+}
+.ota-toast,
+.ussd-toast {
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.ota-toast.show,
+.ussd-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Admin notice strip (seeded {{NOTICE}} or OOB). */
+.admin-notice {
+  margin-bottom: 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(232, 163, 23, 0.35);
+  background: rgba(232, 163, 23, 0.08);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.875rem;
+  color: var(--color-fg-soft);
+}
+.admin-notice:empty { display: none; }
+
+/*
+ * Admin content column = <main class="mx-auto max-w-6xl">.
+ * Full-bleed blocks (tables, wide panels, filters) fill main / indent — no nested
+ * max-width + margin-inline:auto (that double-centered and shifted HTTP/SMPP).
+ * Narrow forms (.form-card / .admin-panel) stay centered in the column.
+ */
+.table-wrap,
+.filter-bar,
+.admin-panel--wide,
+.link-status {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+/* Nest headings + panels under orange eyebrows (label stays outside indent). */
+.ops-section-indent {
+  padding-left: 1rem;
+}
+
+/* Create/edit forms: centered in main (or indent), not full-bleed left like tables. */
+.form-card,
+.admin-panel {
+  width: 100%;
+  max-width: 28rem;
+  margin-inline: auto;
+}
+
+/* Public landing card is its own centered main — not nested under max-w-6xl. */
+.landing-card {
+  width: 100%;
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+@media (max-width: 640px) {
+  .form-card,
+  .admin-panel,
+  .landing-card {
+    max-width: 100%;
+  }
+}
+
+/* Live SS7 / SMPP link-status panels — stable columns, no jumpy wrap */
+.link-status-panel {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.link-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+.link-status-head h3 {
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+.link-status-badge {
+  flex: 0 0 auto;
+  display: inline-block;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.65rem;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.link-status-badge--ok {
+  border: 1px solid var(--color-badge-ok-border);
+  background: var(--color-badge-ok-bg);
+  color: var(--color-badge-ok-fg);
+}
+.link-status-badge--mute {
+  border: 1px solid var(--color-ink-line);
+  background: var(--color-ink-panel);
+  color: var(--color-ink-mute);
+}
+.link-status-detail {
+  margin: 0.35rem 0 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-fg-soft);
+  overflow-wrap: anywhere;
+}
+.link-status-table-wrap {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+  background: var(--color-ink-panel);
+  border: 1px solid var(--color-ink-line);
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.75rem;
+}
+.link-status-caption {
+  margin: 0 0 0.35rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+}
+.link-status-table {
+  width: auto;
+  max-width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.75rem;
+}
+/* SS7: one shared column rhythm across SCTP / assoc / M3UA tables */
+.link-status-table--ss7 {
+  width: 100%;
+  max-width: 44rem;
+}
+.link-status-table--ss7 col.ls-c-name { width: 7.5rem; }
+.link-status-table--ss7 col.ls-c-endpoint { width: 10.5rem; }
+.link-status-table--ss7 col.ls-c-kind { width: 5.5rem; }
+.link-status-table--ss7 col.ls-c-state { width: 7rem; }
+.link-status-table th,
+.link-status-table td {
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-status-table th {
+  font-weight: 500;
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+  border-bottom: 1px solid var(--color-ink-line);
+}
+.link-status-table td {
+  color: var(--color-fg-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink-line) 55%, transparent);
+}
+.link-status-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.link-status-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.link-status-state {
+  width: 7rem;
+  font-weight: 500;
+}
+.link-status-state span {
+  display: inline-block;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.link-status-state--ok { color: var(--color-state-ok); }
+.link-status-state--warn { color: var(--color-state-warn); }
+.link-status-state--mute { color: var(--color-ink-mute); }
+.link-status-empty {
+  color: var(--color-ink-mute);
+  font-style: italic;
+  white-space: normal !important;
+}
+.cred-chip {
+  gap: 0.5rem;
+}
+.cred-chip code {
+  word-break: break-all;
+}
+
+/* ── CDR session ledger (bridge-phase spine) ───────────────────────────────
+ * Signature: vertical phase rail on each When cell — S1→S2→ok/fail at a glance.
+ * Stays inside Digicom ink/signal tokens; no purple/cream/broadsheet skins.
+ */
+.cdr-filter-card {
+  max-width: none;
+  margin-inline: 0;
+}
+.cdr-count-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-ink-line);
+  background: var(--color-ink-panel);
+  color: var(--color-signal);
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.55rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cdr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+}
+.cdr-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.cdr-ledger {
+  background: color-mix(in srgb, var(--color-ink-panel) 55%, transparent);
+  /* Never create a nested scrollport: overflow-x:auto forces overflow-y:auto per CSS
+   * and Chromium then focus-scrolls the expand panel → jump-to-bottom on click. */
+  overflow: visible;
+  overflow-anchor: none;
+}
+.cdr-ledger table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cdr-ledger tbody,
+.cdr-detail,
+.cdr-ledger-foot {
+  /* Expanding a mid-row inserts content above the page foot; without this,
+   * Chrome scroll-anchoring keeps the foot in view (= jump to bottom). */
+  overflow-anchor: none;
+}
+.cdr-ledger-row {
+  transition: background 140ms ease;
+}
+.cdr-ledger-row:hover,
+.cdr-ledger-row--open {
+  background: color-mix(in srgb, var(--color-signal) 6%, transparent);
+}
+.cdr-when {
+  position: relative;
+  padding-left: 1.35rem !important;
+  white-space: nowrap;
+}
+.cdr-spine {
+  display: inline-block;
+  width: 0.22rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: var(--color-ink-mute);
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.cdr-when .cdr-spine {
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.cdr-spine--s1 { background: #c9a227; box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.18); }
+.cdr-spine--s1r { background: #e8a317; box-shadow: 0 0 0 2px rgba(232, 163, 23, 0.22); }
+.cdr-spine--s2 { background: #5b9bd5; box-shadow: 0 0 0 2px rgba(91, 155, 213, 0.22); }
+.cdr-spine--ok { background: var(--color-state-ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-state-ok) 28%, transparent); }
+.cdr-spine--fail { background: #f87171; box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.22); }
+.cdr-spine--unknown { background: var(--color-ink-mute); }
+.cdr-open {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.cdr-open:focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
+}
+.cdr-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg-soft);
+}
+.cdr-events-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.65rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.02em;
+  color: var(--ink-mute, #94a3b8);
+  border: 1px solid var(--ink-line, #334155);
+  border-radius: 0.25rem;
+  vertical-align: middle;
+}
+/* Flat ledger AS USSD (~50) — keep visible; reuse ink/mono tokens. */
+.cdr-col-as { min-width: 12rem; }
+.cdr-as-ussd {
+  max-width: 18rem;
+  min-width: 12rem;
+  width: 18rem;
+}
+.cdr-as-ussd-snip {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--color-fg-soft);
+  letter-spacing: 0.01em;
+}
+.cdr-as-ussd-empty { color: var(--color-ink-mute); }
+
+/* Expand hero: AS USSD + outcome — full-width, readable, not Advanced-buried. */
+.cdr-primary {
+  border-color: color-mix(in srgb, var(--color-signal) 35%, var(--color-ink-line));
+  background: color-mix(in srgb, var(--color-ink-panel) 85%, var(--color-signal) 15%);
+}
+.cdr-primary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.9rem;
+}
+.cdr-primary-ussd {
+  flex: 1 1 18rem;
+  margin: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--color-fg-strong, #e2e8f0);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.cdr-primary-ussd--empty {
+  color: var(--color-ink-mute);
+  font-style: italic;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 0.8rem;
+}
+.cdr-primary-human {
+  font-size: 0.78rem;
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+/* 6-hop spine — signature ops surface: dense, full-width, 2-col on wide. */
+.cdr-spine-journey {
+  border-color: var(--color-ink-line);
+}
+.cdr-menu-tape {
+  border-color: var(--color-ink-line);
+}
+.cdr-menu-path {
+  margin: 0.35rem 0 0.25rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.cdr-menu-meta {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+}
+.cdr-menu-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.cdr-menu-steps li {
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+.cdr-menu-kind {
+  font-weight: 600;
+  color: var(--color-signal);
+}
+.cdr-menu-gen,
+.cdr-menu-text {
+  font-size: 0.74rem;
+}
+.cdr-hop-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+}
+@media (min-width: 900px) {
+  .cdr-hop-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.cdr-hop {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.45rem 0.65rem;
+  align-items: start;
+  min-width: 0;
+}
+.cdr-hop-num {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-ink-mute);
+  background: color-mix(in srgb, var(--color-ink) 70%, transparent);
+  border: 1px solid var(--color-ink-line);
+}
+.cdr-hop--ok .cdr-hop-num { color: var(--color-badge-ok-fg, #86efac); border-color: rgba(134, 239, 172, 0.35); }
+.cdr-hop--fail .cdr-hop-num { color: #fca5a5; border-color: rgba(248, 113, 113, 0.4); }
+.cdr-hop--skip .cdr-hop-num { color: #f0c674; border-color: rgba(232, 163, 23, 0.4); }
+.cdr-hop-body {
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--color-ink-line);
+  background: color-mix(in srgb, var(--color-ink) 88%, var(--color-ink-panel));
+}
+.cdr-hop--fail .cdr-hop-body {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+.cdr-hop-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+}
+.cdr-hop-label {
+  flex: 1 1 auto;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+.cdr-hop-when {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.65rem;
+  color: var(--color-ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+.cdr-hop-detail {
+  margin: 0.25rem 0 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--color-fg-soft);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Legacy plane chips kept for any residual markup. */
+.cdr-svc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+.cdr-svc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--color-ink-line);
+  background: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+.cdr-svc-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+.cdr-svc-state {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--color-fg-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cdr-svc--ok .cdr-svc-state { color: var(--color-badge-ok-fg, #86efac); }
+.cdr-svc--fail .cdr-svc-state { color: #fca5a5; }
+.cdr-svc--live .cdr-svc-state { color: var(--color-signal); }
+.cdr-svc--gated .cdr-svc-state { color: #f0c674; }
+.cdr-svc--mute .cdr-svc-state { color: var(--color-ink-mute); }
+
+/* Advanced = optional raw only; never the primary ops surface. */
+.cdr-advanced {
+  margin-top: 0.15rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-ink-line);
+  border-radius: 0.4rem;
+  background: var(--color-ink-panel);
+  overflow-anchor: none;
+}
+.cdr-advanced > summary {
+  cursor: pointer;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+  font-family: "DM Sans", system-ui, sans-serif;
+  list-style: none;
+}
+.cdr-advanced > summary::-webkit-details-marker { display: none; }
+.cdr-advanced > summary::before {
+  content: "+ ";
+  color: var(--color-ink-mute);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.cdr-advanced[open] > summary::before { content: "− "; }
+.cdr-advanced-body {
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--color-ink-line);
+}
+.cdr-advanced-label {
+  margin: 0.65rem 0 0.25rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+/* Full-width pipe: one key=value per line; never mid-word break (overflow-wrap:anywhere). */
+.cdr-pipe-block {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: visible;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: pre;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--color-fg-soft);
+  background: color-mix(in srgb, var(--color-ink) 92%, transparent);
+  border: 1px solid var(--color-ink-line);
+  border-radius: 0.3rem;
+}
+.cdr-pipe-block--url {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.cdr-timeline-raw {
+  margin-top: 0.35rem;
+  opacity: 0.9;
+}
+.cdr-timeline-raw .cdr-timeline-detail {
+  display: block;
+  max-width: none;
+  margin-top: 0.15rem;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* Dashboard KPI cards — long Adaptive EWMA (and any future metric) must not overflow. */
+.metric-card {
+  min-width: 0;
+  overflow: hidden;
+}
+.metric-card-value {
+  margin: 0.5rem 0 0;
+  font-size: 1.875rem;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-card-value--long {
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+.metric-card-detail {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.cdr-corr {
+  font-size: 0.7rem;
+  color: var(--color-signal);
+  letter-spacing: 0.02em;
+}
+.cdr-msisdn {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg-strong);
+}
+.cdr-origin {
+  color: var(--color-ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+.cdr-phase-chip,
+.cdr-status-chip {
+  display: inline-block;
+  border-radius: 0.2rem;
+  padding: 0.12rem 0.4rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid var(--color-ink-line);
+  background: var(--color-ink);
+  color: var(--color-fg-soft);
+  white-space: nowrap;
+}
+.cdr-phase-chip.cdr-spine--s1,
+.cdr-phase-chip.cdr-spine--s1r { color: var(--color-signal); border-color: rgba(232, 163, 23, 0.35); }
+.cdr-phase-chip.cdr-spine--s2 { color: #7eb6e8; border-color: rgba(91, 155, 213, 0.4); }
+.cdr-phase-chip.cdr-spine--ok { color: var(--color-badge-ok-fg); border-color: var(--color-badge-ok-border); background: var(--color-badge-ok-bg); }
+/* Fail / timeout chips: dark ink on soft red — readable on light theme and nested panels. */
+.cdr-phase-chip.cdr-spine--fail,
+.cdr-status-chip.cdr-status--fail {
+  color: #0f172a;
+  border-color: #f87171;
+  background: #fecaca;
+}
+html:not([data-theme="light"]) .cdr-phase-chip.cdr-spine--fail,
+html:not([data-theme="light"]) .cdr-status-chip.cdr-status--fail {
+  color: #0f172a;
+  border-color: #f87171;
+  background: #fca5a5;
+}
+.cdr-status-chip.cdr-status--ok {
+  color: var(--color-badge-ok-fg);
+  border-color: var(--color-badge-ok-border);
+  background: var(--color-badge-ok-bg);
+}
+.cdr-status-chip.cdr-status--live {
+  color: var(--color-signal);
+  border-color: rgba(232, 163, 23, 0.35);
+}
+.cdr-status-chip.cdr-status--gated {
+  color: #f0c674;
+  border-color: rgba(232, 163, 23, 0.45);
+  background: rgba(232, 163, 23, 0.08);
+}
+.cdr-status-chip.cdr-status--map2map {
+  color: #7eb6e8;
+  border-color: rgba(91, 155, 213, 0.45);
+  background: rgba(91, 155, 213, 0.08);
+}
+.cdr-detail td,
+.cdr-detail-cell {
+  border-top: none !important;
+}
+.cdr-detail-cell {
+  padding: 0.65rem 0.75rem 0.85rem !important;
+  vertical-align: top;
+}
+.cdr-detail[hidden],
+.cdr-detail.hidden {
+  display: none !important;
+}
+.cdr-detail-panel {
+  border: 1px solid var(--color-ink-line);
+  background: var(--color-ink-panel);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 1.05rem 1.15rem 1.2rem;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+.cdr-digest {
+  margin: 0;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--color-ink-line);
+  border-radius: 0.4rem;
+  /* Solid panel — no gold wash on every block (looks “tè le” next to chips). */
+  background: var(--color-ink-panel);
+}
+.cdr-digest-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-weight: 600;
+}
+.cdr-primary .cdr-digest-title,
+.cdr-spine-journey .cdr-digest-title {
+  color: var(--color-signal);
+}
+.cdr-session-grid {
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  gap: 0.75rem 1.15rem;
+}
+.cdr-timeline-list {
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+  list-style: disc;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--color-fg-soft);
+}
+.cdr-timeline-list li { margin: 0.35rem 0; }
+.cdr-timeline-when {
+  color: var(--color-ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+.cdr-timeline-meta { color: var(--color-signal); }
+.cdr-timeline-detail {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  color: var(--color-ink-mute);
+}
+.cdr-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.7rem 1.1rem;
+  margin: 0;
+}
+.cdr-detail-grid dt {
+  margin: 0;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-mute);
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+.cdr-detail-grid dd {
+  margin: 0.2rem 0 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--color-fg-soft);
+  /* break-word at spaces — never overflow-wrap:anywhere (mid-token “Brid|ge”). */
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.cdr-gap-note {
+  margin: 0.15rem 0 0;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 0.7rem;
+  color: var(--color-ink-mute);
+  border-top: 1px dashed var(--color-ink-line);
+  padding-top: 0.55rem;
+}
+.cdr-ledger-foot {
+  overflow-anchor: none;
+}
+@media (max-width: 640px) {
+  .cdr-ledger th:nth-child(7),
+  .cdr-ledger td.cdr-origin { display: none; }
+  .cdr-detail-grid,
+  .cdr-session-grid { grid-template-columns: 1fr 1fr; }
+  .cdr-hop-list { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cdr-ledger-row { transition: none; }
+}
+
+/*
+ * Routing Live rules — Del + Edit on one horizontal row.
+ * Works for jar-rendered flex wrapper and older sibling form+a markup (html-only rsync).
+ */
+#rule-rows > tr > td:last-child {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+#rule-rows > tr > td:last-child > div {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+#rule-rows > tr > td:last-child form {
+  display: inline;
+  margin: 0;
+}
+#rule-rows > tr > td:last-child button[type="submit"] {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  border-radius: 0.375rem;
+  background-color: #dc2626; /* red-600 */
+  color: #fff;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+#rule-rows > tr > td:last-child button[type="submit"]:hover {
+  background-color: #ef4444; /* red-500 */
+}
+#rule-rows > tr > td:last-child > a,
+#rule-rows > tr > td:last-child > div > a {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.375rem;
+  background-color: #fbbf24; /* amber-400 */
+  color: #0c1220;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+#rule-rows > tr > td:last-child > a:hover,
+#rule-rows > tr > td:last-child > div > a:hover {
+  background-color: #fcd34d; /* amber-300 */
+}
+html[data-theme="light"] #rule-rows > tr > td:last-child > a,
+html[data-theme="light"] #rule-rows > tr > td:last-child > div > a {
+  color: #0f172a;
+}
+
+/* GMLC SS7 control room — an amber signal rail ties peer truth to JSON topology. */
+.ss7-verdict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.35rem 1.5rem;
+  border: 1px solid var(--color-ink-line);
+  border-left: 0.35rem solid #f87171;
+  border-radius: 0.6rem;
+  background: var(--color-ink-panel);
+}
+.ss7-verdict--live { border-left-color: var(--color-state-ok); }
+.ss7-kicker {
+  margin: 0 0 0.2rem;
+  color: var(--color-ink-mute);
+  font: 500 0.65rem/1.2 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.ss7-verdict h2 { margin: 0; color: var(--color-fg-strong); font-size: 1.35rem; }
+.ss7-verdict p:last-child { margin: 0.3rem 0 0; color: var(--color-fg-soft); font: 0.75rem "JetBrains Mono", ui-monospace, monospace; }
+.ss7-verdict-badge {
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  color: #f87171;
+  font: 600 0.68rem "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0.12em;
+}
+.ss7-verdict--live .ss7-verdict-badge { color: var(--color-state-ok); }
+.ss7-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.ss7-signal {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--color-ink-line);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--color-ink-panel) 78%, transparent);
+}
+.ss7-signal p { margin: 0; color: var(--color-ink-mute); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.ss7-signal strong { display: block; margin-top: 0.45rem; color: var(--color-fg-strong); font: 600 1rem "JetBrains Mono", ui-monospace, monospace; }
+.ss7-signal span { display: block; margin-top: 0.35rem; color: var(--color-ink-mute); font-size: 0.72rem; overflow-wrap: anywhere; }
+.ss7-signal .ss7-state-ok { color: var(--color-state-ok); }
+.ss7-signal .ss7-state-down { color: #f87171; }
+.ss7-directory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.ss7-directory {
+  min-width: 0;
+  border: 1px solid var(--color-ink-line);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--color-ink-panel) 60%, transparent);
+  overflow: hidden;
+}
+.ss7-directory h3 { margin: 0; padding: 0.75rem 1rem; border-bottom: 1px solid var(--color-ink-line); color: var(--color-fg-strong); font-size: 0.82rem; }
+.ss7-directory-row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; border-bottom: 1px solid color-mix(in srgb, var(--color-ink-line) 55%, transparent); }
+.ss7-directory-row:last-child { border-bottom: 0; }
+.ss7-directory-row div { min-width: 0; }
+.ss7-directory-row strong, .ss7-directory-row span { display: block; }
+.ss7-directory-row strong { color: var(--color-fg-soft); font-size: 0.76rem; }
+.ss7-directory-row span { margin-top: 0.15rem; color: var(--color-ink-mute); font-size: 0.68rem; }
+.ss7-directory-row code { align-self: center; max-width: 55%; color: var(--color-signal); font-size: 0.68rem; text-align: right; overflow-wrap: anywhere; }
+.ss7-directory-empty { margin: 0; padding: 1rem; color: var(--color-ink-mute); font-size: 0.75rem; }
+.ss7-config-shell { padding: 1.25rem; border: 1px solid var(--color-ink-line); border-radius: 0.6rem; background: color-mix(in srgb, var(--color-ink-panel) 72%, transparent); }
+
+/* Compact GMLC CDR ledger; failures stay visually dominant. */
+.cdr-table-wrap { overflow-x: auto; }
+.cdr-table-wrap th, .cdr-table-wrap td { padding: 0.75rem; vertical-align: top; white-space: nowrap; }
+.cdr-table-wrap td { color: var(--color-fg-soft); }
+.cdr-table-wrap .cdr-detail-text { min-width: 12rem; max-width: 24rem; white-space: normal; overflow-wrap: anywhere; color: var(--color-ink-mute); }
+.cdr-table-wrap .cdr-when { color: var(--color-ink-mute); }
+.cdr-status { display: inline-block; border: 1px solid var(--color-ink-line); border-radius: 0.25rem; padding: 0.12rem 0.4rem; font-size: 0.65rem; letter-spacing: 0.05em; }
+.cdr-status--failed { border-color: rgba(248,113,113,.55); background: rgba(127,29,29,.28); color: #fca5a5; }
+.cdr-status--timeout {
+  border-color: color-mix(in srgb, var(--color-state-warn) 55%, var(--color-ink-line));
+  background: color-mix(in srgb, var(--color-state-warn) 18%, transparent);
+  color: var(--color-state-warn);
+}
+.cdr-status--ok { border-color: var(--color-badge-ok-border); background: var(--color-badge-ok-bg); color: var(--color-badge-ok-fg); }
+.cdr-status + small { display: block; margin-top: 0.28rem; color: var(--color-ink-mute); font-size: 0.62rem; }
+.admin-empty { padding: 2.5rem 1rem !important; text-align: center; color: var(--color-ink-mute) !important; }
+.admin-empty strong, .admin-empty span { display: block; }
+.admin-empty strong { color: var(--color-fg-soft); font: 600 0.9rem "DM Sans", system-ui, sans-serif; }
+.admin-empty span { margin-top: 0.35rem; font: 0.78rem "DM Sans", system-ui, sans-serif; }
+.client-state { display: inline-block; border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.65rem; }
+.client-state--enabled { color: var(--color-badge-ok-fg); background: var(--color-badge-ok-bg); border: 1px solid var(--color-badge-ok-border); }
+.client-state--disabled { color: var(--color-ink-mute); border: 1px solid var(--color-ink-line); }
+
+#gmlc-toast-host {
+  position: fixed; right: 1rem; bottom: 1rem; z-index: 9999;
+  display: flex; flex-direction: column; gap: 0.5rem; max-width: min(420px, 92vw);
+}
+.gmlc-toast { opacity: 0; transform: translateY(8px); transition: opacity .2s ease, transform .2s ease; }
+.gmlc-toast.show { opacity: 1; transform: translateY(0); }
+
+@media (max-width: 760px) {
+  .ss7-signal-grid, .ss7-directory-grid { grid-template-columns: 1fr; }
+  .ss7-verdict { align-items: flex-start; }
+  .ops-section-indent { padding-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gmlc-toast { transition: none; }
+}

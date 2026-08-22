@@ -1,0 +1,135 @@
+{
+  "meta": {
+    "title": "Digicom-ET Silent Auth — Illustrative ROI Scenarios",
+    "version": "1.0",
+    "date": "2026-07-20",
+    "classification": "ILLUSTRATIVE — not binding commercial offer",
+    "currency_primary": "USD",
+    "currency_secondary": "ETB",
+    "etb_per_usd": 56,
+    "notes": [
+      "All figures are modelling assumptions for proposal charts and Chapter 10 tables.",
+      "Replace with Ethio Telecom A2P tariffs and signed Digicom /verify rates before contract.",
+      "Silent-auth adoption steady-state: 70%; fallback OTP: 30% of auth events."
+    ]
+  },
+  "assumptions": {
+    "auth_events_per_user_per_year": 24,
+    "silent_auth_adoption_rate": 0.70,
+    "fallback_otp_rate": 0.30,
+    "sms_otp_unit_cost_usd": 0.042,
+    "silent_auth_unit_cost_usd": 0.010,
+    "baseline_ato_rate": 0.0012,
+    "ato_rate_reduction_with_silent_auth": 0.65,
+    "average_fraud_loss_per_ato_usd": 85,
+    "digicom_platform_year1_usd": {
+      "100k": 120000,
+      "500k": 280000,
+      "1M": 450000
+    }
+  },
+  "scenarios": [
+    {
+      "id": "100k_users",
+      "label": "100,000 active users",
+      "active_users": 100000,
+      "auth_events_annual": 2400000,
+      "sms_otp_annual_usd": 100800,
+      "silent_auth_annual_usd": 16800,
+      "fallback_sms_annual_usd": 30240,
+      "blended_auth_annual_usd": 45360,
+      "sms_cost_reduction_usd": 55440,
+      "net_auth_channel_savings_usd": 8400,
+      "fraud_loss_avoided_usd": 157680,
+      "total_annual_benefit_usd": 166080,
+      "digicom_platform_year1_usd": 120000,
+      "simple_year1_roi_pct": 38.4,
+      "payback_months": 8.7,
+      "sms_otp_annual_etb": 5644800,
+      "blended_auth_annual_etb": 2540160,
+      "fraud_loss_avoided_etb": 8830080
+    },
+    {
+      "id": "500k_users",
+      "label": "500,000 active users",
+      "active_users": 500000,
+      "auth_events_annual": 12000000,
+      "sms_otp_annual_usd": 504000,
+      "silent_auth_annual_usd": 84000,
+      "fallback_sms_annual_usd": 151200,
+      "blended_auth_annual_usd": 226800,
+      "sms_cost_reduction_usd": 277200,
+      "net_auth_channel_savings_usd": 41800,
+      "fraud_loss_avoided_usd": 788400,
+      "total_annual_benefit_usd": 830200,
+      "digicom_platform_year1_usd": 280000,
+      "simple_year1_roi_pct": 196.5,
+      "payback_months": 4.0,
+      "sms_otp_annual_etb": 28224000,
+      "blended_auth_annual_etb": 12700800,
+      "fraud_loss_avoided_etb": 44150400
+    },
+    {
+      "id": "1M_users",
+      "label": "1,000,000 active users",
+      "active_users": 1000000,
+      "auth_events_annual": 24000000,
+      "sms_otp_annual_usd": 1008000,
+      "silent_auth_annual_usd": 168000,
+      "fallback_sms_annual_usd": 302400,
+      "blended_auth_annual_usd": 453600,
+      "sms_cost_reduction_usd": 554400,
+      "net_auth_channel_savings_usd": 83600,
+      "fraud_loss_avoided_usd": 1576800,
+      "total_annual_benefit_usd": 1660400,
+      "digicom_platform_year1_usd": 450000,
+      "simple_year1_roi_pct": 269.0,
+      "payback_months": 3.3,
+      "sms_otp_annual_etb": 56448000,
+      "blended_auth_annual_etb": 25401600,
+      "fraud_loss_avoided_etb": 88300800
+    }
+  ],
+  "chart_series": {
+    "description": "Flat arrays for stacked bar / waterfall charts",
+    "labels": ["100k users", "500k users", "1M users"],
+    "sms_otp_annual_usd": [100800, 504000, 1008000],
+    "silent_auth_annual_usd": [16800, 84000, 168000],
+    "fallback_sms_annual_usd": [30240, 151200, 302400],
+    "blended_auth_annual_usd": [45360, 226800, 453600],
+    "fraud_loss_avoided_usd": [157680, 788400, 1576800],
+    "total_annual_benefit_usd": [166080, 830200, 1660400]
+  },
+  "ethio_telecom_impact_illustrative": {
+    "notes": "Operator SMS revenue declines with silent-auth substitution; Digicom does not capture SMS margin.",
+    "scenarios": [
+      {
+        "id": "100k_users",
+        "sms_messages_baseline": 2400000,
+        "sms_messages_after_silent": 720000,
+        "sms_revenue_baseline_usd": 100800,
+        "sms_revenue_after_silent_usd": 30240,
+        "optional_api_revenue_share_usd": 3360,
+        "data_arpu_uplift_illustrative_usd": 42000
+      },
+      {
+        "id": "500k_users",
+        "sms_messages_baseline": 12000000,
+        "sms_messages_after_silent": 3600000,
+        "sms_revenue_baseline_usd": 504000,
+        "sms_revenue_after_silent_usd": 151200,
+        "optional_api_revenue_share_usd": 16800,
+        "data_arpu_uplift_illustrative_usd": 210000
+      },
+      {
+        "id": "1M_users",
+        "sms_messages_baseline": 24000000,
+        "sms_messages_after_silent": 7200000,
+        "sms_revenue_baseline_usd": 1008000,
+        "sms_revenue_after_silent_usd": 302400,
+        "optional_api_revenue_share_usd": 33600,
+        "data_arpu_uplift_illustrative_usd": 420000
+      }
+    ]
+  }
+}

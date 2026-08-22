@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="380" viewBox="0 0 800 380">
+  <rect width="800" height="380" fill="#FFF8E7" rx="8"/>
+  
+  <defs>
+    <marker id="ati-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+    <marker id="ati-arr-rev" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+
+  <text x="400.0" y="28" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15"
+        font-weight="bold" fill="#1A1A2E">MAP AnyTimeInterrogation (ATI) — 2G/3G</text>
+
+  <rect x="80" y="100" width="220" height="100" rx="6" fill="#FFFFFF" stroke="#0D7377" stroke-width="2"/>
+  <text x="190.0" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#0D7377">Digicom Verifier</text>
+  <line x1="88" y1="130" x2="292" y2="130" stroke="#0D7377" stroke-width="1" opacity="0.4"/>
+
+  <text x="92" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">MAP dialog anchor</text>
+
+  <text x="92" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">TCAP TC-BEGIN</text>
+
+  <rect x="500" y="100" width="220" height="100" rx="6" fill="#FFFFFF" stroke="#1A1A2E" stroke-width="2"/>
+  <text x="610.0" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#1A1A2E">HLR</text>
+  <line x1="508" y1="130" x2="712" y2="130" stroke="#1A1A2E" stroke-width="1" opacity="0.4"/>
+
+  <text x="512" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Intra-network only</text>
+
+  <text x="512" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">subscriber DB</text>
+
+  <line x1="300" y1="150" x2="494" y2="150" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#ati-arr)"/>
+  <text x="400.0" y="142" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">TC-BEGIN / ATI</text>
+  
+
+  <line x1="500" y1="190" x2="294" y2="190" stroke="#078930" stroke-width="2"
+        marker-end="url(#ati-arr)"/>
+  <text x="400.0" y="182" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">ATI-Res (subscriberState, locationInfo)</text>
+  
+
+  <rect x="140" y="240" width="520" height="52" rx="4" fill="#DA121A18" stroke="#DA121A" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="150" y="258" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">FS.11 Cat 1 = interconnect BLOCKED → intra-network HLR only</text>
+
+  <text x="400" y="330" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#6B7280">
+    AnyTimeInterrogationRequest → subscriberState, locationInfo (VLR/SGSN)
+  </text>
+  <text x="400" y="348" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#6B7280">
+    No cross-operator ATI · deployment invariant
+  </text>
+
+</svg>

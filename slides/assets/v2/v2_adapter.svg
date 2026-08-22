@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="360" viewBox="0 0 800 360">
+  <rect width="800" height="360" fill="#FFF8E7" rx="8"/>
+  
+  <defs>
+    <marker id="ad-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+    <marker id="ad-arr-rev" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+
+  <text x="400.0" y="28" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15"
+        font-weight="bold" fill="#1A1A2E">Deployment — Digicom adapter layer</text>
+
+  <rect x="40" y="100" width="180" height="80" rx="6" fill="#FFFFFF" stroke="#078930" stroke-width="2"/>
+  <text x="130.0" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#078930">Banks</text>
+  <line x1="48" y1="130" x2="212" y2="130" stroke="#078930" stroke-width="1" opacity="0.4"/>
+
+  <text x="52" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">CBE · Awash · Dashen</text>
+
+  <text x="52" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">POST /verify API</text>
+
+  <rect x="310" y="85" width="180" height="110" rx="6" fill="#0D737712" stroke="#0D7377" stroke-width="2"/>
+  <text x="400.0" y="107" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#0D7377">Digicom SAS</text>
+  <line x1="318" y1="115" x2="482" y2="115" stroke="#0D7377" stroke-width="1" opacity="0.4"/>
+
+  <text x="322" y="133" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Resolver</text>
+
+  <text x="322" y="149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Verifier</text>
+
+  <text x="322" y="165" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Policy / Fallback</text>
+
+  <rect x="580" y="100" width="180" height="80" rx="6" fill="#FFFFFF" stroke="#1A1A2E" stroke-width="2"/>
+  <text x="670.0" y="122" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#1A1A2E">Ethio Telecom</text>
+  <line x1="588" y1="130" x2="752" y2="130" stroke="#1A1A2E" stroke-width="1" opacity="0.4"/>
+
+  <text x="592" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">HLR / HSS / PGW</text>
+
+  <text x="592" y="164" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">MAP / Diameter</text>
+
+  <line x1="220" y1="140" x2="304" y2="140" stroke="#078930" stroke-width="2"
+        marker-end="url(#ad-arr)"/>
+  <text x="265.0" y="132" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">REST /verify</text>
+  
+
+  <line x1="490" y1="140" x2="574" y2="140" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#ad-arr)"/>
+  <text x="535.0" y="132" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">MAP · Diameter · PGW</text>
+  
+
+  <rect x="60" y="230" width="680" height="56" rx="6" fill="#07893010" stroke="#078930" stroke-width="1.5"/>
+  <text x="400" y="254" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="bold" fill="#078930">
+    Digicom does not own SMS revenue
+  </text>
+  <text x="400" y="274" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">
+    SMS &amp; interconnect stay with Ethio Telecom · Digicom bills banks for auth API
+  </text>
+  <text x="400" y="320" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#6B7280">
+    Banks | Digicom SAS (adapter) | Ethio Telecom HLR/HSS/PGW
+  </text>
+
+</svg>

@@ -1,0 +1,130 @@
+# DeepSeek-Hardness gates — Silent Auth SAS (single source of truth)
+
+harness: deepseek-hardness
+target: Silent Auth SAS verifier (Resolver + Verifier + Policy)
+canonical_tree: worktrees/silent-authentication/main
+runner: harness/run_hardness.py
+spec_notes: docs/research/3gpp-spec-reference-index.md
+coverage: docs/design/3gpp-spec-coverage.md
+fsm: docs/design/silent-auth-flow.md
+
+# Budgets (design, dialog-anchor). Every stage timeout < total budget.
+budgets:
+  resolver_ms: 300
+  map_ms: 2000
+  diameter_ms: 2000
+  total_ms: 3000
+
+# Each gate maps to a checker in run_hardness.py (check: key).
+gates:
+  - id: H1
+    title: Resolver→Verifier hand-off, one PSI probe
+    spec: ["TS 29.002"]
+    clause: provideSubscriberInfo (op 70)
+    rule: IP:port:ts → MSISDN/IMSI, then exactly one PSI probe
+    check: mapping_present
+    expect: { key: "reachable_2g3g" }
+
+  - id: H2
+    title: No interconnect ATI
+    spec: ["TS 29.002", "FS.11"]
+    clause: anyTimeInterrogation (op 71) — Category 1
+    rule: ATI targets own HLR only, never interconnect
+    check: flag
+    expect: { key: "no_interconnect_ati", value: true }
+
+  - id: H3
+    title: SIM-swap freshness — 2G/3G
+    spec: ["TS 29.002"]
+    clause: sendAuthenticationInfo (op 56)
+    rule: last-seen auth-vector set vs new set ⇒ swap flag
+    check: mapping_present
+    expect: { key: "fresh_2g3g" }
+
+  - id: H4
+    title: SIM-swap freshness — LTE
+    spec: ["TS 29.272"]
+    clause: AIR/AIA (318)
+    rule: EPS vector set change ⇒ swap flag
+    check: mapping_present
+    expect: { key: "fresh_lte" }
+
+  - id: H5
+    title: Attachment liveness / purged
+    spec: ["TS 29.272"]
+    clause: ULR/ULA (316), PUR/PUA (321)
+    rule: attached+reachable ⇒ live; purged ⇒ FALLBACK
+    check: mapping_present
+    expect: { key: "reachable_lte" }
+
+  - id: H6
+    title: Fail-closed (cardinal)
+    spec: ["AGENTS.md §4"]
+    clause: fail-closed
+    rule: any missing evidence / timeout ⇒ FALLBACK, never soft-approve
+    check: flag
+    expect: { key: "fail_closed", value: true }
+
+  - id: H7
+    title: Dialog hygiene — one dialog, abort on timeout
+    spec: ["AGENTS.md §4", "TS 23.018/23.060"]
+    clause: TC-TIMER
+    rule: one dialog per stage; timeout ⇒ abort(); zero leaks
+    check: flag
+    expect: { key: "abort_on_timeout", value: true }
+
+  - id: H8
+    title: Privacy — MSISDN/IMSI/vectors never leave SAS
+    spec: ["AGENTS.md §4"]
+    clause: privacy
+    rule: identity data never returned to the mobile app
+    check: flag
+    expect: { key: "privacy_msisdn_never_to_app", value: true }
+
+  - id: H9
+    title: Wi-Fi path is TS.43/EAP-AKA, not S6a
+    spec: ["TS 33.402"]
+    clause: SWm/SWx
+    rule: Wi-Fi silent auth rides EAP-AKA via 3GPP AAA; S6a needs LTE attach
+    check: mapping_present
+    expect: { key: "wifi_silent_auth" }
+
+  - id: H10
+    title: Fallback SMS OTP routes firewalled (SGd)
+    spec: ["TS 29.338", "FS.19"]
+    clause: SGd via DEA
+    rule: SGd MT-FSM behind the DEA; Home Routing; never raises assurance
+    check: mapping_present
+    expect: { key: "fallback_sms" }
+
+  - id: H11
+    title: TCAP dialog/timer bound (no leak)
+    spec: ["TS 23.018", "TS 23.060"]
+    clause: TC-TIMER / Q.774
+    rule: every TC-BEGIN ends in TC-END or TC-ABORT within budget
+    check: flag
+    expect: { key: "one_dialog_per_stage", value: true }
+
+  - id: H12
+    title: 5G path via Nudm/Nausf, SEPP/N32 boundary
+    spec: ["TS 33.501"]
+    clause: N32 / SEPP
+    rule: 5G silent auth via NEF→Nudm/Nausf; SEPP filters cross-PLMN probes
+    check: mapping_present
+    expect: { key: "reachable_5g" }
+
+  - id: H13
+    title: Resolver stays data-plane (no IP→MSISDN in MAP/Diameter)
+    spec: ["TS 29.273"]
+    clause: S6b/SGi
+    rule: IP binding is PGW/PCRF data-plane; MAP/Diameter never resolve IP
+    check: mapping_present
+    expect: { key: "map_vs_diameter_no_ip2msisdn" }
+
+  - id: H14
+    title: CAMARA contract fidelity
+    spec: ["CAMARA NV v2.1.0"]
+    clause: /verify
+    rule: /verify ⇒ devicePhoneNumberVerified boolean; single-use ≤300s token; 403 non-mobile auth
+    check: flag
+    expect: { key: "camara_contract", value: true }

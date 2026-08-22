@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="380" viewBox="0 0 720 380">
+  <rect width="720" height="380" fill="#FFF8E7" rx="12"/>
+  
+  <rect x="0" y="0" width="720" height="6.0" fill="#078930"/>
+  <rect x="0" y="6.0" width="720" height="6.0" fill="#FCDD09"/>
+  <rect x="0" y="12.0" width="720" height="6.0" fill="#DA121A"/>
+
+  <g opacity="0.18">
+    <rect x="0" y="79.75" width="24.0" height="20.25" fill="#1A1A2E"/>
+    <rect x="30.0" y="70.75" width="18.0" height="29.25" fill="#1A1A2E"/>
+    <rect x="54.0" y="64.0" width="30.0" height="36.0" fill="#0D7377"/>
+    <polygon points="96.0,100 108.0,61.75 120.0,100" fill="#078930"/>
+    <rect x="126.0" y="73.0" width="21.000000000000004" height="27.0" fill="#1A1A2E"/>
+    <rect x="156.0" y="66.25" width="27.0" height="33.75" fill="#1A1A2E"/>
+    <rect x="192.0" y="77.5" width="24.0" height="22.5" fill="#1A1A2E"/>
+    <rect x="228.0" y="68.5" width="18.0" height="31.499999999999996" fill="#0D7377"/>
+    <rect x="258.0" y="79.75" width="30.0" height="20.25" fill="#1A1A2E"/>
+  </g>
+
+  <text x="360" y="55" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="bold" fill="#1A1A2E">
+    Government digital services — citizen login
+  </text>
+  <text x="360" y="74" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#6B7280">
+    e-Gov portals · tax · civil registry · social payments
+  </text>
+
+  <circle cx="175" cy="195" r="78" fill="#FCDD09" stroke="#078930" stroke-width="4" opacity="0.25"/>
+  <rect x="130" y="150" width="90" height="70" rx="4" fill="#1A1A2E"/>
+  <polygon points="175,120 120,155 230,155" fill="#078930"/>
+  <rect x="160" y="175" width="30" height="45" fill="#FFF8E7"/>
+  <rect x="140" y="175" width="12" height="20" fill="#FCDD09"/>
+  <rect x="198" y="175" width="12" height="20" fill="#FCDD09"/>
+  <polygon points="175.0,258.0 177.2335839587114,264.9257354213752 184.51056516295154,264.90983005625054 178.6140147619216,269.1742645786248 180.87785252292474,276.09016994374946 175.0,271.8 169.12214747707526,276.09016994374946 171.3859852380784,269.1742645786248 165.48943483704846,264.90983005625054 172.7664160412886,264.9257354213752" fill="#FCDD09" stroke="#DA121A" stroke-width="1.5"/>
+  <text x="175" y="295" text-anchor="middle" font-size="15" font-weight="bold" fill="#1A1A2E" font-family="Arial,sans-serif">Government</text>
+  <text x="175" y="314" text-anchor="middle" font-size="11" fill="#6B7280" font-family="Arial,sans-serif">Citizen · Ethio Telecom SIM</text>
+
+  <rect x="228.3" y="210.5" width="23.400000000000002" height="39.0" rx="3.9000000000000004" fill="#1A1A2E" stroke="#C9A227" stroke-width="2"/>
+  <rect x="230.9" y="215.7" width="18.200000000000003" height="26.0" rx="2" fill="#FFF8E7"/>
+  <circle cx="240" cy="245.6" r="1.9500000000000002" fill="#C9A227"/>
+
+  <rect x="222" y="210" width="36" height="22" rx="2" fill="#FFF8E7"/>
+  <text x="240" y="220" text-anchor="middle" font-size="5" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">e-Gov</text>
+  <text x="240" y="228" text-anchor="middle" font-size="5" fill="#0D7377" font-family="Arial,sans-serif">Silent login</text>
+
+  <g transform="translate(310,95)">
+    <rect width="380" height="240" rx="12" fill="#FFFFFF" stroke="#C9A227" stroke-width="2"/>
+    <rect x="0" y="0" width="380" height="36" rx="12" fill="#078930"/>
+    <rect x="0" y="18" width="380" height="18" fill="#078930"/>
+    <text x="20" y="24" font-size="15" font-weight="bold" fill="#FFFFFF" font-family="Arial,sans-serif">What government needs</text>
+
+    <circle cx="32" cy="58" r="10" fill="#078930" opacity="0.15"/>
+    <text x="32" y="62" text-anchor="middle" font-size="12" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">✓</text>
+    <text x="50" y="62" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif">Citizen opens e-Gov app on mobile data</text>
+
+    <circle cx="32" cy="96" r="10" fill="#078930" opacity="0.15"/>
+    <text x="32" y="100" text-anchor="middle" font-size="12" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">✓</text>
+    <text x="50" y="100" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif">Prove MSISDN ownership without SMS OTP</text>
+
+    <circle cx="32" cy="134" r="10" fill="#078930" opacity="0.15"/>
+    <text x="32" y="138" text-anchor="middle" font-size="12" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">✓</text>
+    <text x="50" y="138" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif">Reduce fraud on benefits &amp; tax portals</text>
+
+    <circle cx="32" cy="172" r="10" fill="#0D7377" opacity="0.15"/>
+    <text x="32" y="176" text-anchor="middle" font-size="12" fill="#0D7377" font-family="Arial,sans-serif" font-weight="bold">✓</text>
+    <text x="50" y="176" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif">Keep Ethio Telecom SMS revenue intact</text>
+
+    <rect x="16" y="195" width="348" height="34" rx="8" fill="#0D7377" opacity="0.12" stroke="#0D7377" stroke-width="1"/>
+    <text x="190" y="216" text-anchor="middle" font-size="13" fill="#0D7377" font-family="Arial,sans-serif" font-weight="bold">→ Digicom Silent Auth for Government</text>
+  </g>
+  <g transform="translate(310,345)">
+    <rect width="115" height="24" rx="6" fill="#DA121A" opacity="0.12"/>
+    <text x="58" y="16" text-anchor="middle" font-size="10" fill="#DA121A" font-family="Arial,sans-serif">Today: SMS OTP</text>
+  </g>
+  <g transform="translate(435,345)">
+    <rect width="115" height="24" rx="6" fill="#078930" opacity="0.15"/>
+    <text x="58" y="16" text-anchor="middle" font-size="10" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">Goal: Silent Auth</text>
+  </g>
+  <g transform="translate(560,345)">
+    <rect width="115" height="24" rx="6" fill="#FCDD09" opacity="0.3"/>
+    <text x="58" y="16" text-anchor="middle" font-size="10" fill="#1A1A2E" font-family="Arial,sans-serif">Fallback SMS OK</text>
+  </g>
+
+</svg>

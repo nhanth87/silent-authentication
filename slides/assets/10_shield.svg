@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="420" viewBox="0 0 760 420">
+  <rect width="760" height="420" fill="#FFF8E7" rx="12"/>
+  
+  <rect x="0" y="0" width="760" height="6.0" fill="#078930"/>
+  <rect x="0" y="6.0" width="760" height="6.0" fill="#FCDD09"/>
+  <rect x="0" y="12.0" width="760" height="6.0" fill="#DA121A"/>
+
+  <text x="380" y="46" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="bold" fill="#1A1A2E">
+    Defense in depth — three security layers
+  </text>
+  <text x="380" y="68" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#0D7377">
+    Digicom orchestrates the top layer for banks · Operator owns network borders
+  </text>
+
+  <!-- Outer ring: operator border -->
+  <ellipse cx="380" cy="215" rx="310" ry="130" fill="#DA121A" opacity="0.08" stroke="#DA121A" stroke-width="2.5"/>
+  <text x="380" y="108" text-anchor="middle" font-size="13" fill="#DA121A" font-family="Arial,sans-serif" font-weight="bold">
+    Layer 3 — SS7 · Diameter · 5G SEPP (operator border)
+  </text>
+  <text x="380" y="126" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">
+    Firewall at interconnect · block rogue signalling · protect home network
+  </text>
+
+  <!-- Middle ring: SMS firewall -->
+  <ellipse cx="380" cy="220" rx="220" ry="95" fill="#FCDD09" opacity="0.2" stroke="#C9A227" stroke-width="2.5"/>
+  <text x="620" y="175" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif" font-weight="bold">Layer 2</text>
+  <text x="620" y="192" font-size="11" fill="#1A1A2E" font-family="Arial,sans-serif">SMS Firewall</text>
+  <text x="620" y="208" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">Home routing</text>
+  <text x="620" y="224" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">Anti-fraud rules</text>
+
+  <!-- Inner ring: Silent Auth -->
+  <ellipse cx="380" cy="225" rx="120" ry="62" fill="#078930" opacity="0.35" stroke="#078930" stroke-width="3"/>
+  <text x="380" y="210" text-anchor="middle" font-size="13" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="bold">Layer 1</text>
+  <text x="380" y="228" text-anchor="middle" font-size="12" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="bold">Silent Auth</text>
+  <text x="380" y="246" text-anchor="middle" font-size="10" fill="#FFF8E7" font-family="Arial,sans-serif">Replace OTP · no code to steal</text>
+
+  <!-- Shield icon center -->
+  <path d="M 380 248 L 350 262 V 290 Q 380 310 410 290 V 262 Z" fill="#0D7377" stroke="#C9A227" stroke-width="2"/>
+  <path d="M 368 278 L 378 288 L 398 268" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Layer labels on left -->
+  <g transform="translate(30, 155)">
+    <rect width="130" height="28" rx="6" fill="#078930" opacity="0.15" stroke="#078930" stroke-width="1"/>
+    <text x="65" y="19" text-anchor="middle" font-size="10" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">Digicom for banks</text>
+  </g>
+  <line x1="160" y1="169" x2="260" y2="225" stroke="#078930" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+  <g transform="translate(30, 210)">
+    <rect width="130" height="28" rx="6" fill="#C9A227" opacity="0.15" stroke="#C9A227" stroke-width="1"/>
+    <text x="65" y="19" text-anchor="middle" font-size="10" fill="#1A1A2E" font-family="Arial,sans-serif" font-weight="bold">Operator SMS stack</text>
+  </g>
+  <line x1="160" y1="224" x2="260" y2="225" stroke="#C9A227" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+  <g transform="translate(30, 265)">
+    <rect width="130" height="28" rx="6" fill="#DA121A" opacity="0.12" stroke="#DA121A" stroke-width="1"/>
+    <text x="65" y="19" text-anchor="middle" font-size="10" fill="#DA121A" font-family="Arial,sans-serif" font-weight="bold">Ethio Telecom core</text>
+  </g>
+  <line x1="160" y1="279" x2="260" y2="240" stroke="#DA121A" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+  <!-- Bottom summary -->
+  <rect x="60" y="355" width="640" height="50" rx="10" fill="#0D7377" opacity="0.1" stroke="#0D7377" stroke-width="1.5"/>
+  <text x="380" y="378" text-anchor="middle" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif">
+    Silent Auth removes the attack surface · SMS firewall protects remaining OTP · Border secures signalling
+  </text>
+  <text x="380" y="396" text-anchor="middle" font-size="11" fill="#0D7377" font-family="Arial,sans-serif">
+    Together: fewer fraud losses for banks, stronger network for operator, new revenue for Digicom
+  </text>
+
+</svg>

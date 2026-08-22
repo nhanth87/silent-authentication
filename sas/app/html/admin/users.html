@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Users — Digicom-ET SAS</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('sas-theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { DEFAULT: '#0c1220', panel: '#141c2b', line: '#243044', mute: '#7a8ba3' },
+            signal: { DEFAULT: '#e8a317', dim: '#b87f0f' }
+          },
+          fontFamily: {
+            display: ['"DM Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="/admin/static/htmx.min.js"></script>
+  <link rel="stylesheet" href="/admin/static/admin.css"/>
+  <script defer src="/admin/static/sas-shell.js"></script>
+  <script defer src="/admin/static/alpine.min.js"></script>
+</head>
+<body x-data class="min-h-full bg-ink font-display text-slate-200 antialiased"
+      style="background-image:radial-gradient(ellipse 80% 50% at 10% -10%,rgba(232,163,23,0.08),transparent),radial-gradient(ellipse 60% 40% at 100% 0%,rgba(56,100,160,0.12),transparent)">
+  <header class="sticky top-0 z-40 border-b border-ink-line/80 bg-ink/90 backdrop-blur">
+    <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div class="flex items-center gap-3">
+        <span class="h-8 w-1 rounded-full bg-signal" aria-hidden="true"></span>
+        <h1 class="text-lg font-semibold text-slate-100">Users</h1>
+      </div>
+      <nav class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-mute">{{NAV_LINKS}}</nav>
+    </div>
+  </header>
+  <main class="mx-auto max-w-6xl px-4 py-8">
+    {{NOTICE}}
+    <p class="text-xs uppercase tracking-[0.25em] text-signal">Create / update</p>
+    <div class="ops-section-indent">
+      <section class="form-card mb-10 rounded-lg border border-ink-line bg-ink-panel/80 p-5">
+        <h2 class="mt-1 text-xl font-semibold text-slate-50">Admin user</h2>
+        <p class="mt-1 mb-4 text-sm text-slate-300">
+          Roles: ADMIN | OPS | TENANT. TENANT login <strong>username must equal tenantId</strong>.
+          Choose action <code class="font-mono">delete</code> with an existing username to remove it.
+        </p>
+        <form method="post" action="/admin/users" class="space-y-3"
+              hx-post="/admin/users"
+              hx-target="#user-rows"
+              hx-swap="innerHTML"
+              hx-indicator="#users-ind">
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-ink-mute">Username</label>
+            <input name="username" required
+                   class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none focus:ring-1 focus:ring-signal/40"/>
+          </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-ink-mute">Password</label>
+            <input name="password" type="password" autocomplete="new-password"
+                   class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none focus:ring-1 focus:ring-signal/40"/>
+          </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-ink-mute">Role</label>
+            <select name="role" class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none">
+              <option value="OPS">OPS</option>
+              <option value="ADMIN">ADMIN</option>
+              <option value="TENANT">TENANT</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-ink-mute">Tenant</label>
+            <select name="tenantId" class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none">{{TENANT_OPTS}}</select>
+          </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-ink-mute">Display name</label>
+            <input name="displayName"
+                   class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none focus:ring-1 focus:ring-signal/40"/>
+          </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-ink-mute">enabled</label>
+            <select name="enabled" class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs uppercase tracking-wider text-ink-mute">action</label>
+            <select name="action" class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none">
+              <option value="create">create</option>
+              <option value="update">update</option>
+              <option value="delete">delete</option>
+            </select>
+          </div>
+          <button type="submit" class="w-full rounded-md bg-signal py-2.5 text-sm font-semibold text-ink hover:bg-signal-dim">
+            Submit
+          </button>
+        </form>
+      </section>
+    </div>
+
+    <div class="table-wrap">
+      <p class="text-xs uppercase tracking-[0.25em] text-signal">Directory</p>
+      <div class="ops-section-indent">
+        <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <h2 class="mt-1 text-xl font-semibold text-slate-50">Admin users</h2>
+          <div class="flex items-center gap-3">
+            <span id="users-ind" class="htmx-indicator text-xs font-mono text-ink-mute">syncing…</span>
+            <button type="button"
+                    class="rounded-md border border-ink-line px-3 py-1.5 text-xs text-ink-mute hover:border-signal hover:text-signal"
+                    hx-get="/admin/users/partial"
+                    hx-target="#user-rows"
+                    hx-swap="innerHTML"
+                    hx-indicator="#users-ind">
+              Refresh table
+            </button>
+          </div>
+        </div>
+        <div class="overflow-x-auto rounded-lg border border-ink-line mb-8">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-ink-panel text-xs uppercase tracking-wider text-ink-mute">
+              <tr>
+                <th class="px-3 py-2.5 font-medium">username</th>
+                <th class="px-3 py-2.5 font-medium">role</th>
+                <th class="px-3 py-2.5 font-medium">tenant</th>
+                <th class="px-3 py-2.5 font-medium">display</th>
+                <th class="px-3 py-2.5 font-medium">enabled</th>
+              </tr>
+            </thead>
+            <tbody id="user-rows"
+                   class="hx-table-live divide-y divide-ink-line font-mono text-xs [&_td]:px-3 [&_td]:py-2">{{USER_ROWS}}</tbody>
+          </table>
+        </div>
+
+        <p class="text-xs uppercase tracking-[0.25em] text-signal">App users / bearer keys</p>
+        <div class="ops-section-indent">
+          <section class="form-card mb-6 rounded-lg border border-ink-line bg-ink-panel/80 p-5">
+            <h2 class="mt-1 text-xl font-semibold text-slate-50">Create app user</h2>
+            <p class="mt-1 mb-4 text-sm text-slate-300">
+              Generates a bearer API key bound to the tenant's networkId. The plaintext key is shown once.
+            </p>
+            <form method="post" action="/admin/users" class="space-y-3"
+                  hx-post="/admin/users"
+                  hx-target="#app-key"
+                  hx-swap="innerHTML"
+                  hx-indicator="#app-ind">
+              <div>
+                <label class="block text-xs uppercase tracking-wider text-ink-mute">Username</label>
+                <input name="username" required
+                       class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none focus:ring-1 focus:ring-signal/40"/>
+              </div>
+              <div>
+                <label class="block text-xs uppercase tracking-wider text-ink-mute">Tenant</label>
+                <select name="tenantId" required class="mt-1 w-full rounded-md border border-ink-line bg-ink-panel px-3 py-2 text-sm focus:border-signal focus:outline-none">{{TENANT_OPTS}}</select>
+              </div>
+              <input type="hidden" name="action" value="create-appkey"/>
+              <button type="submit" class="w-full rounded-md bg-signal py-2.5 text-sm font-semibold text-ink hover:bg-signal-dim">
+                Generate API key
+              </button>
+            </form>
+            <div id="app-key"></div>
+            <span id="app-ind" class="htmx-indicator text-xs font-mono text-ink-mute">generating…</span>
+          </section>
+
+          <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <h2 class="mt-1 text-lg font-semibold text-slate-50">App users</h2>
+            <button type="button"
+                    class="rounded-md border border-ink-line px-3 py-1.5 text-xs text-ink-mute hover:border-signal hover:text-signal"
+                    hx-get="/admin/users/partial"
+                    hx-target="#app-user-rows"
+                    hx-swap="innerHTML">
+              Refresh
+            </button>
+          </div>
+          <div class="overflow-x-auto rounded-lg border border-ink-line">
+            <table class="w-full text-left text-sm">
+              <thead class="bg-ink-panel text-xs uppercase tracking-wider text-ink-mute">
+                <tr>
+                  <th class="px-3 py-2.5 font-medium">username</th>
+                  <th class="px-3 py-2.5 font-medium">tenant</th>
+                  <th class="px-3 py-2.5 font-medium">networkId</th>
+                  <th class="px-3 py-2.5 font-medium">key fingerprint</th>
+                  <th class="px-3 py-2.5 font-medium">enabled</th>
+                </tr>
+              </thead>
+              <tbody id="app-user-rows"
+                     class="hx-table-live divide-y divide-ink-line font-mono text-xs [&_td]:px-3 [&_td]:py-2">{{APP_USER_ROWS}}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

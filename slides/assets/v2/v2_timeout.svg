@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="380" viewBox="0 0 800 380">
+  <rect width="800" height="380" fill="#FFF8E7" rx="8"/>
+  
+  <defs>
+    <marker id="to-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+    <marker id="to-arr-rev" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+
+  <text x="400.0" y="28" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15"
+        font-weight="bold" fill="#1A1A2E">Timeout budget — SAS is dialog anchor</text>
+
+  <line x1="60" y1="140" x2="740" y2="140" stroke="#1A1A2E" stroke-width="2"/>
+  <line x1="60" y1="130" x2="60" y2="150" stroke="#1A1A2E" stroke-width="2"/>
+  <line x1="740" y1="130" x2="740" y2="150" stroke="#1A1A2E" stroke-width="2"/>
+  <text x="60" y="165" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#6B7280">0 ms</text>
+  <text x="740" y="165" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#6B7280">3000 ms</text>
+
+  <rect x="60" y="100" width="80" height="28" rx="4" fill="#078930" opacity="0.25" stroke="#078930" stroke-width="1.5"/>
+  <text x="100.0" y="118" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="bold" fill="#078930">Resolver 300 ms</text>
+  <text x="100.0" y="190" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#1A1A2E">PGW lookup · FALLBACK on miss</text>
+
+  <rect x="140" y="100" width="380" height="28" rx="4" fill="#0D7377" opacity="0.25" stroke="#0D7377" stroke-width="1.5"/>
+  <text x="330.0" y="118" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="bold" fill="#0D7377">MAP dialog 2 s</text>
+  <text x="330.0" y="190" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#1A1A2E">TC dialog timer · PSI/ATI/SAI</text>
+
+  <rect x="60" y="100" width="620" height="28" rx="4" fill="#C9A227" opacity="0.25" stroke="#C9A227" stroke-width="1.5"/>
+  <text x="370.0" y="118" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="bold" fill="#C9A227">Total SAS ≤ 3 s</text>
+  <text x="370.0" y="190" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#1A1A2E">Bank shows normal login</text>
+
+  <rect x="80" y="230" width="640" height="80" rx="6" fill="#DA121A10" stroke="#DA121A" stroke-width="1.5"/>
+  <text x="400" y="254" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="bold" fill="#DA121A">
+    On MAP/Diameter timeout: abort dialog → FALLBACK
+  </text>
+  <text x="400" y="276" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">
+    SAS never lets hung HSS query stall the app · no dialog leak
+  </text>
+  <text x="400" y="296" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#6B7280">
+    Diameter S6a (IDR/AIR): same 2 s budget · Resolver: 300 ms hard cap
+  </text>
+
+</svg>

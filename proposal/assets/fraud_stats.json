@@ -1,0 +1,170 @@
+[
+  {
+    "label": "SMS intercept success rate (SS7 tests)",
+    "value": 90,
+    "unit": "percent",
+    "source": "Positive Technologies SS7 research (9 of 10 messages)",
+    "year": 2018
+  },
+  {
+    "label": "SMS messages interceptable (numerator)",
+    "value": 9,
+    "unit": "of 10",
+    "source": "Positive Technologies",
+    "year": 2017
+  },
+  {
+    "label": "Global mobile money registered accounts",
+    "value": 1.75,
+    "unit": "billion",
+    "source": "GSMA State of the Industry Report on Mobile Money",
+    "year": 2023
+  },
+  {
+    "label": "Sub-Saharan Africa mobile money registered accounts",
+    "value": 763,
+    "unit": "million",
+    "source": "GSMA Mobile Money Report",
+    "year": 2023
+  },
+  {
+    "label": "Global mobile money transaction value",
+    "value": 1.4,
+    "unit": "trillion USD",
+    "source": "GSMA",
+    "year": 2023
+  },
+  {
+    "label": "Global mobile money active 30-day accounts",
+    "value": 435,
+    "unit": "million",
+    "source": "GSMA",
+    "year": 2023
+  },
+  {
+    "label": "Global MFA market size",
+    "value": 17.9,
+    "unit": "billion USD",
+    "source": "MarketsandMarkets (industry estimate)",
+    "year": 2023
+  },
+  {
+    "label": "Projected global MFA market size",
+    "value": 34.8,
+    "unit": "billion USD",
+    "source": "MarketsandMarkets forecast",
+    "year": 2028
+  },
+  {
+    "label": "Global cybercrime cost estimate",
+    "value": 8,
+    "unit": "trillion USD annually",
+    "source": "Cybersecurity Ventures",
+    "year": 2023
+  },
+  {
+    "label": "Projected global cybercrime cost",
+    "value": 10.5,
+    "unit": "trillion USD annually",
+    "source": "Cybersecurity Ventures forecast",
+    "year": 2025
+  },
+  {
+    "label": "AIT industry loss estimate (messaging ecosystem)",
+    "value": 1,
+    "unit": "billion USD+ annually",
+    "source": "Mobile Ecosystem Forum / operator fraud forums",
+    "year": 2022
+  },
+  {
+    "label": "Ethiopia population",
+    "value": 120,
+    "unit": "million",
+    "source": "World Bank estimate",
+    "year": 2024
+  },
+  {
+    "label": "Ethio Telecom mobile subscribers",
+    "value": 72.5,
+    "unit": "million",
+    "source": "Ethio Telecom / ITU (mid-range estimate)",
+    "year": 2024
+  },
+  {
+    "label": "Ethiopia Telebirr active users",
+    "value": 45,
+    "unit": "million",
+    "source": "Industry estimate from Ethio Telecom disclosures",
+    "year": 2025
+  },
+  {
+    "label": "Pilot target OTP SMS reduction",
+    "value": 50,
+    "unit": "percent minimum",
+    "source": "Digicom-ET proposal KPI (estimated target)",
+    "year": 2026
+  },
+  {
+    "label": "Pilot target login completion uplift",
+    "value": 20,
+    "unit": "percentage points",
+    "source": "Digicom-ET proposal KPI (estimated target)",
+    "year": 2026
+  },
+  {
+    "label": "Pilot target ATO reduction (SMS/SIM-swap attributed)",
+    "value": 40,
+    "unit": "percent",
+    "source": "Digicom-ET proposal KPI (estimated target)",
+    "year": 2026
+  },
+  {
+    "label": "Silent auth SAS p95 latency budget",
+    "value": 3,
+    "unit": "seconds",
+    "source": "Digicom-ET technical design",
+    "year": 2026
+  },
+  {
+    "label": "Urban 4G silent auth session eligibility",
+    "value": 60,
+    "unit": "percent",
+    "source": "Digicom-ET coverage estimate (Addis Ababa)",
+    "year": 2026
+  },
+  {
+    "label": "Enterprise OTP SMS cost range (emerging markets)",
+    "value": 0.03,
+    "unit": "USD per message (midpoint)",
+    "source": "Operator enterprise tariff estimate",
+    "year": 2024
+  },
+  {
+    "label": "Fayda digital ID registrations",
+    "value": 10,
+    "unit": "million+",
+    "source": "NIDP public milestones (estimated floor)",
+    "year": 2025
+  },
+  {
+    "label": "Cyber-enabled fraud share of enterprise fraud loss",
+    "value": 37.5,
+    "unit": "percent (midpoint of 30-45% range)",
+    "source": "World Bank / UNODC thematic reports",
+    "year": 2023
+  },
+  {
+    "label": "MAP resolver stage timeout budget",
+    "value": 300,
+    "unit": "milliseconds",
+    "source": "Digicom-ET silent-auth-flow.md",
+    "year": 2026
+  },
+  {
+    "label": "MAP/Diameter verifier dialog timeout",
+    "value": 2,
+    "unit": "seconds",
+    "source": "Digicom-ET silent-auth-flow.md",
+    "year": 2026
+  }
+]

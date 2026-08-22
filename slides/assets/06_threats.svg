@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="390" viewBox="0 0 720 390">
+  <rect width="720" height="390" fill="#FFF8E7" rx="12"/>
+  
+  <rect x="0" y="0" width="720" height="6.0" fill="#078930"/>
+  <rect x="0" y="6.0" width="720" height="6.0" fill="#FCDD09"/>
+  <rect x="0" y="12.0" width="720" height="6.0" fill="#DA121A"/>
+
+  <text x="360" y="50" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="bold" fill="#1A1A2E">
+    Why SMS OTP is fragile
+  </text>
+
+  <rect x="90" y="90" width="140" height="130" rx="10" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+  <circle cx="160" cy="125" r="18" fill="#DA121A"/>
+  <text x="160" y="130" text-anchor="middle" font-size="14" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="bold">!</text>
+  <text x="160" y="165" text-anchor="middle" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif" font-weight="bold">SS7 intercept</text>
+<text x="160" y="190" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">Redirect MT-SMS</text><text x="160" y="206" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">via SRI-SM abuse</text>
+  <rect x="260" y="90" width="140" height="130" rx="10" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+  <circle cx="330" cy="125" r="18" fill="#DA121A"/>
+  <text x="330" y="130" text-anchor="middle" font-size="14" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="bold">!</text>
+  <text x="330" y="165" text-anchor="middle" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif" font-weight="bold">SIM swap</text>
+<text x="330" y="190" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">Number moved to</text><text x="330" y="206" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">attacker SIM</text>
+  <rect x="430" y="90" width="140" height="130" rx="10" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+  <circle cx="500" cy="125" r="18" fill="#DA121A"/>
+  <text x="500" y="130" text-anchor="middle" font-size="14" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="bold">!</text>
+  <text x="500" y="165" text-anchor="middle" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif" font-weight="bold">Phishing</text>
+<text x="500" y="190" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">User types OTP</text><text x="500" y="206" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">into fake page</text>
+  <rect x="600" y="90" width="140" height="130" rx="10" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+  <circle cx="670" cy="125" r="18" fill="#DA121A"/>
+  <text x="670" y="130" text-anchor="middle" font-size="14" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="bold">!</text>
+  <text x="670" y="165" text-anchor="middle" font-size="12" fill="#1A1A2E" font-family="Arial,sans-serif" font-weight="bold">Delivery fail</text>
+<text x="670" y="190" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">Late / lost SMS</text><text x="670" y="206" text-anchor="middle" font-size="10" fill="#6B7280" font-family="Arial,sans-serif">→ abandoned</text>
+  <rect x="326.4" y="280.8" width="67.2" height="38.4" rx="6" fill="#0D7377"/>
+  <polygon points="350.4,319.2 360,333.6 369.6,319.2" fill="#0D7377"/>
+  <text x="360" y="304.8" text-anchor="middle" font-family="Arial,sans-serif"
+        font-size="14.399999999999999" fill="#FFFFFF" font-weight="bold">SMS OTP</text>
+
+  <line x1="321.6" y1="273.6" x2="398.4" y2="333.6"
+        stroke="#DA121A" stroke-width="4.8" stroke-linecap="round"/>
+<text x="360" y="360" text-anchor="middle" font-size="13" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">Silent Auth removes the code — nothing to steal</text>
+</svg>

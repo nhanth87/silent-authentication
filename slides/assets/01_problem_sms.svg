@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="380" viewBox="0 0 720 380">
+  <rect width="720" height="380" fill="#FFF8E7" rx="12"/>
+  
+  <rect x="0" y="0" width="720" height="6.0" fill="#078930"/>
+  <rect x="0" y="6.0" width="720" height="6.0" fill="#FCDD09"/>
+  <rect x="0" y="12.0" width="720" height="6.0" fill="#DA121A"/>
+
+  <g opacity="0.18">
+    <rect x="20" y="87.5" width="54.4" height="22.5" fill="#1A1A2E"/>
+    <rect x="88.0" y="77.5" width="40.8" height="32.5" fill="#1A1A2E"/>
+    <rect x="142.39999999999998" y="70.0" width="68.0" height="40.0" fill="#0D7377"/>
+    <polygon points="237.6,110 264.79999999999995,67.5 292.0,110" fill="#078930"/>
+    <rect x="305.59999999999997" y="80.0" width="47.6" height="30.0" fill="#1A1A2E"/>
+    <rect x="373.6" y="72.5" width="61.199999999999996" height="37.5" fill="#1A1A2E"/>
+    <rect x="455.2" y="85.0" width="54.4" height="25.0" fill="#1A1A2E"/>
+    <rect x="536.8" y="75.0" width="40.8" height="35.0" fill="#0D7377"/>
+    <rect x="604.8" y="87.5" width="68.0" height="22.5" fill="#1A1A2E"/>
+  </g>
+
+  <text x="360" y="55" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" font-weight="bold" fill="#1A1A2E">
+    Today's pain: SMS OTP for banking login
+  </text>
+  <text x="360" y="74" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="#6B7280">
+    Ethiopian bank customers wait, worry, and abandon
+  </text>
+
+  <g transform="translate(70,115)">
+    <rect width="120" height="130" rx="10" fill="#FFFFFF" stroke="#078930" stroke-width="2"/>
+    <circle cx="60" cy="45" r="22" fill="#FFF8E7" stroke="#1A1A2E" stroke-width="1.5"/>
+    <ellipse cx="60" cy="82" rx="28" ry="18" fill="#078930"/>
+    <text x="60" y="115" text-anchor="middle" font-size="12" font-weight="bold" fill="#1A1A2E" font-family="Arial,sans-serif">Citizen</text>
+  </g>
+
+  <rect x="113.8" y="148.0" width="32.4" height="54.0" rx="5.4" fill="#1A1A2E" stroke="#C9A227" stroke-width="2"/>
+  <rect x="117.39999999999999" y="155.2" width="25.2" height="36.0" rx="2" fill="#FFF8E7"/>
+  <circle cx="130" cy="196.6" r="2.7" fill="#C9A227"/>
+
+  <rect x="108" y="148" width="44" height="36" rx="2" fill="#FFF8E7" stroke="#C9A227" stroke-width="1"/>
+  <text x="130" y="162" text-anchor="middle" font-size="7" fill="#078930" font-family="Arial,sans-serif" font-weight="bold">CBE</text>
+  <text x="130" y="172" text-anchor="middle" font-size="6" fill="#6B7280" font-family="Arial,sans-serif">Login…</text>
+  <circle cx="130" cy="180" r="4" fill="none" stroke="#DA121A" stroke-width="1.5" stroke-dasharray="2,2"/>
+  <text x="130" y="218" text-anchor="middle" font-size="9" fill="#DA121A" font-family="Arial,sans-serif">😤 waiting</text>
+
+  <rect x="274.9" y="166.5" width="10.2" height="34.0" fill="#1A1A2E"/>
+  <circle cx="280" cy="159.7" r="6.8" fill="#0D7377" stroke="#C9A227" stroke-width="2"/>
+  <path d="M 263.0,166.5 Q 280,145.25 297.0,166.5"
+        fill="none" stroke="#078930" stroke-width="2" opacity="0.7"/>
+  <path d="M 256.2,175 Q 280,136.75 303.8,175"
+        fill="none" stroke="#FCDD09" stroke-width="2" opacity="0.5"/>
+<text x="280" y="218" text-anchor="middle" font-size="9" fill="#0D7377" font-family="Arial,sans-serif">Ethio Telecom</text>
+  <defs>
+    <marker id="arr-195-165" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#DA121A"/>
+    </marker>
+  </defs>
+  <line x1="195" y1="165" x2="250" y2="165" stroke="#DA121A" stroke-width="2.5"
+        marker-end="url(#arr-195-165)"/>
+  <text x="222.5" y="153.0" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#1A1A2E">send OTP</text>
+
+  <circle cx="340" cy="145" r="11.9" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+  <line x1="340" y1="145" x2="340" y2="138.2" stroke="#DA121A" stroke-width="2" stroke-linecap="round"/>
+  <line x1="340" y1="145" x2="345.1" y2="146.7" stroke="#DA121A" stroke-width="2" stroke-linecap="round"/>
+  <text x="340" y="165.4" text-anchor="middle" font-size="7.6499999999999995" fill="#DA121A" font-family="Arial,sans-serif">3–30s</text>
+
+  <rect x="369.2" y="147.4" width="61.60000000000001" height="35.2" rx="6" fill="#0D7377"/>
+  <polygon points="391.2,182.6 400,195.8 408.8,182.6" fill="#0D7377"/>
+  <text x="400" y="169.4" text-anchor="middle" font-family="Arial,sans-serif"
+        font-size="13.200000000000001" fill="#FFFFFF" font-weight="bold">SMS OTP</text>
+
+  <path d="M 455,165 Q 490,130 530,155" fill="none" stroke="#DA121A" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="492" y="138" text-anchor="middle" font-size="9" fill="#DA121A" font-family="Arial,sans-serif">SS7 path</text>
+
+  <circle cx="530" cy="121.0" r="7.5" fill="#1A1A2E"/>
+  <ellipse cx="530" cy="136.0" rx="10.5" ry="7.5" fill="#DA121A" opacity="0.85"/>
+  <rect x="516.5" y="128.5" width="27.0" height="2.25" fill="#DA121A"/>
+  <text x="530" y="151.0" text-anchor="middle" font-size="6.75" fill="#DA121A" font-family="Arial,sans-serif" font-weight="bold">Attacker</text>
+
+  <defs>
+    <marker id="arr-455-175" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+  <line x1="455" y1="175" x2="580" y2="175" stroke="#C9A227" stroke-width="2.5"
+        marker-end="url(#arr-455-175)"/>
+  <text x="517.5" y="163.0" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#1A1A2E">type code</text>
+
+  <polygon points="630,150.0 595.0,164.0 665.0,164.0" fill="#078930"/>
+  <rect x="595.0" y="164.0" width="70.0" height="36.0" fill="#1A1A2E"/>
+  <rect x="607.0" y="168.0" width="8.0" height="22.0" fill="#FFF8E7"/><rect x="621.0" y="168.0" width="8.0" height="22.0" fill="#FFF8E7"/><rect x="635.0" y="168.0" width="8.0" height="22.0" fill="#FFF8E7"/><rect x="649.0" y="168.0" width="8.0" height="22.0" fill="#FFF8E7"/>
+  <rect x="591.0" y="200.0" width="78.0" height="4.0" fill="#C9A227"/>
+<text x="630" y="218" text-anchor="middle" font-size="9" fill="#1A1A2E" font-family="Arial,sans-serif">Bank server</text>
+  <g transform="translate(40,285)">
+    <rect width="210" height="68" rx="10" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+    <rect width="210" height="68" rx="10" fill="#DA121A" opacity="0.08"/>
+    <circle cx="28" cy="28" r="16" fill="#DA121A" opacity="0.2"/>
+    <text x="28" y="33" text-anchor="middle" font-size="14" fill="#DA121A" font-family="Arial,sans-serif">⏱</text>
+    <text x="55" y="28" font-size="12" fill="#DA121A" font-family="Arial,sans-serif" font-weight="bold">Slow / fails</text>
+    <text x="55" y="48" font-size="11" fill="#1A1A2E" font-family="Arial,sans-serif">3–30s delivery</text>
+  </g>
+
+  <g transform="translate(250,285)">
+    <rect width="210" height="68" rx="10" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+    <rect width="210" height="68" rx="10" fill="#DA121A" opacity="0.08"/>
+    <circle cx="28" cy="28" r="16" fill="#DA121A" opacity="0.2"/>
+    <text x="28" y="33" text-anchor="middle" font-size="14" fill="#DA121A" font-family="Arial,sans-serif">⚠</text>
+    <text x="55" y="28" font-size="12" fill="#DA121A" font-family="Arial,sans-serif" font-weight="bold">SS7 / SIM-swap</text>
+    <text x="55" y="48" font-size="11" fill="#1A1A2E" font-family="Arial,sans-serif">OTP can be stolen</text>
+  </g>
+
+  <g transform="translate(460,285)">
+    <rect width="210" height="68" rx="10" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+    <rect width="210" height="68" rx="10" fill="#DA121A" opacity="0.08"/>
+    <circle cx="28" cy="28" r="16" fill="#DA121A" opacity="0.2"/>
+    <text x="28" y="33" text-anchor="middle" font-size="14" fill="#DA121A" font-family="Arial,sans-serif">✗</text>
+    <text x="55" y="28" font-size="12" fill="#DA121A" font-family="Arial,sans-serif" font-weight="bold">Friction</text>
+    <text x="55" y="48" font-size="11" fill="#1A1A2E" font-family="Arial,sans-serif">Users abandon login</text>
+  </g>
+
+</svg>

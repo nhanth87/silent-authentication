@@ -1,0 +1,62 @@
+// ============================================================================
+//  ss7-sas.json — jSS7 stack config for the Silent Auth SAS MAP verifier.
+//
+//  The SAS queries the operator's OWN HLR/HSS only (FS.11: never interconnect
+//  ATI). This config wires a single M3UA ASP toward the home STP/HLR so the
+//  Jss7MapVerifierBackend can open PSI (provideSubscriberInfo) + SAI
+//  (sendAuthenticationInfo) dialogs.
+//
+//  Enable with:
+//    sas.transport.map=jss7
+//    sas.transport.jss7.config=src/main/resources/ss7-sas.json
+//    sas.transport.jss7.hlr-gt=<HLR global title>
+//    sas.transport.jss7.local-gt=<SAS local global title>
+// ============================================================================
+{
+  "stackName": "sas-ss7",
+
+  // MAP only — the SAS verifier never uses CAP.
+  "protocols": { "map": true, "cap": false },
+
+  // ── SCTP transport toward the home STP ──────────────────────────────────
+  "sctp": {
+    "connectDelay": 5000,
+    "workerThreads": 4,
+    "links": [
+      { "name": "SAS-STP-A", "local": "127.0.0.1:2905", "peer": "127.0.0.1:2906", "aspId": 1 }
+    ]
+  },
+
+  // ── M3UA ────────────────────────────────────────────────────────────────
+  "m3ua": {
+    "as": [
+      { "name": "SAS-AS", "mode": "loadshare", "functionality": "as", "ipsp": "client",
+        "routingContext": 0, "links": ["SAS-STP-A"] }
+    ],
+    "routes": [
+      { "to": { "dpc": 2, "opc": 1 }, "via": "SAS-AS" }
+    ]
+  },
+
+  // ── SCCP ────────────────────────────────────────────────────────────────
+  "sccp": {
+    "localPoints": [
+      { "pc": 1, "networkIndicator": "national", "networkId": 0,
+        "reachablePointCodes": [2] }
+    ],
+    "routing": [
+      // Outbound: any called GT (the HLR title) -> STP at PC 2, SSN 6 (HLR).
+      { "from": "local", "match": { "gt": "*" }, "to": { "pc": 2, "ssn": 6 }, "mask": "K" },
+      // Inbound: responses routed back to our local PC on SSN 6.
+      { "from": "remote", "match": { "gt": "*" }, "to": { "pc": 1, "ssn": 6 } }
+    ]
+  },
+
+  // ── TCAP — dialog hygiene (H7/H11): bounded idle + invoke timers ────────
+  "tcap": { "dialogIdleTimeout": 5000, "invokeTimeout": 2500, "maxDialogs": 1000 },
+
+  // ── services: SSN 6 = HLR service on this stack ─────────────────────────
+  "services": [
+    { "name": "hlr", "ssn": 6, "protocol": "map" }
+  ]
+}

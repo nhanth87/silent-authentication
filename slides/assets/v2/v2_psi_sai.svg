@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420">
+  <rect width="800" height="420" fill="#FFF8E7" rx="8"/>
+  
+  <defs>
+    <marker id="ps-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+    <marker id="ps-arr-rev" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+
+  <text x="400.0" y="28" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15"
+        font-weight="bold" fill="#1A1A2E">Verifier signalling — PSI vs SAI</text>
+
+  <rect x="50" y="70" width="330" height="200" rx="6" fill="#FFFFFF" stroke="#078930" stroke-width="2"/>
+  <text x="215.0" y="92" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#078930">PSI — ProvideSubscriberInfo</text>
+  <line x1="58" y1="100" x2="372" y2="100" stroke="#078930" stroke-width="1" opacity="0.4"/>
+
+  <text x="62" y="118" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">FS.11 Category 2.1</text>
+
+  <text x="62" y="134" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">subscriberState + locationInfo</text>
+
+  <text x="62" y="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Primary reachability check</text>
+
+  <text x="62" y="166" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Intra-network HLR query</text>
+
+  <text x="62" y="182" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E"></text>
+
+  <text x="62" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">When Digicom uses PSI:</text>
+
+  <text x="62" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">• Default 2G/3G verify path</text>
+
+  <text x="62" y="230" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">• Check attached / reachable</text>
+
+  <text x="62" y="246" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">• VLR/SGSN location plausibility</text>
+
+  <rect x="420" y="70" width="330" height="200" rx="6" fill="#FFFFFF" stroke="#0D7377" stroke-width="2"/>
+  <text x="585.0" y="92" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#0D7377">SAI — SendAuthenticationInfo</text>
+  <line x1="428" y1="100" x2="742" y2="100" stroke="#0D7377" stroke-width="1" opacity="0.4"/>
+
+  <text x="432" y="118" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">FS.11 Category 3.2</text>
+
+  <text x="432" y="134" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Auth vectors / key freshness</text>
+
+  <text x="432" y="150" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">SIM-swap detection signal</text>
+
+  <text x="432" y="166" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Compare lastUpdate age</text>
+
+  <text x="432" y="182" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E"></text>
+
+  <text x="432" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">When Digicom uses SAI:</text>
+
+  <text x="432" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">• High-risk transactions</text>
+
+  <text x="432" y="230" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">• Fresh IMSI change detected</text>
+
+  <text x="432" y="246" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">• Supplement PSI for swap age</text>
+
+  <rect x="50" y="290" width="700" height="70" rx="6" fill="#FCDD0930" stroke="#C9A227" stroke-width="1.5"/>
+  <text x="400" y="312" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="bold" fill="#1A1A2E">
+    Policy: PSI first → SAI if swap-risk or high assurance needed
+  </text>
+  <text x="400" y="332" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">
+    Fresh swap (minutes/hours) → downgrade assurance → FALLBACK (SMS)
+  </text>
+  <text x="400" y="350" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#6B7280">
+    jSS7: ProvideSubscriberInfoRequestImpl · SendAuthenticationInfoRequestImpl
+  </text>
+
+</svg>
