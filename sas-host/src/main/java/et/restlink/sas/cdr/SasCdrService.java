@@ -71,6 +71,7 @@ public class SasCdrService {
      * @param evidenceSource verifier protocol tag (MAP-PSI+SAI / ...)
      * @param evidenceJson   factors + weights + stage notes (msisdn-free)
      * @param totalMs        end-to-end flow duration
+     * @param tenantId       CAMARA-edge billing tenant (nullable)
      */
     public record FlowDetail(
             boolean verified,
@@ -84,7 +85,19 @@ public class SasCdrService {
             String resolverStatus,
             String evidenceSource,
             String evidenceJson,
-            int totalMs) {}
+            int totalMs,
+            String tenantId) {
+
+        /** Legacy 12-field shape (unattributed tenant) — kept compiling. */
+        public FlowDetail(boolean verified, String decision, Integer score,
+                          Integer threshold, String assuranceLevel, String riskClass,
+                          String accessTech, String fallbackReason, String resolverStatus,
+                          String evidenceSource, String evidenceJson, int totalMs) {
+            this(verified, decision, score, threshold, assuranceLevel, riskClass,
+                    accessTech, fallbackReason, resolverStatus, evidenceSource,
+                    evidenceJson, totalMs, null);
+        }
+    }
 
     /** Open a ledger row for a new SAS request. */
     public void accepted(String correlationId, String msisdn, String operation,
@@ -137,9 +150,9 @@ public class SasCdrService {
                 + " evidence=" + detail.evidenceSource()
                 + " totalMs=" + detail.totalMs();
         row.networkId = 0;
-        row.tenantId = null;
+        row.tenantId = blankToNull(detail.tenantId());
         row.csvLine = csvLine(now, correlationId, masked, "VERIFY", row.status,
-                row.detail, DEFAULT_USER, DEFAULT_CONNECTOR, null);
+                row.detail, DEFAULT_USER, DEFAULT_CONNECTOR, detail.tenantId());
         row.startedAt = now;
         row.updatedAt = now;
         row.eventCount = 1;
@@ -240,5 +253,9 @@ public class SasCdrService {
 
     private static String blankTo(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

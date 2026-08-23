@@ -387,6 +387,52 @@ class VerifyResourceTest {
         assertError(err, 403, "NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK");
     }
 
+    // ---- tenant gate (billing hooks) ----
+
+    @Test
+    void unknownApiKey_enforced_answers401OnPrimaryAndAlias() throws Exception {
+        stub.result = approveWithAssurance();
+        TenantRegistry registry = new TenantRegistry();
+        setField(registry, "enforceApiKeys", true);
+        setField(registry, "apiKeysRaw", "bankA=key-ok");
+        resource.tenants = registry;
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "wrong");
+
+        assertError(resource.verifyV2(new VerifyRequestDto(MSISDN_A, null),
+                "corr", "Bearer lab", "mobile", null, null, null, null, null, null),
+                401, "UNAUTHENTICATED");
+        assertError(resource.verify(new VerifyRequestDto(MSISDN_A, null),
+                "corr", "Bearer lab", "mobile", null, null, null, null, null, null),
+                401, "UNAUTHENTICATED");
+        assertNull(stub.lastEvent, "gate must fire before any network work");
+    }
+
+    @Test
+    void quotaExhausted_answers429OnVerifyAndShare() {
+        stub.result = approveWithAssurance();
+        resource.tenants = new TenantRegistry() {
+            @Override
+            public boolean checkAndIncrement(String tenantId) {
+                return false;
+            }
+        };
+
+        Response verify = resource.verifyV2(new VerifyRequestDto(MSISDN_A, null),
+                "corr", "Bearer lab", "mobile", null, null, null, null, null, null);
+        assertEquals(429, verify.getStatus());
+        JsonNode n = toJsonNode(verify.getEntity());
+        assertEquals(429, n.get("status").asInt());
+        assertEquals("QUOTA_EXCEEDED", n.get("code").asText());
+        assertTrue(n.get("message").asText().contains("monthly quota exhausted"));
+
+        Response share = resource.retrievePhoneNumber(
+                "corr", "Bearer lab", "mobile", null, null, null);
+        assertEquals(429, share.getStatus());
+        assertEquals("QUOTA_EXCEEDED",
+                toJsonNode(share.getEntity()).get("code").asText());
+        assertNull(stub.lastEvent, "gate must fire before any network work");
+    }
+
     // ---- helpers ----
 
     private VerifyResult approveWithAssurance() {
@@ -480,6 +526,64 @@ class VerifyResourceTest {
         } else {
             field.set(obj, value);
         }
+    }
+
+    /** Minimal container-headers stub carrying exactly one header. */
+    private static jakarta.ws.rs.core.HttpHeaders fixedHeaders(String name, String value) {
+        return new jakarta.ws.rs.core.HttpHeaders() {
+            @Override
+            public java.util.List<java.util.Locale> getAcceptableLanguages() {
+                return java.util.List.of();
+            }
+
+            @Override
+            public java.util.List<jakarta.ws.rs.core.MediaType> getAcceptableMediaTypes() {
+                return java.util.List.of();
+            }
+
+            @Override
+            public java.util.Map<String, jakarta.ws.rs.core.Cookie> getCookies() {
+                return java.util.Map.of();
+            }
+
+            @Override
+            public java.util.Date getDate() {
+                return null;
+            }
+
+            @Override
+            public String getHeaderString(String header) {
+                return name.equalsIgnoreCase(header) ? value : null;
+            }
+
+            @Override
+            public java.util.List<String> getRequestHeader(String header) {
+                return name.equalsIgnoreCase(header)
+                        ? java.util.List.of(value) : java.util.List.of();
+            }
+
+            @Override
+            public java.util.Locale getLanguage() {
+                return null;
+            }
+
+            @Override
+            public int getLength() {
+                return -1;
+            }
+
+            @Override
+            public jakarta.ws.rs.core.MediaType getMediaType() {
+                return null;
+            }
+
+            @Override
+            public jakarta.ws.rs.core.MultivaluedMap<String, String> getRequestHeaders() {
+                var map = new jakarta.ws.rs.core.MultivaluedHashMap<String, String>();
+                map.putSingle(name, value);
+                return map;
+            }
+        };
     }
 
     /**

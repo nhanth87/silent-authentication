@@ -65,4 +65,18 @@ class VerifyRequestEventTest {
         assertNull(evt.claimedImsi());
         assertNull(evt.riskClass());
     }
+
+    @Test
+    void tenantOverload_carriesBillingTenant_legacyLeavesNull() {
+        VerifyRequestEvent evt = new VerifyRequestEvent(
+                REQ, IP, 55555, TS, MSISDN, null, AccessTech.WIFI,
+                AssurancePolicy.RiskClass.HIGH_VALUE, "bankA");
+        assertEquals("bankA", evt.tenantId());
+        assertEquals(MSISDN, evt.claimedMsisdn());
+        assertEquals(AccessTech.WIFI, evt.accessTech());
+
+        VerifyRequestEvent legacy = new VerifyRequestEvent(
+                REQ, IP, 55555, TS, MSISDN, AccessTech.WIFI);
+        assertNull(legacy.tenantId(), "legacy ctor leaves the billing tenant absent");
+    }
 }

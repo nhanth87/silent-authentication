@@ -27,6 +27,7 @@ import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
@@ -127,6 +128,7 @@ public class VerifyResource {
     private static final String CODE_INVALID_ARGUMENT = "INVALID_ARGUMENT";
     private static final String CODE_UNAUTHENTICATED = "UNAUTHENTICATED";
     private static final String CODE_PERMISSION_DENIED = "PERMISSION_DENIED";
+    private static final String CODE_QUOTA_EXCEEDED = "QUOTA_EXCEEDED";
 
     @Inject
     SasVerifyEngine bootstrap;
@@ -148,6 +150,18 @@ public class VerifyResource {
 
     @Inject
     ApiTogglesConfig apiToggles;
+
+    /**
+     * Tenant + quota gate. Defaults to a bare lab registry so plain unit
+     * constructions behave as enforcement-off/unmetered; the container injects
+     * the configured bean over it.
+     */
+    @Inject
+    TenantRegistry tenants = new TenantRegistry();
+
+    /** Container-provided request headers (X-Api-Key); null in unit tests. */
+    @Inject
+    HttpHeaders httpHeaders;
 
     // ---- CAMARA-pure primary endpoints (/number-verification/v2) ----
 
@@ -379,8 +393,22 @@ public class VerifyResource {
                     RequestValidator.sha256Hex(authorization), correlator);
         }
 
+        // Billing gate: tenant resolution + quota metering, post-auth and
+        // before any network work (unknown key under enforcement → 401).
+        TenantRegistry.TenantInfo tenant = tenants.resolve(apiKeyHeader());
+        if (tenant == null) {
+            return error(401, CODE_UNAUTHENTICATED,
+                    "unknown X-Api-Key (no tenant)", correlator);
+        }
+        if (!tenants.checkAndIncrement(tenant.tenantId())) {
+            return error(429, CODE_QUOTA_EXCEEDED,
+                    "monthly quota exhausted for tenant " + tenant.tenantId(),
+                    correlator);
+        }
+
         VerifyRequestEvent event = new VerifyRequestEvent(reqId, srcIp, srcPort, ts,
-                claimed, accessTech, VerifyRequestDto.parse(riskClassHeader));
+                claimed, null, accessTech,
+                VerifyRequestDto.parse(riskClassHeader), tenant.tenantId());
 
         VerifyResult result = awaitResult(event, reqId);
 
@@ -468,8 +496,22 @@ public class VerifyResource {
         // Number-discovery mode: no claimed MSISDN. Namespaced key so /verify
         // and /device-phone-number never share a reqId for one token.
         String reqId = RequestValidator.deriveRetrieveReqId(tokenKey, correlator);
+
+        // Billing gate: tenant resolution + quota metering, post-auth and
+        // before any network work (unknown key under enforcement → 401).
+        TenantRegistry.TenantInfo tenant = tenants.resolve(apiKeyHeader());
+        if (tenant == null) {
+            return error(401, CODE_UNAUTHENTICATED,
+                    "unknown X-Api-Key (no tenant)", correlator);
+        }
+        if (!tenants.checkAndIncrement(tenant.tenantId())) {
+            return error(429, CODE_QUOTA_EXCEEDED,
+                    "monthly quota exhausted for tenant " + tenant.tenantId(),
+                    correlator);
+        }
+
         VerifyRequestEvent event = new VerifyRequestEvent(reqId, srcIp, srcPort, ts,
-                null, accessTech);
+                null, null, accessTech, null, tenant.tenantId());
 
         VerifyResult result = awaitResult(event, reqId);
 
@@ -498,6 +540,11 @@ public class VerifyResource {
     }
 
     // ---- helpers ----
+
+    /** X-Api-Key from the container headers; null-safe outside a container. */
+    private String apiKeyHeader() {
+        return httpHeaders == null ? null : httpHeaders.getHeaderString("X-Api-Key");
+    }
 
     /** Submit to the SLEE router under the total SAS budget; fail-closed. */
     private VerifyResult awaitResult(VerifyRequestEvent event, String reqId) {

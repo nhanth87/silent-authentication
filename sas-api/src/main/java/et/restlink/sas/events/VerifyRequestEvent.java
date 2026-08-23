@@ -40,6 +40,7 @@ public final class VerifyRequestEvent implements SleeEvent {
     private final String claimedImsi;
     private final AccessTech accessTech;
     private final AssurancePolicy.RiskClass riskClass;
+    private final String tenantId;
 
     public VerifyRequestEvent(String reqId,
                               String srcIp,
@@ -69,6 +70,23 @@ public final class VerifyRequestEvent implements SleeEvent {
                               String claimedImsi,
                               AccessTech accessTech,
                               AssurancePolicy.RiskClass riskClass) {
+        this(reqId, srcIp, srcPort, tsEpochMs, claimedMsisdn, claimedImsi,
+                accessTech, riskClass, null);
+    }
+
+    /**
+     * Full overload with billing tenant: the CAMARA-edge tenant resolved from
+     * {@code X-Api-Key}; {@code null} = unattributed (legacy callers).
+     */
+    public VerifyRequestEvent(String reqId,
+                              String srcIp,
+                              int srcPort,
+                              long tsEpochMs,
+                              String claimedMsisdn,
+                              String claimedImsi,
+                              AccessTech accessTech,
+                              AssurancePolicy.RiskClass riskClass,
+                              String tenantId) {
         this.reqId = reqId;
         this.srcIp = srcIp;
         this.srcPort = srcPort;
@@ -77,6 +95,7 @@ public final class VerifyRequestEvent implements SleeEvent {
         this.claimedImsi = claimedImsi;
         this.accessTech = accessTech;
         this.riskClass = riskClass;
+        this.tenantId = tenantId;
     }
 
     public String reqId() {
@@ -111,5 +130,10 @@ public final class VerifyRequestEvent implements SleeEvent {
     /** Optional transaction risk class; {@code null} = LOGIN. */
     public AssurancePolicy.RiskClass riskClass() {
         return riskClass;
+    }
+
+    /** Optional billing tenant (CAMARA edge); {@code null} = unattributed. */
+    public String tenantId() {
+        return tenantId;
     }
 }

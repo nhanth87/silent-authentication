@@ -43,6 +43,12 @@ import java.util.Map;
  * {@code 401 UNAUTHENTICATED} (fail-closed, see {@link ApiKeyAuthenticator}).
  * {@code /status} stays open as a health endpoint.</p>
  *
+ * <p><strong>Issue attestation (B1)</strong>: when
+ * {@code sas.entitlement.issue-attestation-required=true}, {@code /issue}
+ * additionally demands the AAA HMAC proof ({@code X-Sas-Attestation-Ts}/
+ * {@code X-Sas-Attestation-Mac}, see {@link AttestationVerifier}) before a
+ * token is minted.</p>
+ *
  * <p>Privacy (H8): the exchange endpoint returns the MSISDN only to the
  * authenticated bank backend (mTLS + token), never to the mobile app.</p>
  */
@@ -60,6 +66,9 @@ public class EntitlementResource {
     @Inject
     ApiKeyAuthenticator apiKeys;
 
+    @Inject
+    AttestationVerifier attestation;
+
     public record IssueRequest(String msisdn, String imsi, String eapMethod) {}
     public record IssueResponse(String token, long expiresInSeconds) {}
     public record ExchangeRequest(String token) {}
@@ -69,7 +78,9 @@ public class EntitlementResource {
     @Path("/issue")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response issue(IssueRequest body, @HeaderParam("X-Api-Key") String apiKey) {
+    public Response issue(IssueRequest body, @HeaderParam("X-Api-Key") String apiKey,
+                          @HeaderParam("X-Sas-Attestation-Ts") String attestationTs,
+                          @HeaderParam("X-Sas-Attestation-Mac") String attestationMac) {
         String keyError = apiKeys.validate(apiKey);
         if (keyError != null) {
             return error(401, "UNAUTHENTICATED", keyError);
@@ -87,6 +98,12 @@ public class EntitlementResource {
             return error(400, "INVALID_REQUEST",
                     "eapMethod must be " + EntitlementTokenService.EAP_AKA + " or "
                             + EntitlementTokenService.EAP_AKA_PRIME);
+        }
+        // B1 — AAA/EAP proof-of-authentication before any token is minted.
+        AttestationVerifier.Rejection rejection = attestation.verify(
+                body.msisdn(), body.imsi(), eapMethod, attestationTs, attestationMac);
+        if (rejection != null) {
+            return error(rejection.status(), rejection.code(), rejection.message());
         }
         String token = tokenService.issueToken(body.msisdn(), body.imsi(), eapMethod);
         return Response.ok(new IssueResponse(token, config.tokenTtlSeconds())).build();

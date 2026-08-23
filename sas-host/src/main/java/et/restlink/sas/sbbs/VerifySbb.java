@@ -307,7 +307,8 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
                             outcome.resolverStatus(),
                             outcome.evidenceSource(),
                             VerifyFlowJson.build(r, stageNotes(outcome)),
-                            (int) Math.min(Integer.MAX_VALUE, totalMs)));
+                            (int) Math.min(Integer.MAX_VALUE, totalMs),
+                            evt.tenantId()));
         } catch (IllegalStateException stateless) {
             LOG.debug("[SAS] flow CDR skipped reqId={} (no CDI)", evt.reqId());
         } catch (RuntimeException ex) {

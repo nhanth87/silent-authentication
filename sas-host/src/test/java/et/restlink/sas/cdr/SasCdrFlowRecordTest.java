@@ -127,4 +127,27 @@ class SasCdrFlowRecordTest {
         service.recordFlow("req-6", "123", approveDetail());
         assertNull(flusher.recent(10).get(0).msisdn);
     }
+
+    // ---- billing tenant attribution ----
+
+    @Test
+    void flowCdrCarriesBillingTenant() {
+        var detail = new SasCdrService.FlowDetail(
+                true, "APPROVE", 85, 70, "HIGH", "LOGIN",
+                "GS_2G3G", null, "BOUND", "MAP-PSI+SAI",
+                "{\"score\":85}", 42, "bankA");
+        service.recordFlow("req-tenant-1", MSISDN, detail);
+
+        var row = flusher.recent(10).get(0);
+        assertEquals("bankA", row.tenantId);
+        assertTrue(row.csvLine.endsWith(",bankA"), () -> row.csvLine);
+    }
+
+    @Test
+    void legacyFlowDetail_leavesTenantUnattributed() {
+        service.recordFlow("req-tenant-2", MSISDN, approveDetail());
+        var row = flusher.recent(10).get(0);
+        assertNull(row.tenantId);
+        assertTrue(row.csvLine.endsWith(","), () -> row.csvLine);
+    }
 }

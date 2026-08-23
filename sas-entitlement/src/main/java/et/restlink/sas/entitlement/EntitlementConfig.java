@@ -44,6 +44,17 @@ public class EntitlementConfig {
     @ConfigProperty(name = "sas.entitlement.require-signed", defaultValue = "true")
     boolean requireSigned;
 
+    /**
+     * Shared secret for the {@code POST /entitlement/issue} AAA attestation
+     * MAC. No default value: absent stays absent (the Quarkus empty-string
+     * default trap turns "unset" into "blank-but-set").
+     */
+    @ConfigProperty(name = "sas.entitlement.issue-attestation-secret")
+    java.util.Optional<String> issueAttestationSecret;
+
+    @ConfigProperty(name = "sas.entitlement.issue-attestation-required", defaultValue = "false")
+    boolean issueAttestationRequired;
+
     public boolean enabled() {
         return enabled;
     }
@@ -71,5 +82,14 @@ public class EntitlementConfig {
 
     public boolean requireSigned() {
         return requireSigned;
+    }
+
+    /** Attestation MAC secret; empty = not configured. */
+    public String issueAttestationSecret() {
+        return issueAttestationSecret == null ? "" : issueAttestationSecret.orElse("");
+    }
+
+    public boolean issueAttestationRequired() {
+        return issueAttestationRequired;
     }
 }

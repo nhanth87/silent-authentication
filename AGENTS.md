@@ -299,3 +299,10 @@ Enforced by two per-repo hooks (`DIGICOM-ET-AGENT-ATTRIBUTION-GUARD v1`):
 `commit-msg` rejects the commit, `pre-push` re-scans the whole pushed range and blocks the push.
 **`--no-verify` is forbidden** — it only defers the rejection to `pre-push`.
 Workspace rule: [`AGENTS.md` at the root of `ethiopia-working-dir`](../AGENTS.md).
+
+## Resource hygiene (workplace-wide rule, 2026-08-23)
+
+- When done (tests/smoke/dev): stop everything you started — `docker compose down` (keep volumes), kill dev servers/JVMs you spawned. Never leave them running "for later"; RAM is shared across ALL worktrees on this machine.
+- Before ending a session verify: `docker ps` shows nothing from this tree; no stray `java`/`node` processes left (`ps -eo pid,rss,args --sort=-rss | head`).
+- Long-lived services (EPC / FreeSWITCH / PG / app servers) run only while their session needs them. If the owner asks to keep one up, note which and why in the session handoff.
+- DB/app port binds use loopback (`127.0.0.1:`) unless explicitly public; never expose default credentials beyond lab.
