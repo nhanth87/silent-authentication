@@ -36,9 +36,25 @@ public class SasTransportConfig {
     @ConfigProperty(name = "sas.transport.swx", defaultValue = "memory")
     String swxTransport;
 
-    /** Resolver source: memory (default), cgnat, or radius. */
+    /** Resolver source: memory (default), cgnat, radius, or sd (PCRF Gx probe). */
     @ConfigProperty(name = "sas.transport.resolver", defaultValue = "memory")
     String resolverTransport;
+
+    /** PCRF Sd/Gx specific peer port override (falls back to diameter peer port). */
+    @ConfigProperty(name = "sas.transport.sd.peer-port", defaultValue = "3868")
+    int sdPeerPort;
+
+    /** PCRF Sd/Gx transport: SCTP when true (default), TCP otherwise. */
+    @ConfigProperty(name = "sas.transport.sd.sctp", defaultValue = "true")
+    boolean sdSctp;
+
+    /** PCRF Sd/Gx per-probe timeout in ms. */
+    @ConfigProperty(name = "sas.transport.sd.timeout-ms", defaultValue = "500")
+    long sdTimeoutMs;
+
+    /** PCRF Sd/Gx binding cache staleness window in ms. */
+    @ConfigProperty(name = "sas.transport.sd.stale-after-ms", defaultValue = "60000")
+    long sdStaleAfterMs;
 
     /** CGNAT log path (used when resolver transport = cgnat). */
     @ConfigProperty(name = "sas.transport.resolver.cgnat-log")
@@ -129,6 +145,26 @@ public class SasTransportConfig {
 
     public boolean useRadiusResolver() {
         return "radius".equalsIgnoreCase(resolverTransport);
+    }
+
+    public boolean useSdResolver() {
+        return "sd".equalsIgnoreCase(resolverTransport);
+    }
+
+    public int sdPeerPort() {
+        return sdPeerPort;
+    }
+
+    public boolean sdSctp() {
+        return sdSctp;
+    }
+
+    public long sdTimeoutMs() {
+        return sdTimeoutMs;
+    }
+
+    public long sdStaleAfterMs() {
+        return sdStaleAfterMs;
     }
 
     public int radiusPort() {

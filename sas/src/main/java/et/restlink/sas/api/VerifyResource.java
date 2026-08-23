@@ -44,8 +44,42 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * CAMARA NumberVerification (NV v2.1.0) northbound surface over the SAS
- * {@code /verify} flow. Fail-closed: any FALLBACK returns
+ * {@code /verify} flow, served under the spec server prefix
+ * {@code /number-verification/v2} (F1/F7); the root-level lab aliases are
+ * deprecated but fully equivalent. Fail-closed: any FALLBACK returns
  * {@code devicePhoneNumberVerified:false} — never a soft pass.
+ *
+ * <p><strong>Wire contract (r3.2)</strong>:</p>
+ * <ul>
+ *   <li>POST {apiRoot}/number-verification/v2/verify →
+ *       {@code {"devicePhoneNumberVerified":boolean}}.</li>
+ *   <li>GET {apiRoot}/number-verification/v2/device-phone-number →
+ *       {@code {"devicePhoneNumber":"+E164"}}.</li>
+ *   <li>Every error body is {@code {"status":int,"code":string,"message":string}}
+ *       with codes {@code INVALID_ARGUMENT} (400), {@code UNAUTHENTICATED}
+ *       (401), {@code PERMISSION_DENIED} or
+ *       {@code NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK}
+ *       (403) — F3.</li>
+ *   <li>The assurance snapshot ({@code reqId}/{@code decision}/{@code
+ *       assurance}/{@code fallbackReason}) is opt-in: header
+ *       {@code X-Sas-Assurance-Detail: true} or config
+ *       {@code sas.api.assurance-detail-enabled=true} — F2. The risk class
+ *       moved out of the request body into {@code X-Sas-Risk-Class}
+ *       (LOGIN|TRANSFER|HIGH_VALUE, case-insensitive); unknown body
+ *       properties are ignored, never parsed.</li>
+ * </ul>
+ *
+ * <p><strong>User-bound token (F4)</strong>: when token validation is enabled,
+ * the bearer JWT must carry a user-number binding — the {@code phone_number}
+ * claim or the custom {@code msisdn} claim (normalized E.164). The verified
+ * boolean is then
+ * {@code networkEvidencePass && normalize(claimed) == normalize(bound)}; a
+ * token without a usable binding answers
+ * {@code 403 NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK}.
+ * On the hashed path both sides compare as sha256 of the normalized
+ * "+E164" string. Lab mode (validation disabled) keeps the P0 behaviour with
+ * no binding requirement — only normalization is applied; the v2-compatibility
+ * claim therefore requires validation-enabled=true.</p>
  *
  * <p><strong>Identity anchors</strong>: besides the normal OIDC bearer + amr
  * validation, this endpoint accepts an operator token (a signed SAS
@@ -54,17 +88,19 @@ import java.util.concurrent.TimeoutException;
  * {@code sas.entitlement.ciba-enabled=true} — the {@code X-Sas-Operator-Token}
  * header. On that path the token binding becomes the claimed MSISDN with
  * {@code accessTech=WIFI}; normal bearer/amr/body checks are skipped and an
- * invalid/expired/replayed token answers {@code 401 INVALID_TOKEN}. The CAMARA
- * response contract is unchanged ({@code devicePhoneNumberVerified:boolean}).
- * The token is single-use.</p>
+ * invalid/expired/replayed token answers {@code 401 UNAUTHENTICATED}. The
+ * token is single-use. The {@code operatortoken:} direct-bearer form and the
+ * entitlement endpoints are Digicom extensions (TS.43 track), not part of
+ * the CAMARA contract.</p>
  *
  * <p><strong>Bearer-path security (token validation enabled)</strong>:</p>
  * <ol>
- *   <li>JWT signature/claims validated; the token key is the {@code jti}
+ *   <li>JWT signature/claims validated; token lifetime capped at 300 s with
+ *       {@code iat} required (F5); the token key is the {@code jti}
  *       claim, else SHA-256 of the raw token.</li>
  *   <li>Per-endpoint scope: {@value TokenValidator#SCOPE_NUMBER_VERIFICATION_VERIFY}
  *       here, {@value TokenValidator#SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ}
- *       on GET /retrieve-phone-number (family/prefix match) — missing scope
+ *       on GET /device-phone-number (family/prefix match) — missing scope
  *       answers {@code 403 PERMISSION_DENIED}.</li>
  *   <li>amr: the JWT {@code amr} claim is preferred over the client
  *       {@code X-Sas-Amr} header; no amr evidence at all answers
@@ -90,7 +126,7 @@ public class VerifyResource {
 
     private static final String CODE_NOT_MOBILE =
             "NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK";
-    private static final String CODE_VALIDATION = "VALIDATION.Failed";
+    private static final String CODE_INVALID_ARGUMENT = "INVALID_ARGUMENT";
     private static final String CODE_UNAUTHENTICATED = "UNAUTHENTICATED";
     private static final String CODE_PERMISSION_DENIED = "PERMISSION_DENIED";
 
@@ -109,6 +145,53 @@ public class VerifyResource {
     @Inject
     SasSecurityConfig securityConfig;
 
+    @Inject
+    ApiTogglesConfig apiToggles;
+
+    // ---- CAMARA-pure primary endpoints (/number-verification/v2) ----
+
+    /** CAMARA NV v2.1.0 phoneNumberVerify (primary path). */
+    @POST
+    @Path("/number-verification/v2/verify")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response verifyV2(VerifyRequestDto body,
+                             @HeaderParam("x-correlator") String xCorrelator,
+                             @HeaderParam("Authorization") String authorization,
+                             @HeaderParam("X-Sas-Amr") String amr,
+                             @HeaderParam("X-Sas-Src-Ip") String srcIpHeader,
+                             @HeaderParam("X-Sas-Src-Port") String srcPortHeader,
+                             @HeaderParam("X-Sas-Access-Tech") String accessTechHeader,
+                             @HeaderParam("X-Sas-Operator-Token") String operatorTokenHeader,
+                             @HeaderParam("X-Sas-Risk-Class") String riskClassHeader,
+                             @HeaderParam("X-Sas-Assurance-Detail") String assuranceDetailHeader) {
+        return doVerify(body, xCorrelator, authorization, amr, srcIpHeader,
+                srcPortHeader, accessTechHeader, operatorTokenHeader,
+                riskClassHeader, assuranceDetailHeader);
+    }
+
+    /** CAMARA NV v2.1.0 phoneNumberShare (spec-correct name, primary path). */
+    @GET
+    @Path("/number-verification/v2/device-phone-number")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response devicePhoneNumber(@HeaderParam("x-correlator") String xCorrelator,
+                                      @HeaderParam("Authorization") String authorization,
+                                      @HeaderParam("X-Sas-Amr") String amr,
+                                      @HeaderParam("X-Sas-Src-Ip") String srcIpHeader,
+                                      @HeaderParam("X-Sas-Src-Port") String srcPortHeader,
+                                      @HeaderParam("X-Sas-Access-Tech") String accessTechHeader) {
+        return doShare(xCorrelator, authorization, amr, srcIpHeader,
+                srcPortHeader, accessTechHeader);
+    }
+
+    // ---- deprecated lab aliases (same handlers, legacy paths) ----
+
+    /**
+     * @deprecated lab alias for pilot banks — use
+     *             {@code POST /number-verification/v2/verify}; this root path
+     *             is not part of the CAMARA server prefix.
+     */
+    @Deprecated
     @POST
     @Path("/verify")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -120,8 +203,48 @@ public class VerifyResource {
                            @HeaderParam("X-Sas-Src-Ip") String srcIpHeader,
                            @HeaderParam("X-Sas-Src-Port") String srcPortHeader,
                            @HeaderParam("X-Sas-Access-Tech") String accessTechHeader,
-                           @HeaderParam("X-Sas-Operator-Token") String operatorTokenHeader) {
+                           @HeaderParam("X-Sas-Operator-Token") String operatorTokenHeader,
+                           @HeaderParam("X-Sas-Risk-Class") String riskClassHeader,
+                           @HeaderParam("X-Sas-Assurance-Detail") String assuranceDetailHeader) {
+        return doVerify(body, xCorrelator, authorization, amr, srcIpHeader,
+                srcPortHeader, accessTechHeader, operatorTokenHeader,
+                riskClassHeader, assuranceDetailHeader);
+    }
+
+    /**
+     * @deprecated lab alias — use
+     *             {@code GET /number-verification/v2/device-phone-number};
+     *             no {@code /retrieve-phone-number} exists in either NV YAML.
+     */
+    @Deprecated
+    @GET
+    @Path("/retrieve-phone-number")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response retrievePhoneNumber(@HeaderParam("x-correlator") String xCorrelator,
+                                        @HeaderParam("Authorization") String authorization,
+                                        @HeaderParam("X-Sas-Amr") String amr,
+                                        @HeaderParam("X-Sas-Src-Ip") String srcIpHeader,
+                                        @HeaderParam("X-Sas-Src-Port") String srcPortHeader,
+                                        @HeaderParam("X-Sas-Access-Tech") String accessTechHeader) {
+        return doShare(xCorrelator, authorization, amr, srcIpHeader,
+                srcPortHeader, accessTechHeader);
+    }
+
+    // ---- shared handlers ----
+
+    private Response doVerify(VerifyRequestDto body,
+                              String xCorrelator,
+                              String authorization,
+                              String amr,
+                              String srcIpHeader,
+                              String srcPortHeader,
+                              String accessTechHeader,
+                              String operatorTokenHeader,
+                              String riskClassHeader,
+                              String assuranceDetailHeader) {
         String correlator = xCorrelator == null ? "" : xCorrelator;
+        boolean detail = ApiTogglesConfig.assuranceDetailRequested(
+                assuranceDetailHeader, apiToggles.assuranceDetailEnabled());
 
         // Wi-Fi / CIBA path — operator token as identity anchor, checked before
         // the normal bearer/amr validation (fail-closed on any token failure).
@@ -132,13 +255,14 @@ public class VerifyResource {
             operatorBinding = operatorTokenSupport.resolve(operatorCandidate);
             if (operatorBinding == null || operatorBinding.msisdn() == null
                     || operatorBinding.msisdn().isBlank()) {
-                return error(401, "INVALID_TOKEN",
+                return error(401, CODE_UNAUTHENTICATED,
                         "operator token is invalid, expired or already used", correlator);
             }
         }
 
         String claimed;
         String hashed;
+        String boundNumber = null;
         String srcIp = notBlank(srcIpHeader) ? srcIpHeader : "10.20.30.40";
         int srcPort = parseInt(srcPortHeader, 55555);
         AccessTech accessTech;
@@ -149,13 +273,18 @@ public class VerifyResource {
         if (operatorBinding != null) {
             // Identity anchor from the signed entitlement token; body phone
             // claims are ignored — the binding is authoritative on this path.
-            claimed = operatorBinding.msisdn();
+            claimed = RequestValidator.normalizeE164(operatorBinding.msisdn())
+                    .orElse(null);
+            if (claimed == null) {
+                return error(401, CODE_UNAUTHENTICATED,
+                        "operator token binding is not a valid E.164 number", correlator);
+            }
             hashed = null;
             accessTech = AccessTech.WIFI;
             LOG.info("[SAS] /verify operator-token anchor applied (eap={})",
                     operatorBinding.eapMethod());
         } else {
-            // H14 — single-use, short-lived token, full claims validation.
+            // H14 — single-use, short-lived, user-bound token, full claims validation.
             TokenValidator.DetailedAuth auth = tokenValidator.validateDetailed(authorization);
             if (!auth.ok()) {
                 return error(401, CODE_UNAUTHENTICATED, auth.error(), correlator);
@@ -176,6 +305,15 @@ public class VerifyResource {
                 if (amrError != null) {
                     return error(403, CODE_NOT_MOBILE, amrError, correlator);
                 }
+                // F4 — fail closed without a user-number binding: the spec
+                // compares the requested number against the number bound to
+                // the access token at issuance.
+                boundNumber = auth.boundNumber();
+                if (boundNumber == null) {
+                    return error(403, CODE_NOT_MOBILE,
+                            "access token carries no user phone-number binding "
+                                    + "(phone_number/msisdn claim)", correlator);
+                }
                 // Single-use bearer token: one completed call per token key.
                 if (replayGuard.isConsumed(tokenKey)) {
                     return error(401, CODE_UNAUTHENTICATED,
@@ -194,17 +332,20 @@ public class VerifyResource {
             boolean hasHashed = body != null && body.hashedPhoneNumber() != null
                     && !body.hashedPhoneNumber().isBlank();
             if (hasPhone == hasHashed) {
-                return error(400, CODE_VALIDATION,
+                return error(400, CODE_INVALID_ARGUMENT,
                         "exactly one of phoneNumber / hashedPhoneNumber is required", correlator);
             }
-            claimed = hasPhone ? body.phoneNumber().trim() : null;
+            // F6 — one normalization point feeds validation, hashing, comparing.
+            claimed = hasPhone
+                    ? RequestValidator.normalizeE164(body.phoneNumber()).orElse(null)
+                    : null;
             hashed = hasHashed ? body.hashedPhoneNumber().trim() : null;
-            if (claimed != null && !RequestValidator.isE164(claimed)) {
-                return error(400, CODE_VALIDATION,
+            if (hasPhone && claimed == null) {
+                return error(400, CODE_INVALID_ARGUMENT,
                         "phoneNumber must be E.164 (+<digits>)", correlator);
             }
             if (hashed != null && !RequestValidator.isSha256Hex(hashed)) {
-                return error(400, CODE_VALIDATION,
+                return error(400, CODE_INVALID_ARGUMENT,
                         "hashedPhoneNumber must be a SHA-256 hex digest (64 hex chars)",
                         correlator);
             }
@@ -217,7 +358,7 @@ public class VerifyResource {
         long ts = System.currentTimeMillis();
         String tsError = replayGuard.checkTimestamp(ts);
         if (tsError != null) {
-            return error(400, CODE_VALIDATION, tsError, correlator);
+            return error(400, CODE_INVALID_ARGUMENT, tsError, correlator);
         }
 
         String reqId;
@@ -238,7 +379,7 @@ public class VerifyResource {
         }
 
         VerifyRequestEvent event = new VerifyRequestEvent(reqId, srcIp, srcPort, ts,
-                claimed, accessTech);
+                claimed, accessTech, VerifyRequestDto.parse(riskClassHeader));
 
         VerifyResult result = awaitResult(event, reqId);
 
@@ -251,32 +392,36 @@ public class VerifyResource {
                 reqId, result.match(), result.fallbackReason());
 
         if (result.fallbackReason() != null) {
-            // Fail-closed — the assurance snapshot still rides along so the
-            // bank backend can make its own risk decision.
-            return ok(VerifyResponseDto.from(false, result), correlator);
+            // Fail-closed — the opt-in assurance snapshot still rides along so
+            // the bank backend can make its own risk decision.
+            return ok(VerifyResponseDto.from(false, result, detail), correlator);
         }
 
+        // F4 — verify compares the requested number against BOTH the live
+        // network resolution and the token-bound number (when validated).
+        String resolved = RequestValidator.normalizeE164(result.msisdn()).orElse(null);
         boolean verified;
-        if (claimed != null) {
-            verified = result.msisdn() != null && claimed.equals(result.msisdn());
+        if (resolved == null) {
+            verified = false;
+        } else if (claimed != null) {
+            verified = claimed.equals(resolved)
+                    && (boundNumber == null || boundNumber.equals(resolved));
         } else {
-            verified = result.msisdn() != null
-                    ? sha256("+" + result.msisdn()).equalsIgnoreCase(hashed) : false;
+            // hashedPhoneNumber path — sha256("+E164") of both sides.
+            verified = RequestValidator.sha256Hex(resolved).equalsIgnoreCase(hashed)
+                    && (boundNumber == null
+                        || RequestValidator.sha256Hex(boundNumber).equalsIgnoreCase(hashed));
         }
-        return ok(VerifyResponseDto.from(verified, result), correlator);
+        return ok(VerifyResponseDto.from(verified, result, detail), correlator);
     }
 
-    @GET
-    @Path("/retrieve-phone-number")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response retrievePhoneNumber(@HeaderParam("x-correlator") String xCorrelator,
-                                        @HeaderParam("Authorization") String authorization,
-                                        @HeaderParam("X-Sas-Amr") String amr,
-                                        @HeaderParam("X-Sas-Src-Ip") String srcIpHeader,
-                                        @HeaderParam("X-Sas-Src-Port") String srcPortHeader,
-                                        @HeaderParam("X-Sas-Access-Tech") String accessTechHeader) {
-        // P2 missing item #7 — CAMARA NV device-phone-number:read scope path.
-        // Requires the number-verification:device-phone-number:read scope.
+    private Response doShare(String xCorrelator,
+                             String authorization,
+                             String amr,
+                             String srcIpHeader,
+                             String srcPortHeader,
+                             String accessTechHeader) {
+        // CAMARA NV device-phone-number:read — number-discovery surface.
         String correlator = xCorrelator == null ? "" : xCorrelator;
 
         TokenValidator.DetailedAuth auth = tokenValidator.validateDetailed(authorization);
@@ -315,11 +460,11 @@ public class VerifyResource {
         long ts = System.currentTimeMillis();
         String tsError = replayGuard.checkTimestamp(ts);
         if (tsError != null) {
-            return error(400, CODE_VALIDATION, tsError, correlator);
+            return error(400, CODE_INVALID_ARGUMENT, tsError, correlator);
         }
 
         // Number-discovery mode: no claimed MSISDN. Namespaced key so /verify
-        // and /retrieve-phone-number never share a reqId for one token.
+        // and /device-phone-number never share a reqId for one token.
         String reqId = RequestValidator.deriveRetrieveReqId(tokenKey, correlator);
         VerifyRequestEvent event = new VerifyRequestEvent(reqId, srcIp, srcPort, ts,
                 null, accessTech);
@@ -335,8 +480,16 @@ public class VerifyResource {
                     "unable to resolve device phone number", correlator);
         }
 
-        LOG.info("[SAS] /retrieve-phone-number reqId={} resolved", reqId);
-        return Response.ok(Map.of("devicePhoneNumber", result.msisdn()))
+        // F6 — share response always normalized E.164 (spec pattern ^\+...).
+        String devicePhoneNumber = RequestValidator.normalizeE164(result.msisdn())
+                .orElse(null);
+        if (devicePhoneNumber == null) {
+            return error(403, CODE_NOT_MOBILE,
+                    "unable to resolve device phone number", correlator);
+        }
+
+        LOG.info("[SAS] /device-phone-number reqId={} resolved", reqId);
+        return Response.ok(Map.of("devicePhoneNumber", devicePhoneNumber))
                 .header("x-correlator", correlator)
                 .build();
     }
@@ -359,13 +512,17 @@ public class VerifyResource {
         }
     }
 
+    /** Spec ErrorInfo: status+code+message are all required (F3). */
+    record CamaraError(int status, String code, String message) {
+    }
+
     private static Response ok(VerifyResponseDto dto, String correlator) {
         return Response.ok(dto).header("x-correlator", correlator).build();
     }
 
     private static Response error(int status, String code, String message, String correlator) {
         return Response.status(status)
-                .entity(Map.of("code", code, "message", message))
+                .entity(new CamaraError(status, code, message))
                 .header("x-correlator", correlator)
                 .build();
     }
@@ -394,9 +551,5 @@ public class VerifyResource {
         } catch (NumberFormatException ignored) {
             return dflt;
         }
-    }
-
-    private static String sha256(String value) {
-        return RequestValidator.sha256Hex(value);
     }
 }

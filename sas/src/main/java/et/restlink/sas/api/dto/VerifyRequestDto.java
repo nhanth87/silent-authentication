@@ -14,23 +14,16 @@ import java.util.Locale;
 /**
  * CAMARA NumberVerification v2.1.0 {@code POST /verify} request body.
  * Exactly one of {@code phoneNumber} / {@code hashedPhoneNumber} must be
- * present ({@code minProperties:1, maxProperties:1}).
- *
- * <p>{@code riskClass} is an optional extension: one of {@code LOGIN},
- * {@code TRANSFER}, {@code HIGH_VALUE}, case-insensitive. Absent or
- * unparseable values yield {@code null} from {@link #parse(String)}; callers
- * decide to reject or default (the SAS itself defaults null → LOGIN).</p>
+ * present ({@code minProperties:1, maxProperties:1}). Unknown properties are
+ * ignored, never parsed (spec request-body strictness — F2/F4: the former
+ * {@code riskClass} extension moved to the {@code X-Sas-Risk-Class} header).
  */
 public record VerifyRequestDto(String phoneNumber,
-                               String hashedPhoneNumber,
-                               String riskClass) {
-
-    public VerifyRequestDto(String phoneNumber, String hashedPhoneNumber) {
-        this(phoneNumber, hashedPhoneNumber, null);
-    }
+                               String hashedPhoneNumber) {
 
     /**
-     * Case-insensitive risk-class parse. Returns {@code null} for
+     * Case-insensitive risk-class parse (used for the
+     * {@code X-Sas-Risk-Class} header). Returns {@code null} for
      * {@code null}/blank/unparseable input.
      */
     public static AssurancePolicy.RiskClass parse(String raw) {

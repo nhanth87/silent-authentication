@@ -26,6 +26,7 @@ import et.restlink.sas.ras.mapverifier.MapVerifierRaEndpoint;
 import et.restlink.sas.ras.mapverifier.MapVerifierResourceAdaptor;
 import et.restlink.sas.ras.resolver.CgnatLogResolverBackend;
 import et.restlink.sas.ras.resolver.InMemoryResolverBackend;
+import et.restlink.sas.ras.resolver.PcrfSdResolverBackend;
 import et.restlink.sas.ras.resolver.RadiusAccountingListenerBackend;
 import et.restlink.sas.ras.resolver.ResolverBackend;
 import et.restlink.sas.ras.resolver.ResolverRaEndpoint;
@@ -90,6 +91,7 @@ public class SasBootstrap {
     private volatile CorsacSwxVerifierBackend corsacSwxBackend;
     private volatile RadiusAccountingListenerBackend radiusListenerBackend;
     private volatile CgnatLogResolverBackend cgnatLogBackend;
+    private volatile PcrfSdResolverBackend sdResolverBackend;
     private volatile boolean started;
 
     void onStart(@Observes StartupEvent ev) {
@@ -144,6 +146,24 @@ public class SasBootstrap {
             backend = radius;
             LOG.info("[SAS] Resolver transport = RADIUS accounting listener (udp/{}, stale={}ms)",
                     radius.localPort(), transportConfig.radiusStaleAfterMs());
+        } else if (transportConfig.useSdResolver()) {
+            try {
+                PcrfSdResolverBackend sd = new PcrfSdResolverBackend(
+                        transportConfig.diameterPeerHost(),
+                        transportConfig.sdPeerPort(),
+                        transportConfig.sdSctp(),
+                        (int) transportConfig.sdTimeoutMs(),
+                        transportConfig.sdStaleAfterMs());
+                sd.start();
+                sdResolverBackend = sd;
+                backend = sd;
+                LOG.info("[SAS] Resolver transport = PCRF Sd/Gx probe ({}:{}, sctp={}, timeout={}ms)",
+                        transportConfig.diameterPeerHost(), transportConfig.sdPeerPort(),
+                        transportConfig.sdSctp(), transportConfig.sdTimeoutMs());
+            } catch (Exception e) {
+                LOG.warn("[SAS] PCRF Sd resolver start failed — falling back to in-memory", e);
+                backend = inMemoryResolver();
+            }
         } else {
             backend = inMemoryResolver();
         }
@@ -302,6 +322,9 @@ public class SasBootstrap {
         }
         if (cgnatLogBackend != null) {
             cgnatLogBackend.stop();
+        }
+        if (sdResolverBackend != null) {
+            sdResolverBackend.stop();
         }
         if (container.getState() == MicroSleeContainer.State.STARTED) {
             container.stop();

@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -37,6 +38,26 @@ public final class RequestValidator {
     /** CAMARA {@code hashedPhoneNumber} shape check (64 hex chars). */
     public static boolean isSha256Hex(String hashedPhoneNumber) {
         return hashedPhoneNumber != null && SHA256_HEX.matcher(hashedPhoneNumber).matches();
+    }
+
+    /**
+     * Single normalization point for every MSISDN crossing the northbound
+     * surface (F6): strips spaces, dashes, dots and parentheses, collapses
+     * to exactly one leading {@code +}, then re-validates against the CAMARA
+     * E.164 pattern. Empty when the input is null, blank or unnormalizable.
+     */
+    public static Optional<String> normalizeE164(String raw) {
+        if (raw == null) {
+            return Optional.empty();
+        }
+        String cleaned = raw.replaceAll("[\\s.()\\-]", "");
+        while (cleaned.startsWith("+")) {
+            cleaned = cleaned.substring(1);
+        }
+        if (!cleaned.isEmpty()) {
+            cleaned = "+" + cleaned;
+        }
+        return isE164(cleaned) ? Optional.of(cleaned) : Optional.empty();
     }
 
     /** Lowercase SHA-256 hex of a UTF-8 string (never fails on any JVM). */

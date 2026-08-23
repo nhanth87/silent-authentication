@@ -1,15 +1,22 @@
 # Silent Auth SAS — E2E Test Flow
 
-Date: 2026-08-23 · Scope: web → `POST /verify` → SAS → `sas-diameter-testapp`
+Date: 2026-08-23 · Updated: 2026-08-23 (CAMARA-aligned endpoints + PCRF Sd scenario)
+Scope: web → `POST /verify` → SAS → `sas-diameter-testapp`
+
+> CAMARA alignment: primary endpoints are now under `/number-verification/v2`
+> (`POST …/verify`, `GET …/device-phone-number`). Legacy `/verify` and
+> `/retrieve-phone-number` still work as deprecated lab aliases. Assurance detail
+> (score/factors) is OPT-IN via header `X-Sas-Assurance-Detail: true`.
+> Spec snapshot + gap analysis: `docs/research/camara/`.
 
 ```
 curl/browser          SAS (Quarkus :8085)         sas-diameter-testapp (HSS/AAA giả lập)
      │                        │                        ├── instance 1: SCTP :3868 = S6a (ULR/AIR/IDR)
-     │  POST /verify          │   Diameter (SCTP)      └── instance 2: SCTP :3869 = SWx (MAR/SAR/PPR)
-     ├───────────────────────►│───────────────────────►│
-     │  {verified: boolean}   │◄─── ULA/AIA/SAA/MAA ───┤
-     │◄───────────────────────┤                        │  Control UI: GET /api/messages,
-     │                        │                        │  POST /api/subscriber (đổi state thuê bao)
+     │  POST /verify          │   Diameter (SCTP)      ├── instance 2: SCTP :3869 = SWx (MAR/SAR/PPR)
+     ├───────────────────────►│───────────────────────►├── instance 3: SCTP :3870 = Gx  (CCR-I binding)
+     │  {verified, assurance?}│◄── ULA/AIA/SAA/MAA/CCA─┤
+     │◄───────────────────────┤                        │  Control UI: /api/messages,
+     │                        │                        │  /api/subscriber, /api/binding
 ```
 
 ## 0. Yêu cầu môi trường
@@ -48,25 +55,57 @@ cd sas && java \
   -Dsas.transport.swx=corsac \
   -Dsas.entitlement.hmac-secret=e2e-lab-secret \
   -Dsas.transport.diameter.swx.peer-port=3869 \
+  -Dsas.transport.resolver=sd \
+  -Dsas.transport.sd.peer-port=3870 \
   -jar target/quarkus-app/quarkus-run.jar &
 ```
 
-Đợi log `Peer is up for Association [name=s6a-sas…]` và `[name=swx-sas…]` (~15–20 s).
+Đợi log `Peer is up for Association [name=s6a-sas…]`, `[name=swx-sas…]` (~15–20 s).
+`sas.transport.resolver=sd` bật PCRF Gx binding probe (:3870); bỏ dòng này nếu muốn
+resolver memory pilot. Các lựa chọn resolver: `memory | cgnat | radius | sd`.
 
 ## 4. Scenarios
 
 ### ① S6a LTE happy path
 
-Resolver memory seed sẵn `10.20.30.40:55555 → +251911111111` (IMSI `655010000000001`).
+Resolver seed sẵn `10.20.30.40 → +251911111111` (IMSI `655010000000001`) — với
+`resolver=sd` binding này nằm trong Gx BindingRegistry của instance :3870
+(`POST /api/binding` để đổi).
+
+CAMARA primary path:
 
 ```bash
-curl -s -X POST http://localhost:8085/verify \
+curl -s -X POST http://localhost:8085/number-verification/v2/verify \
   -H 'Content-Type: application/json' -H 'Authorization: Bearer demo' \
   -H 'x-correlator: t1' -H 'X-Sas-Amr: mobile' \
   -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
   -H 'X-Sas-Access-Tech: LTE' \
   -d '{"phoneNumber":"+251911111111"}'
-# → {"devicePhoneNumberVerified":true}   (ULR→ULA 2001, AIR→AIA vectors=1)
+# → {"devicePhoneNumberVerified":true}   (CCR→CCA, ULR→ULA 2001, AIR→AIA vectors=1)
+```
+
+Opt-in assurance detail (score/factors cho bank tự đánh giá rủi ro) + risk class:
+
+```bash
+curl -s -X POST http://localhost:8085/number-verification/v2/verify \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer demo' \
+  -H 'x-correlator: t1b' -H 'X-Sas-Amr: mobile' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  -H 'X-Sas-Access-Tech: LTE' \
+  -H 'X-Sas-Assurance-Detail: true' -H 'X-Sas-Risk-Class: TRANSFER' \
+  -d '{"phoneNumber":"+251911111111"}'
+# → {"devicePhoneNumberVerified":true,"reqId":"…","decision":"APPROVE",
+#     "assurance":{"score":100,"level":"HIGH","threshold":80,"riskClass":"TRANSFER",
+#       "factors":{…}}}          — threshold theo risk class; CDR lưu full flow
+```
+
+Discovery (trả số bound với token):
+
+```bash
+curl -s http://localhost:8085/number-verification/v2/device-phone-number \
+  -H 'Authorization: Bearer demo' -H 'x-correlator: t1c' -H 'X-Sas-Amr: mobile' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555'
+# → {"devicePhoneNumber":"+251911111111"}
 ```
 
 ### ② Fail-closed — detach thuê bao
@@ -120,12 +159,15 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 
 | Scenario | Signalling | Kết quả |
 |---|---|---|
-| LTE happy | ULA 2001 + AIA vectors≥1 | `true` |
+| LTE happy (resolver=sd) | CCA 2001 + ULA 2001 + AIA vectors≥1 | `true` |
 | Detached | ULA **5421** | `false` |
 | Zero vectors | AIA rỗng | `false` |
+| Gx unknown IP | CCA 5030 | `false` (NO_BINDING) |
 | SWx + token hợp lệ | MAA items≥1 + SAA 2001 | `true` |
 | Token replay | — (chặn trước Diameter) | `401` |
 | amr sai/thiếu | — | `403` |
+| Body thiếu phoneNumber/hashed | — | `400 INVALID_ARGUMENT` |
+| Assurance detail không opt-in | — | response thuần boolean (CAMARA-pure) |
 
 ## 7. Kiểm thử khác trong tree
 

@@ -22,15 +22,22 @@ Full narrative: [`lesson_learn.md`](lesson_learn.md).
 
 | # | Item | Path | Status | Notes |
 |---|------|------|--------|-------|
-| 1 | **Resolver source** (PGW RADIUS / PCRF Sd / CGNAT log) | A | ⚠️ | `RadiusAccountingListenerBackend` = real RFC 2866 UDP listener (authenticator MD5, Start/Stop/Interim, Accounting-Response). `CgnatLogResolverBackend` = live incremental tail + point-in-time `ts` filtering. Opt-in `sas.transport.resolver=radius\|cgnat`. **PCRF Sd/Gx still absent** |
-| 2 | **UE session-tuple SDK** | A | ⚠️ | Server collector done (`POST /session-tuple`, API-key-gated). The device-side SDK artifact itself is still not in this repo |
-| 3 | **TS.43 entitlement server** | B | ⚠️ | HMAC-SHA256-signed tokens (payload msisdn/imsi/eapMethod/iat/exp/jti), single-use consumed-jti, TTL clamped ≤300 s, fail-closed when secret blank + require-signed. CIBA `login_hint=operatortoken:<tk>` + `X-Sas-Operator-Token` accepted on `/verify` (eapMethod whitelist EAP-AKA/EAP-AKA'). **Remaining:** `/entitlement/issue` still trusts caller assertions — needs a real AAA/EAP attestation source (mitigated: `/verify` re-runs SWx against the claimed identity anyway) |
+| 1 | **Resolver source** (PGW RADIUS / PCRF Sd / CGNAT log) | A | ✅ | `RadiusAccountingListenerBackend` (RFC 2866 UDP+MD5), `CgnatLogResolverBackend` (live tail + point-in-time ts), `PcrfSdResolverBackend` (Gx CCR-I probe, app-id 16777238, no-binding=5030) — all opt-in via `sas.transport.resolver=radius\|cgnat\|sd`, E2E-proven vs testapp Gx instance |
+| 2 | **UE session-tuple SDK** | A | ✅ | Device-side artifact shipped: standalone maven module `ue-sdk/` (`SessionTupleCollector` + `SessionTupleClient`, zero runtime deps, 15 tests); server collector `/session-tuple` API-key-gated |
+| 3 | **TS.43 entitlement server** | B | ⚠️ | HMAC-signed single-use tokens (TTL≤300s clamp), CIBA `operatortoken:` accepted on /verify (whitelist EAP-AKA/AKA'). **Remaining:** AAA/EAP attestation for `/entitlement/issue` (B1) — currently trusts caller assertions; mitigated by SWx re-verify |
 | 4 | **EAP-AKA UE path** (SWm termination / 3GPP AAA) | B | ⚠️ | Unchanged by design: SAS consumes SWx result; actual EAP-AKA runs UE↔AAA operator-side. Proven end-to-end against the HSS simulator (MAR/SAR) |
 | 5 | **Real SWx Diameter transport** (corsac-diameter) | B | ✅ | `CorsacSwxVerifierBackend`: MAR/MAA primary + SAR/SAA registration (+ PPR probe, config-gated), per-Session-Id correlation (no broadcast), fail-closed result-code mapping, Visited-PLMN configurable + TS 24.301 encoding. **E2E-proven vs `sas-diameter-testapp`** |
 | 6 | **Real S6a Diameter transport** (corsac-diameter) | A (LTE) | ✅ | `CorsacS6aVerifierBackend`: ULR/ULA → AIR/AIA (vector count parsed, empty ⇒ fail-closed) → IDR/IDA probe (config-gated). One session per stage, shared 2 s budget, abort on timeout. **E2E-proven vs `sas-diameter-testapp`** |
-| 7 | **`/retrieve-phone-number`** (CAMARA NV) | — | ✅ | Full flow in `VerifyResource`; per-endpoint scope `number-verification:device-phone-number:read`; amr rule fail-closed; replay/single-use enforced |
-| 8 | **Assurance weights + per-risk thresholds** | A+B | ✅ | `AssurancePolicy.fromRuntime(SasAdminRuntimeConfig::read)` reads `sas.assurance.w-*` + `sas.assurance.threshold-*` from the admin KV store (hard-fail misconfig ⇒ defaults wholesale). RiskClass LOGIN/TRANSFER/HIGH_VALUE plumbed VerifyResource→event→SBB→FSM (unknown ⇒ LOGIN) |
-| 9 | **jSS7 MAP transport live test** | A (2G/3G) | ⚠️ | `Jss7MapVerifierBackend` code-complete (PSI+SAI+abort+fail-closed, no interconnect ATI); still needs a reachable home STP/HLR to exercise live |
+| 7 | **`/retrieve-phone-number`** (CAMARA NV) | — | ✅ | CAMARA-aligned: primary `GET /number-verification/v2/device-phone-number` (+ deprecated aliases), spec error contract {status,code,message}, user-bound token compare, TTL≤300s, opt-in assurance enrichment. Spec snapshot + gap analysis: `docs/research/camara/` |
+| 8 | **Assurance weights + per-risk thresholds** | A+B | ✅ | `AssurancePolicy.fromRuntime(SasAdminRuntimeConfig::read)` reads `sas.assurance.w-*` + `sas.assurance.threshold-*` from the admin KV store (hard-fail misconfig ⇒ defaults wholesale). RiskClass LOGIN/TRANSFER/HIGH_VALUE plumbed VerifyResource(header X-Sas-Risk-Class)→event→SBB→FSM (unknown ⇒ LOGIN) |
+| 9 | **jSS7 MAP transport live test** | A (2G/3G) | ✅(sim) | New module `sas-jss7-testapp/`: simulated home HLR answering PSI v3 + SAI v3 over real loopback SCTP (ATI logged+dropped, FS.11). LiveLoopTest 5 green in-process + cross-process smoke proven. Still pending: exercise against a REAL reachable STP/HLR |
+
+CAMARA conformance note (2026-08-23): northbound aligned to camaraproject NumberVerification
+v2.1.0 per `docs/research/camara/nv-flow-analysis.md` (fixes F1–F6 applied: spec paths,
+error contract, user-bound token semantics, TTL cap, E.164 normalization; assurance
+enrichment is opt-in and NOT part of the CAMARA contract). The TS.43/Wi-Fi track
+(`/entitlement/*`, `operatortoken:`) is explicitly OUT of the CAMARA surface — kept as a
+separate operator-side anchor.
 
 ---
 

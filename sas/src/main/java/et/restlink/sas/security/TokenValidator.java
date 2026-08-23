@@ -28,19 +28,26 @@ import java.util.Set;
 
 /**
  * P1 OIDC / JWT token validator for the bank→SAS northbound surface.
- * Validates: signature (HMAC-SHA256), expiry, issuer, audience, scope.
- * Fail-closed: any validation failure rejects the request.
+ * Validates: signature (HMAC-SHA256), expiry, issuer, audience, scope,
+ * CAMARA NV token-lifetime policy (F5: {@code exp - iat} ≤ 300 s, iat
+ * required) and the user-number binding (F4). Fail-closed: any validation
+ * failure rejects the request.
  *
  * <p>On success {@link #validateDetailed} also exposes the claims the SAS
  * needs for replay protection and per-endpoint authorization: the token key
- * ({@code jti}, or SHA-256 of the raw token when absent), the granted scopes
- * and the {@code amr} values.</p>
+ * ({@code jti}, or SHA-256 of the raw token when absent), the granted scopes,
+ * the {@code amr} values and the user-number binding — the normalized
+ * {@code phone_number} (or custom {@code msisdn}) claim that ties the token
+ * to one subscriber; {@code null} when no usable binding claim exists.</p>
  */
 @ApplicationScoped
 public class TokenValidator {
 
     private static final Logger LOG = LogManager.getLogger(TokenValidator.class);
     private static final String HMAC_ALGO = "HmacSHA256";
+
+    /** CAMARA NV MUST #3: access-token lifetime cap in seconds. */
+    public static final long MAX_TOKEN_LIFETIME_SECONDS = 300L;
 
     /** CAMARA NV v2.1.0 scope for {@code POST /verify}. */
     public static final String SCOPE_NUMBER_VERIFICATION_VERIFY = "number-verification:verify";
@@ -56,17 +63,25 @@ public class TokenValidator {
      * Validated bearer-token claims. {@code error == null} means accepted.
      * {@code tokenKey} is the stable replay key: the {@code jti} claim when
      * present, else the SHA-256 hex of the raw token (lab mode: SHA-256 of
-     * the raw Authorization header).
+     * the raw Authorization header). {@code boundNumber} is the normalized
+     * user-number binding (F4): the {@code phone_number} claim, else the
+     * custom {@code msisdn} claim, normalized to E.164; {@code null} when the
+     * token carries no usable binding (callers fail closed on it).
      */
     public record DetailedAuth(String error, String tokenKey, Set<String> scopes,
-                               List<String> amrValues) {
+                               List<String> amrValues, String boundNumber) {
 
         public boolean ok() {
             return error == null;
         }
 
+        public DetailedAuth(String error, String tokenKey, Set<String> scopes,
+                            List<String> amrValues) {
+            this(error, tokenKey, scopes, amrValues, null);
+        }
+
         public static DetailedAuth fail(String reason) {
-            return new DetailedAuth(reason, null, Set.of(), List.of());
+            return new DetailedAuth(reason, null, Set.of(), List.of(), null);
         }
     }
 
@@ -189,8 +204,16 @@ public class TokenValidator {
             return DetailedAuth.fail("token expired");
         }
         Long iat = extractLongClaim(payloadJson, "iat");
-        if (iat != null && iat > nowSec + config.clockSkewSeconds()) {
+        if (iat == null) {
+            return DetailedAuth.fail("missing iat claim (token lifetime policy)");
+        }
+        if (iat > nowSec + config.clockSkewSeconds()) {
             return DetailedAuth.fail("token issued in the future (clock skew)");
+        }
+        if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS) {
+            return DetailedAuth.fail("token lifetime exceeds the maximum of "
+                    + MAX_TOKEN_LIFETIME_SECONDS
+                    + "s (CAMARA NV token lifetime policy)");
         }
         String iss = extractStringClaim(payloadJson, "iss");
         if (config.expectedIssuer() != null && !config.expectedIssuer().isBlank()) {
@@ -222,7 +245,25 @@ public class TokenValidator {
         List<String> amrValues = extractArrayOrStringClaim(payloadJson, "amr");
         Set<String> scopes = (scope == null || scope.isBlank())
                 ? Set.of() : Set.of(scope.split("\\s+"));
-        return new DetailedAuth(null, tokenKey, scopes, amrValues);
+        return new DetailedAuth(null, tokenKey, scopes, amrValues,
+                extractUserBinding(payloadJson));
+    }
+
+    /**
+     * F4 — user-number binding: prefer the OIDC {@code phone_number} claim,
+     * fall back to the custom {@code msisdn} claim; normalize to E.164.
+     * Returns null when neither claim carries a normalizable number
+     * (absent or malformed — callers must fail closed).
+     */
+    private static String extractUserBinding(String payloadJson) {
+        for (String claim : List.of("phone_number", "msisdn")) {
+            var normalized = RequestValidator.normalizeE164(
+                    extractStringClaim(payloadJson, claim));
+            if (normalized.isPresent()) {
+                return normalized.get();
+            }
+        }
+        return null;
     }
 
     private boolean verifySignature(String signingInput, String signatureB64) {

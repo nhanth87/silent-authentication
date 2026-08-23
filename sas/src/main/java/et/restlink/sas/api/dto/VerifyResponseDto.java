@@ -12,10 +12,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import et.restlink.sas.model.VerifyResult;
 
 /**
- * CAMARA NumberVerification v2.1.0 {@code POST /verify} response body,
- * enriched with the SAS assurance snapshot so the bank backend can make its
- * own risk decision. Privacy rule: the MSISDN/IMSI is structurally absent —
- * there is no field that could carry it.
+ * CAMARA NumberVerification v2.1.0 {@code POST /verify} response body.
+ * Default wire shape is CAMARA-pure: exactly
+ * {@code {"devicePhoneNumberVerified":boolean}}. The SAS assurance snapshot
+ * (reqId/decision/assurance/fallbackReason) is opt-in (F2) via
+ * {@link #from(boolean, VerifyResult, boolean)}; see
+ * {@code ApiTogglesConfig}. Privacy rule: the MSISDN/IMSI is structurally
+ * absent — there is no field that could carry it.
  *
  * <p>Nulls are omitted ({@code NON_NULL}) so approved responses stay compact;
  * {@code fallbackReason} appears only on fail-closed outcomes and the
@@ -34,7 +37,19 @@ public record VerifyResponseDto(
         this(devicePhoneNumberVerified, null, null, null, null);
     }
 
-    /** Maps a terminal SAS result onto the wire shape (privacy-safe). */
+    /**
+     * Enriched mapping — the opt-in detail body (assurance snapshot rides
+     * along when {@code includeAssuranceDetail} is true).
+     */
+    public static VerifyResponseDto from(boolean devicePhoneNumberVerified,
+                                         VerifyResult result,
+                                         boolean includeAssuranceDetail) {
+        return includeAssuranceDetail
+                ? from(devicePhoneNumberVerified, result)
+                : new VerifyResponseDto(devicePhoneNumberVerified);
+    }
+
+    /** Maps a terminal SAS result onto the enriched wire shape (privacy-safe). */
     public static VerifyResponseDto from(boolean devicePhoneNumberVerified, VerifyResult result) {
         Assurance assurance = null;
         if (result != null && result.hasAssurance()) {

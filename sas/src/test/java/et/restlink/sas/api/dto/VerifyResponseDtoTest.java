@@ -124,4 +124,19 @@ class VerifyResponseDtoTest {
         String json = mapper.writeValueAsString(new VerifyResponseDto(true));
         assertEquals("{\"devicePhoneNumberVerified\":true}", json);
     }
+
+    @Test
+    void detailFlagGatesEnrichment_f2() throws Exception {
+        // Off → CAMARA-pure body regardless of any available snapshot.
+        String pure = mapper.writeValueAsString(
+                VerifyResponseDto.from(true, approveResult(), false));
+        assertEquals("{\"devicePhoneNumberVerified\":true}", pure);
+
+        // On → identical to the legacy enriched mapping.
+        String enriched = mapper.writeValueAsString(
+                VerifyResponseDto.from(false, fallbackResult(), true));
+        JsonNode n = mapper.readTree(enriched);
+        assertEquals("FALLBACK", n.get("decision").asText());
+        assertTrue(n.has("assurance"));
+    }
 }
