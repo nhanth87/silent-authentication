@@ -140,6 +140,9 @@ public class VerifyResource {
     ReplayGuard replayGuard;
 
     @Inject
+    et.restlink.sas.oauth.AccessTokenService accessTokens;
+
+    @Inject
     OperatorTokenSupport operatorTokenSupport;
 
     @Inject
@@ -315,7 +318,7 @@ public class VerifyResource {
                                     + "(phone_number/msisdn claim)", correlator);
                 }
                 // Single-use bearer token: one completed call per token key.
-                if (replayGuard.isConsumed(tokenKey)) {
+                if (replayGuard.isConsumed(tokenKey) || accessTokens.isConsumed(tokenKey)) {
                     return error(401, CODE_UNAUTHENTICATED,
                             "token already used (single-use)", correlator);
                 }
@@ -386,6 +389,7 @@ public class VerifyResource {
         if (validationEnabled && tokenKey != null) {
             // The token has now driven one completed call — consume it.
             replayGuard.consume(tokenKey);
+            accessTokens.markConsumed(tokenKey);
         }
 
         LOG.info("[SAS] /verify reqId={} verified={} fallback={}",
@@ -473,6 +477,7 @@ public class VerifyResource {
 
         if (validationEnabled) {
             replayGuard.consume(tokenKey);
+            accessTokens.markConsumed(tokenKey);
         }
 
         if (result.fallbackReason() != null || result.msisdn() == null) {

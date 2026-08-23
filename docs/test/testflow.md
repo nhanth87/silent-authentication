@@ -145,6 +145,43 @@ curl -s -X POST http://localhost:8085/verify \
 
 Dùng lại `$TOKEN` của bước ④ → `401` (consumed-jti).
 
+## 4b. Money-loop — operator Auth Server (CAMARA CIBA)
+
+Đây là **lớp sản phẩm kiếm tiền**: SAS cấp token user-bound (bind số điện thoại vào
+token) rồi bank mới gọi `/verify` so sánh. Chạy SAS với validation bật:
+
+```bash
+java -Dsas.security.token-validation-enabled=true \
+     -Dsas.security.hmac-secret=k1 -Dsas.oauth.secret=k1 \
+     -jar target/quarkus-app/quarkus-run.jar &
+```
+
+```bash
+# 1) Bank xin auth_req_id (cellular anchor: resolver tra IP:port -> MSISDN)
+curl -s -X POST http://localhost:8085/bc-authorize \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  -d 'scope=number-verification:verify'
+# → {"auth_req_id":"…","expires_in":120}
+
+# 2) Đổi token (CIBA grant; một auth_req_id = MỘT token)
+curl -s -X POST http://localhost:8085/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:openid:params:grant-type:ciba' \
+  --data-urlencode "auth_req_id=$AUTH"
+# → {"access_token":"<JWS HS256, phone_number=+E164>","expires_in":300,…}
+
+# 3) /verify so sánh claimed vs số BOUND trong token
+curl -s -X POST http://localhost:8085/number-verification/v2/verify \
+  -H "Authorization: Bearer $AT" -H 'X-Sas-Amr: mobile' \
+  -H 'X-Sas-Assurance-Detail: true' \
+  -d '{"phoneNumber":"+251911111111"}'   # match → true + assurance
+#    phoneNumber khác bound → false ; dùng lại token → 401 single-use
+```
+
+Wi-Fi track: thay X-Sas-Src-Ip/Port bằng `login_hint=operatortoken:<tk>`
+(TS.43 entitlement token — track riêng ngoài CAMARA surface).
+
 ## 5. Quan sát signalling
 
 ```bash

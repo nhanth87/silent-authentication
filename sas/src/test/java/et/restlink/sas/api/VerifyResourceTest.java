@@ -92,6 +92,7 @@ class VerifyResourceTest {
         resource.bootstrap = stub;
         resource.tokenValidator = tokenValidatorWith(config);
         resource.replayGuard = replayGuardWith(config);
+        resource.accessTokens = new et.restlink.sas.oauth.AccessTokenService();
         resource.securityConfig = config;
         resource.apiToggles = toggles;
         resource.operatorTokenSupport = failClosedOperatorStub();
