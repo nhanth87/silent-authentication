@@ -67,7 +67,7 @@ final class Pages {
                 </head>
                 <body>
                 <h1><span class="flag">HSS / 3GPP AAA Simulator</span></h1>
-                <p class="sub">Silent Auth SAS lab — S6a ULR/AIR/IDR + SWx MAR/SAA/PPA (own HSS only)</p>
+                <p class="sub">Silent Auth SAS lab — S6a ULR/AIR/IDR + SWx MAR/SAA/PPA + Gx CCR binding (own HSS only)</p>
                 <div class="grid">
                   <div>
                     <div class="panel" id="subscriber-panel">
@@ -85,6 +85,18 @@ final class Pages {
                       <button onclick="updateSubscriber()">Update subscriber</button>
                       <button class="warn" onclick="resetAll()">Reset buffer + defaults</button>
                     </div>
+                    <div class="panel" id="binding-panel" style="margin-top:16px">
+                      <h2>Gx IP bindings (PCRF)</h2>
+                      <div id="bindings"></div>
+                      <label>IP</label>
+                      <input id="bind-ip" placeholder="10.20.30.40">
+                      <label>MSISDN</label>
+                      <input id="bind-msisdn" placeholder="+251911111111">
+                      <label>IMSI</label>
+                      <input id="bind-imsi" placeholder="655010000000001">
+                      <button onclick="upsertBinding()">Upsert binding</button>
+                      <button class="warn" onclick="deleteBinding()">Delete binding</button>
+                    </div>
                   </div>
                   <div class="panel scroll">
                     <h2>Diameter messages (last 500)</h2>
@@ -100,10 +112,11 @@ final class Pages {
                   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
                 async function refresh() {
                   try {
-                    const [health, subs, msgs] = await Promise.all([
+                    const [health, subs, msgs, binds] = await Promise.all([
                       fetch('/api/health').then(r => r.json()),
                       fetch('/api/subscriber').then(r => r.json()),
-                      fetch('/api/messages').then(r => r.json())
+                      fetch('/api/messages').then(r => r.json()),
+                      fetch('/api/binding').then(r => r.json())
                     ]);
                     const h = document.getElementById('health');
                     const up = health.status === 'up' && health.diameterListening === true;
@@ -112,6 +125,7 @@ final class Pages {
                     h.className = up ? 'ok' : 'bad';
                     renderSubscribers(subs.subscribers || []);
                     renderMessages(msgs);
+                    renderBindings(binds.bindings || []);
                   } catch (e) { /* transient */ }
                 }
                 function renderSubscribers(subs) {
@@ -152,6 +166,29 @@ final class Pages {
                       barred: document.getElementById('barred').value === 'true',
                       authVectorsAvailable: Number(document.getElementById('vectors').value)
                     })});
+                  refresh();
+                }
+                function renderBindings(binds) {
+                  const el = document.getElementById('bindings');
+                  if (!binds.length) { el.innerHTML = '<i>no bindings</i>'; return; }
+                  el.innerHTML = binds.map(b => `
+                    <div class="kv">
+                      <b>${esc(b.ip)}</b><span>${esc(b.msisdn)} / ${esc(b.imsi || '—')}</span>
+                    </div>`).join('');
+                }
+                async function upsertBinding() {
+                  await fetch('/api/binding', { method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                      ip: document.getElementById('bind-ip').value.trim(),
+                      msisdn: document.getElementById('bind-msisdn').value.trim(),
+                      imsi: document.getElementById('bind-imsi').value.trim()
+                    })});
+                  refresh();
+                }
+                async function deleteBinding() {
+                  const ip = document.getElementById('bind-ip').value.trim();
+                  await fetch('/api/binding/' + encodeURIComponent(ip), { method:'DELETE' });
                   refresh();
                 }
                 async function resetAll() {

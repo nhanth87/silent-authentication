@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>et.restlink</groupId>
+  <artifactId>sas-jss7-testapp</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>SAS jSS7 TestApp (simulated home HLR)</name>
+  <description>Simulated home HLR for the Silent Auth SAS lab loop: answers MAP
+    provideSubscriberInfo (PSI) and sendAuthenticationInfo (SAI) dialogs over a
+    real jSS7 M3UA/SCCP/TCAP stack on loopback SCTP, drops AnyTimeInterrogation
+    (FS.11 Cat 1 demo), plus a control web UI and a live-loop integration test
+    that proves client-to-server signalling end to end.</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>25</maven.compiler.release>
+    <jss7.version>9.2.8-j25</jss7.version>
+    <log4j2.version>2.23.1</log4j2.version>
+    <junit-jupiter.version>5.12.2</junit-jupiter.version>
+    <surefire.version>3.5.4</surefire.version>
+  </properties>
+
+  <dependencies>
+    <!-- Same jSS7 stack the SAS MAP verifier uses (m3ua/sccp/tcap/ss7-ext
+         and friends are pulled in transitively). -->
+    <dependency>
+      <groupId>org.restcomm.protocols.ss7.config</groupId>
+      <artifactId>ss7-config</artifactId>
+      <version>${jss7.version}</version>
+    </dependency>
+    <!-- Kernel-SCTP backend implementation (NettySctpManagementImpl); ss7-config
+         only ships the fstack backend jar. -->
+    <dependency>
+      <groupId>org.mobicents.protocols.sctp</groupId>
+      <artifactId>sctp-impl</artifactId>
+      <version>2.27.32</version>
+    </dependency>
+    <dependency>
+      <groupId>org.restcomm.protocols.ss7.map</groupId>
+      <artifactId>map-api</artifactId>
+      <version>${jss7.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.restcomm.protocols.ss7.map</groupId>
+      <artifactId>map-impl</artifactId>
+      <version>${jss7.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>${log4j2.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>${log4j2.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit-jupiter.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>sas-jss7-testapp</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.14.0</version>
+        <configuration>
+          <release>25</release>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>et.restlink.hlrsim.Main</mainClass>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -251,7 +251,9 @@ public class VerifyResource {
                 reqId, result.match(), result.fallbackReason());
 
         if (result.fallbackReason() != null) {
-            return ok(new VerifyResponseDto(false), correlator);
+            // Fail-closed — the assurance snapshot still rides along so the
+            // bank backend can make its own risk decision.
+            return ok(VerifyResponseDto.from(false, result), correlator);
         }
 
         boolean verified;
@@ -261,7 +263,7 @@ public class VerifyResource {
             verified = result.msisdn() != null
                     ? sha256("+" + result.msisdn()).equalsIgnoreCase(hashed) : false;
         }
-        return ok(new VerifyResponseDto(verified), correlator);
+        return ok(VerifyResponseDto.from(verified, result), correlator);
     }
 
     @GET

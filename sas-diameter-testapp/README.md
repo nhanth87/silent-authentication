@@ -1,11 +1,11 @@
 # sas-diameter-testapp — HSS / 3GPP AAA simulator for the SAS lab
 
-Standalone operator-side **HSS + 3GPP AAA** Diameter simulator (corsac-diameter,
-the same stack the SAS client uses) so the full silent-auth loop can be tested
-locally:
+Standalone operator-side **HSS + 3GPP AAA + PCRF (Gx)** Diameter simulator
+(corsac-diameter, the same stack the SAS client uses) so the full silent-auth
+loop can be tested locally:
 
 ```
-browser/web ──POST /verify──► SAS (Quarkus, :8085) ──S6a / SWx──► this test app (:3868)
+browser/web ──POST /verify──► SAS (Quarkus, :8085) ──S6a / SWx / Gx──► this test app (:3868)
 ```
 
 R&D lab tooling only — never production.
@@ -20,6 +20,7 @@ R&D lab tooling only — never production.
 | SWx  | Multimedia-Auth            | —   | MAA: EAP-AKA SIP-Auth-Data-Item(s) honouring the same vector-count state; stamps `lastEapAuthSuccess` | TS 29.273 §6.2.2 |
 | SWx  | Server-Assignment          | —   | SAA ack + Non-3GPP-User-Data + 3GPP-AAAServerName | TS 29.273 §6.3.2 |
 | SWx  | Push-Profile               | —   | PPA ack | TS 29.273 §6.6.2 |
+| Gx   | Credit-Control-Request (I) | 272 | CCA: `2001` + Subscription-Id (MSISDN, IMSI when known) for the CCR's Framed-IP-Address binding, or `5030` when no binding is provisioned | TS 29.212 §5.3.1/§5.6.2 (+ lab deviation: answer-side Subscription-Id as unknown AVP 443, mandatory bit clear) |
 
 Result-code policy (fail-closed on the SAS side by design). corsac marks
 Experimental-Result disallowed on these answers, so error values ride the base
@@ -32,9 +33,23 @@ Result-Code:
 | detached UE                   | `5421` DIAMETER_ERROR_UNKNOWN_EPS_SUBSCRIPTION / USER_NO_NON_3GPP_SUBSCRIPTION |
 | barred                        | `2001` with `Subscriber-Status = OPERATOR_DETERMINED_BARRING` → SAS fails closed |
 | `authVectorsAvailable = 0`    | `2001` but empty vector set → SAS fails closed (AIA-empty / MAR-empty) |
+| Gx framed IP without binding  | `5030` DIAMETER_USER_UNKNOWN (RFC 4006 §8.4, referenced by TS 29.212) |
 | handler exception             | `3002` DIAMETER_UNABLE_TO_DELIVER (fail-safe, never crashes) |
 
-Identity: requests are matched by the Username AVP as IMSI or MSISDN.
+Identity: requests are matched by the Username AVP as IMSI or MSISDN; Gx
+binding lookups are keyed by Framed-IP-Address against the IP-binding registry.
+
+## Gx IP bindings
+
+The simulated PCRF side answers CCR binding lookups from a small IP →
+{msisdn, imsi} registry. Seeded default: `10.20.30.40` → `+251911111111` /
+`655010000000001` (matches the SAS demo resolver).
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/binding`        | GET    | list bindings `{"bindings":[{ip,msisdn,imsi}]}` |
+| `/api/binding`        | POST   | upsert `{"ip":"10.20.30.40","msisdn":"+251911111111","imsi":"655010000000001"}`; remove with `{"ip":"…","clear":true}` |
+| `/api/binding/{ip}`   | DELETE | remove one binding |
 
 ## Build and run
 
@@ -56,7 +71,7 @@ HTTP = 8085 (see `sas/src/main/resources/application.properties`).
 ## Control web UI
 
 Open `http://127.0.0.1:8086/` — live Diameter message table (last 500, polled
-every 2 s) plus subscriber state panel.
+every 2 s), subscriber state panel and Gx IP-binding panel.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -135,14 +150,16 @@ src/main/java/et/restlink/testapp/
 ├── Main.java                 # args + wiring + shutdown hook
 ├── SubscriberState.java      # per-subscriber mutable lab state
 ├── HssSimulator.java         # registry keyed by IMSI/MSISDN + defaults/reset
+├── BindingRegistry.java      # Gx IP → {msisdn,imsi} bindings (seeded default)
 ├── MessageLog.java           # last-500 ring buffer (records)
 ├── diameter/
 │   ├── HssDiameterServer.java# corsac stack, listening link, provider wiring
 │   ├── Answers.java          # result codes, random material, logging helpers
 │   ├── S6aHandler.java       # ULR/AIR/IDR server listener (TS 29.272)
-│   └── SwxHandler.java       # MAR/SAR/PPR server listener (TS 29.273)
+│   ├── SwxHandler.java       # MAR/SAR/PPR server listener (TS 29.273)
+│   └── GxHandler.java        # CCR binding lookups → CCA + Subscription-Id
 └── web/
-    ├── ControlWebServer.java # JDK HttpServer endpoints
+    ├── ControlWebServer.java # JDK HttpServer endpoints (+ /api/binding)
     ├── Pages.java            # single-page UI (vanilla JS, ET-flag accents)
     └── Json.java             # minimal JSON escape/parse (no dependency)
 ```

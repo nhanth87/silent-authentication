@@ -19,6 +19,7 @@ import com.mobius.software.common.dal.timers.WorkerPool;
 import com.mobius.software.telco.protocols.diameter.ApplicationIDs;
 import com.mobius.software.telco.protocols.diameter.DiameterStack;
 import com.mobius.software.telco.protocols.diameter.impl.DiameterStackImpl;
+import com.mobius.software.telco.protocols.diameter.impl.app.gx.GxProviderImpl;
 import com.mobius.software.telco.protocols.diameter.impl.app.s6a.S6aProviderImpl;
 import com.mobius.software.telco.protocols.diameter.impl.app.swx.SwxProviderImpl;
 import com.mobius.software.telco.protocols.diameter.primitives.common.VendorSpecificApplicationId;
@@ -27,9 +28,10 @@ import et.restlink.testapp.HssSimulator;
 
 /**
  * Diameter server stack of the simulated HSS / 3GPP AAA: one listening link
- * serving both S6a (16777251, TS 29.272) and SWx (16777265, TS 29.273),
- * mirroring the corsac-diameter server test wiring (commands package as the
- * provider package, impl package as the parser package).
+ * serving S6a (16777251, TS 29.272), SWx (16777265, TS 29.273) and Gx
+ * (16777238, TS 29.212 CCR binding lookups for the SAS resolver), mirroring
+ * the corsac-diameter server test wiring (commands package as the provider
+ * package, impl package as the parser package).
  */
 public final class HssDiameterServer {
 
@@ -78,12 +80,18 @@ public final class HssDiameterServer {
                 com.mobius.software.telco.protocols.diameter.commands.swx.MultimediaAuthRequest.class);
         Package swxImpl = packageOf("com.mobius.software.telco.protocols.diameter.impl.commands.swx",
                 com.mobius.software.telco.protocols.diameter.impl.commands.swx.MultimediaAuthRequestImpl.class);
+        Package gxCommands = packageOf("com.mobius.software.telco.protocols.diameter.commands.gx",
+                com.mobius.software.telco.protocols.diameter.commands.gx.CreditControlRequest.class);
+        Package gxImpl = packageOf("com.mobius.software.telco.protocols.diameter.impl.commands.gx",
+                com.mobius.software.telco.protocols.diameter.impl.commands.gx.CreditControlRequestImpl.class);
 
         List<VendorSpecificApplicationId> noVendor = List.of();
         stack.getNetworkManager().registerApplication(LINK_ID, noVendor,
                 List.of((long) ApplicationIDs.S6A), List.of(), s6aCommands, s6aImpl);
         stack.getNetworkManager().registerApplication(LINK_ID, noVendor,
                 List.of((long) ApplicationIDs.SWX), List.of(), swxCommands, swxImpl);
+        stack.getNetworkManager().registerApplication(LINK_ID, noVendor,
+                List.of((long) ApplicationIDs.GX), List.of(), gxCommands, gxImpl);
         stack.getNetworkManager().startLink(LINK_ID);
 
         S6aProviderImpl s6aProvider =
@@ -95,6 +103,11 @@ public final class HssDiameterServer {
                 (SwxProviderImpl) stack.getProvider((long) ApplicationIDs.SWX, swxCommands);
         swxProvider.setServerListener(generator.generateID(),
                 new SwxHandler(hss, swxProvider.getMessageFactory(), swxProvider.getAvpFactory()));
+
+        GxProviderImpl gxProvider =
+                (GxProviderImpl) stack.getProvider((long) ApplicationIDs.GX, gxCommands);
+        gxProvider.setServerListener(generator.generateID(),
+                new GxHandler(hss, gxProvider.getMessageFactory()));
 
         LOG.info("HSS Diameter listening on {}:{} transport={} host={}/{}",
                 bindAddress, diameterPort, sctp ? "sctp" : "tcp", LOCAL_HOST, LOCAL_REALM);

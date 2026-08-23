@@ -23,6 +23,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import et.restlink.testapp.BindingRegistry;
 import et.restlink.testapp.HssSimulator;
 import et.restlink.testapp.MessageLog;
 import et.restlink.testapp.SubscriberState;
@@ -64,10 +65,15 @@ public final class ControlWebServer {
         String path = exchange.getRequestURI().getPath();
         String method = exchange.getRequestMethod();
         try {
+            if (path.startsWith("/api/binding/")) {
+                bindingDelete(exchange, method, path.substring("/api/binding/".length()));
+                return;
+            }
             switch (path) {
                 case "/", "/index.html" -> respond(exchange, 200, "text/html; charset=utf-8", Pages.index());
                 case "/api/messages" -> messages(exchange, method);
                 case "/api/subscriber" -> subscriber(exchange, method);
+                case "/api/binding" -> binding(exchange, method);
                 case "/api/reset" -> reset(exchange, method);
                 case "/api/health" -> health(exchange, method);
                 default -> respond(exchange, 404, "application/json", Json.objectOf(
@@ -142,6 +148,62 @@ public final class ControlWebServer {
             state.setSubscribedRat(value.toString());
         }
         respond(exchange, 200, "application/json", Json.objectOf(subscriberFields(state)));
+    }
+
+    private void binding(HttpExchange exchange, String method) throws IOException {
+        if ("GET".equals(method)) {
+            List<Map<String, Object>> items = new ArrayList<>();
+            for (BindingRegistry.Binding b : hss.bindings().list()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("ip", b.ip());
+                row.put("msisdn", b.msisdn());
+                row.put("imsi", b.imsi());
+                items.add(row);
+            }
+            respond(exchange, 200, "application/json",
+                    "{\"bindings\":" + Json.arrayOf(items) + "}");
+            return;
+        }
+        requireMethod(method, "POST");
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        Map<String, Object> update = Json.parseFlatObject(body);
+        Object ip = update.get("ip");
+        if (ip == null || ip.toString().isBlank()) {
+            throw new BadRequest("ip is required");
+        }
+        if (boolOrFalse(update.get("clear"))) {
+            BindingRegistry.Binding removed = hss.bindings().remove(ip.toString());
+            respond(exchange, 200, "application/json", Json.objectOf(Map.of(
+                    "removed", removed != null,
+                    "ip", ip.toString())));
+            return;
+        }
+        Object msisdn = update.get("msisdn");
+        Object imsi = update.get("imsi");
+        if (msisdn == null || msisdn.toString().isBlank()) {
+            throw new BadRequest("msisdn is required (or clear=true to remove)");
+        }
+        BindingRegistry.Binding bound = hss.bindings().upsert(ip.toString(), msisdn.toString(),
+                imsi == null ? null : imsi.toString());
+        respond(exchange, 200, "application/json", Json.objectOf(Map.of(
+                "ip", bound.ip(),
+                "msisdn", bound.msisdn(),
+                "imsi", bound.imsi() == null ? "" : bound.imsi())));
+    }
+
+    private void bindingDelete(HttpExchange exchange, String method, String ip) throws IOException {
+        requireMethod(method, "DELETE");
+        BindingRegistry.Binding removed = hss.bindings().remove(ip);
+        respond(exchange, 200, "application/json", Json.objectOf(Map.of(
+                "removed", removed != null,
+                "ip", ip)));
+    }
+
+    private static boolean boolOrFalse(Object value) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        return value instanceof String s && s.equalsIgnoreCase("true");
     }
 
     private void reset(HttpExchange exchange, String method) throws IOException {

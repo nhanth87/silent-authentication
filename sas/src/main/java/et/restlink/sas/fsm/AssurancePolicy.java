@@ -266,4 +266,26 @@ public final class AssurancePolicy {
     public AssuranceLevel assuranceFor(int score, RiskClass riskClass) {
         return score >= thresholdScore(riskClass) ? AssuranceLevel.HIGH : AssuranceLevel.LOW;
     }
+
+    // ---- weight accessors (read-only; used for factor snapshots/CDR) ------
+
+    /** Configured IP-binding-freshness weight. */
+    public double wIpFresh() {
+        return wIpFresh;
+    }
+
+    /** Configured subscriber-reachable weight. */
+    public double wReachable() {
+        return wReachable;
+    }
+
+    /** Configured not-SIM-swapped weight. */
+    public double wNotSimSwap() {
+        return wNotSimSwap;
+    }
+
+    /** Configured location-plausible weight. */
+    public double wLocation() {
+        return wLocation;
+    }
 }

@@ -53,6 +53,10 @@ public final class VerificationFsm {
      * {@link AssurancePolicy#thresholdScore(AssurancePolicy.RiskClass)}. A
      * {@code null} {@code riskClass} falls back to LOGIN (the /verify flow is a
      * login; documented fail-safe default).
+     *
+     * <p>Every terminal result carries the assurance snapshot (score,
+     * threshold, per-factor values and weights) so the bank backend can make
+     * its own risk decision; the decision logic itself is unchanged.</p>
      */
     public VerifyResult decide(String reqId,
                                ResolverResult resolver,
@@ -62,35 +66,85 @@ public final class VerificationFsm {
         AssurancePolicy.RiskClass risk =
                 riskClass == null ? AssurancePolicy.RiskClass.LOGIN : riskClass;
         if (resolver == null || !resolver.found()) {
-            return VerifyResult.fallback(reqId,
+            return fallback(reqId,
                     resolver != null && resolver.miss() != null
-                            ? resolver.miss() : FallbackReason.RESOLVER_ERROR);
+                            ? resolver.miss() : FallbackReason.RESOLVER_ERROR,
+                    resolver, evidence, risk);
         }
 
         // Mode A — claim asserted: resolved must equal claimed.
         if (claimedMsisdn != null && !claimedMsisdn.equals(resolver.msisdn())) {
-            return VerifyResult.fallback(reqId, FallbackReason.MSISDN_MISMATCH);
+            return fallback(reqId, FallbackReason.MSISDN_MISMATCH, resolver, evidence, risk);
         }
 
         // Fail closed on any verifier failure before touching the score.
         if (evidence == null) {
-            return VerifyResult.fallback(reqId, FallbackReason.VERIFY_ERROR);
+            return fallback(reqId, FallbackReason.VERIFY_ERROR, resolver, evidence, risk);
         }
         if (evidence.failed()) {
-            return VerifyResult.fallback(reqId, evidence.failure());
+            return fallback(reqId, evidence.failure(), resolver, evidence, risk);
         }
         if (!evidence.reachable()) {
-            return VerifyResult.fallback(reqId, FallbackReason.PURGED);
+            return fallback(reqId, FallbackReason.PURGED, resolver, evidence, risk);
         }
         if (!evidence.notSimSwapped()) {
-            return VerifyResult.fallback(reqId, FallbackReason.SIM_SWAP_SUSPECT);
+            return fallback(reqId, FallbackReason.SIM_SWAP_SUSPECT, resolver, evidence, risk);
         }
 
         int score = policy.score(resolver, evidence);
-        if (score < policy.thresholdScore(risk)) {
-            return VerifyResult.fallback(reqId, FallbackReason.LOW_ASSURANCE);
+        int threshold = policy.thresholdScore(risk);
+        if (score < threshold) {
+            return fallbackWithSnapshot(reqId, FallbackReason.LOW_ASSURANCE,
+                    score, threshold, risk, resolver, evidence);
         }
+        VerifyResult.Factor[] f = factors(resolver, evidence);
 
-        return VerifyResult.approved(reqId, resolver.msisdn(), policy.assuranceFor(score, risk));
+        return VerifyResult.approved(reqId, resolver.msisdn(),
+                policy.assuranceFor(score, risk), score, threshold, risk.name(),
+                f[0], f[1], f[2], f[3]);
+    }
+
+    /**
+     * Fail-closed result with whatever assurance was measurable — for SBB
+     * early-exit branches outside the FSM (resolver miss, missing anchor).
+     */
+    public VerifyResult fallback(String reqId,
+                                 FallbackReason reason,
+                                 ResolverResult resolver,
+                                 VerificationEvidence evidence,
+                                 AssurancePolicy.RiskClass riskClass) {
+        AssurancePolicy.RiskClass risk =
+                riskClass == null ? AssurancePolicy.RiskClass.LOGIN : riskClass;
+        return fallbackWithSnapshot(reqId, reason,
+                policy.score(resolver, evidence), policy.thresholdScore(risk),
+                risk, resolver, evidence);
+    }
+
+    private VerifyResult fallbackWithSnapshot(String reqId,
+                                              FallbackReason reason,
+                                              int score,
+                                              int threshold,
+                                              AssurancePolicy.RiskClass risk,
+                                              ResolverResult resolver,
+                                              VerificationEvidence evidence) {
+        VerifyResult.Factor[] f = factors(resolver, evidence);
+        return VerifyResult.fallback(reqId, reason, score, threshold, risk.name(),
+                f[0], f[1], f[2], f[3]);
+    }
+
+    /** Per-factor evidence values with the configured weights (null-safe). */
+    private VerifyResult.Factor[] factors(ResolverResult resolver,
+                                          VerificationEvidence evidence) {
+        double ipValue = resolver != null && resolver.found()
+                ? AssurancePolicy.ipFreshFactor(resolver.bearerAgeMs()) : 0.0;
+        return new VerifyResult.Factor[]{
+                new VerifyResult.Factor(ipValue, policy.wIpFresh()),
+                new VerifyResult.Factor(
+                        evidence != null && evidence.reachable() ? 1.0 : 0.0, policy.wReachable()),
+                new VerifyResult.Factor(
+                        evidence != null && evidence.notSimSwapped() ? 1.0 : 0.0, policy.wNotSimSwap()),
+                new VerifyResult.Factor(
+                        evidence != null && evidence.locationPlausible() ? 1.0 : 0.0, policy.wLocation()),
+        };
     }
 }

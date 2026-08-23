@@ -55,6 +55,37 @@ public class SasCdrService {
     private record Attribution(String msisdn, String operation, String user, String connector,
                                String tenantId, int networkId) {}
 
+    /**
+     * Full-flow detail of one {@code /verify} request (privacy: no raw
+     * MSISDN/IMSI — the service masks the number before persisting).
+     *
+     * @param verified       final answer recorded for the flow
+     * @param decision       APPROVE / FALLBACK
+     * @param score          assurance score 0..100 (nullable when not computed)
+     * @param threshold      threshold applied (nullable)
+     * @param assuranceLevel FALLBACK / LOW / HIGH
+     * @param riskClass      LOGIN / TRANSFER / HIGH_VALUE
+     * @param accessTech     GS_2G3G / LTE / NR / WIFI
+     * @param fallbackReason fail-closed reason, null on approval
+     * @param resolverStatus BOUND / NO_BINDING / ... / SKIPPED_WIFI
+     * @param evidenceSource verifier protocol tag (MAP-PSI+SAI / ...)
+     * @param evidenceJson   factors + weights + stage notes (msisdn-free)
+     * @param totalMs        end-to-end flow duration
+     */
+    public record FlowDetail(
+            boolean verified,
+            String decision,
+            Integer score,
+            Integer threshold,
+            String assuranceLevel,
+            String riskClass,
+            String accessTech,
+            String fallbackReason,
+            String resolverStatus,
+            String evidenceSource,
+            String evidenceJson,
+            int totalMs) {}
+
     /** Open a ledger row for a new SAS request. */
     public void accepted(String correlationId, String msisdn, String operation,
                          String user, String connector, String tenantId, int networkId) {
@@ -77,9 +108,76 @@ public class SasCdrService {
         write(correlationId, blankTo(status, "FAILED"), "FAILED", "failed");
     }
 
+    /**
+     * Full-flow record for one {@code /verify} request — written ONCE at the
+     * SBB terminal point. Privacy: the MSISDN is masked ({@code 2519****11}
+     * style) before it touches the row, the CSV line or any log; the IMSI is
+     * never passed in at all.
+     */
+    public void recordFlow(String correlationId, String msisdn, FlowDetail detail) {
+        if (!enabled || correlationId == null || correlationId.isBlank() || detail == null) {
+            return;
+        }
+        Instant now = Instant.now();
+        String masked = maskMsisdn(msisdn);
+
+        SasCdrEntity row = new SasCdrEntity();
+        row.id = UUID.randomUUID();
+        row.recordedAt = now;
+        row.correlationId = correlationId;
+        row.phase = "FLOW";
+        row.status = detail.decision() == null ? "UNKNOWN" : detail.decision();
+        row.msisdn = masked;
+        row.operation = "VERIFY";
+        row.detail = "score=" + detail.score()
+                + " threshold=" + detail.threshold()
+                + " level=" + detail.assuranceLevel()
+                + " risk=" + detail.riskClass()
+                + " resolver=" + detail.resolverStatus()
+                + " evidence=" + detail.evidenceSource()
+                + " totalMs=" + detail.totalMs();
+        row.networkId = 0;
+        row.tenantId = null;
+        row.csvLine = csvLine(now, correlationId, masked, "VERIFY", row.status,
+                row.detail, DEFAULT_USER, DEFAULT_CONNECTOR, null);
+        row.startedAt = now;
+        row.updatedAt = now;
+        row.eventCount = 1;
+        row.eventsJson = "FLOW:" + row.status;
+
+        row.verified = detail.verified();
+        row.decision = detail.decision();
+        row.score = detail.score();
+        row.threshold = detail.threshold();
+        row.assuranceLevel = detail.assuranceLevel();
+        row.riskClass = detail.riskClass();
+        row.accessTech = detail.accessTech();
+        row.fallbackReason = detail.fallbackReason();
+        row.resolverStatus = detail.resolverStatus();
+        row.evidenceSource = detail.evidenceSource();
+        row.evidenceJson = detail.evidenceJson();
+        row.totalMs = detail.totalMs();
+
+        CDR.info(row.csvLine);
+        if (dbEnabled) {
+            flusher.enqueue(row);
+        }
+    }
+
     /** Most recent persisted/queued ledger rows (newest first). */
     public List<SasCdrEntity> recent(int limit) {
         return flusher.recent(limit);
+    }
+
+    /**
+     * Masks an MSISDN like the existing operator logs ({@code 2519****11}).
+     * Anything too short to mask safely yields {@code null} — never raw.
+     */
+    static String maskMsisdn(String msisdn) {
+        if (msisdn == null || msisdn.length() < 6) {
+            return null;
+        }
+        return msisdn.substring(0, 4) + "****" + msisdn.substring(msisdn.length() - 2);
     }
 
     private void write(String correlationId, String status, String phase, String detail) {

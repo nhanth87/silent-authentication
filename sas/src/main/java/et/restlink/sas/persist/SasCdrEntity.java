@@ -64,4 +64,52 @@ public class SasCdrEntity extends PanacheEntityBase {
 
     @Column(name = "events_json", length = 8192)
     public String eventsJson;
+
+    // ---- full-flow columns (V2 — one row per /verify request) -------------
+
+    /** Final CAMARA answer for the request. */
+    @Column
+    public Boolean verified;
+
+    /** APPROVE / FALLBACK decision label. */
+    @Column(length = 16)
+    public String decision;
+
+    /** Assurance score 0..100. */
+    public Integer score;
+
+    /** Threshold applied for the risk class. */
+    public Integer threshold;
+
+    /** Assurance level name (FALLBACK / LOW / HIGH). */
+    @Column(name = "assurance_level", length = 24)
+    public String assuranceLevel;
+
+    /** Risk class label (LOGIN / TRANSFER / HIGH_VALUE). */
+    @Column(name = "risk_class", length = 16)
+    public String riskClass;
+
+    /** Access technology (GS_2G3G / LTE / NR / WIFI). */
+    @Column(name = "access_tech", length = 12)
+    public String accessTech;
+
+    /** Fail-closed reason, null on approval. */
+    @Column(name = "fallback_reason", length = 48)
+    public String fallbackReason;
+
+    /** Resolver stage outcome (BOUND / NO_BINDING / ... / SKIPPED_WIFI). */
+    @Column(name = "resolver_status", length = 32)
+    public String resolverStatus;
+
+    /** Verifier evidence source protocol tag (MAP-PSI+SAI / S6a-IDR+AIR / ...). */
+    @Column(name = "evidence_source", length = 32)
+    public String evidenceSource;
+
+    /** Factors + weights + stage notes as JSON (msisdn-free). */
+    @Column(name = "evidence_json", columnDefinition = "TEXT")
+    public String evidenceJson;
+
+    /** End-to-end flow duration in milliseconds. */
+    @Column(name = "total_ms")
+    public Integer totalMs;
 }

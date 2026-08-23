@@ -14,6 +14,8 @@ import com.microjainslee.api.SleeEvent;
 import com.microjainslee.api.SleeEventHandler;
 import com.microjainslee.api.annotations.InjectRa;
 
+import et.restlink.sas.cdr.SasCdrService;
+import et.restlink.sas.cdr.VerifyFlowJson;
 import et.restlink.sas.coordinator.VerifyCoordinator;
 import et.restlink.sas.events.VerifyRequestEvent;
 import et.restlink.sas.fsm.AssurancePolicy;
@@ -32,9 +34,13 @@ import et.restlink.sas.ras.s6averifier.command.S6aVerifyCommand;
 import et.restlink.sas.ras.swxverifier.command.AbortSwxCommand;
 import et.restlink.sas.ras.swxverifier.command.SwxVerifyCommand;
 
+import jakarta.enterprise.inject.Instance;
+import jakarta.enterprise.inject.spi.CDI;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -50,6 +56,12 @@ import java.util.concurrent.TimeoutException;
  * <p>Drive order is fail-closed end-to-end: resolver miss/timeout, verifier
  * failure/timeout, SIM-swap suspect or a low score all terminate in FALLBACK.
  * Missing evidence never approves.</p>
+ *
+ * <p>Exactly one full-flow CDR row is written per request, at this terminal
+ * point ({@code phase=FLOW}): decision, assurance snapshot, stage outcomes and
+ * total latency. The MSISDN is masked before persisting; the IMSI never
+ * reaches the CDR at all. CDR failure is logged and swallowed — it must never
+ * alter the fail-closed verification outcome.</p>
  */
 public final class VerifySbb implements Sbb, SleeEventHandler {
 
@@ -86,14 +98,24 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
                 evt.riskClass() == null
                         ? AssurancePolicy.RiskClass.LOGIN : evt.riskClass());
 
-        VerifyResult result = drive(evt);
-        coordinator.complete(evt.reqId(), result);
+        long startNanos = System.nanoTime();
+        DriveOutcome outcome = drive(evt);
+        long totalMs = (System.nanoTime() - startNanos) / 1_000_000L;
 
-        LOG.info("[SAS] verify end reqId={} match={} assurance={} fallback={}",
-                result.reqId(), result.match(), result.assurance(), result.fallbackReason());
+        coordinator.complete(evt.reqId(), outcome.result());
+        recordFlowCdr(evt, outcome, totalMs);
+
+        LOG.info("[SAS] verify end reqId={} match={} assurance={} fallback={} totalMs={}",
+                outcome.result().reqId(), outcome.result().match(),
+                outcome.result().assurance(), outcome.result().fallbackReason(), totalMs);
     }
 
-    private VerifyResult drive(VerifyRequestEvent evt) throws Exception {
+    /** Terminal result plus the stage provenance needed for the flow CDR. */
+    private record DriveOutcome(VerifyResult result, String resolverStatus,
+                                String evidenceSource) {
+    }
+
+    private DriveOutcome drive(VerifyRequestEvent evt) throws Exception {
         // RESOLVING — Wi-Fi has no cellular bearer; the SIM/TS.43 EAP-AKA path
         // uses the SWx verifier (TS 29.273) instead of the IP resolver.
         if (evt.accessTech() == AccessTech.WIFI) {
@@ -104,15 +126,28 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         if (resolver == null || !resolver.found()) {
             FallbackReason why = resolver != null && resolver.miss() != null
                     ? resolver.miss() : FallbackReason.RESOLVER_ERROR;
-            return VerifyResult.fallback(evt.reqId(), why);
+            return new DriveOutcome(
+                    fsm.fallback(evt.reqId(), why, resolver, null, riskClass(evt)),
+                    statusOf(resolver), null);
         }
 
         // VERIFYING — 2G/3G rides MAP PSI/SAI; LTE/NR rides Diameter S6a.
         VerificationEvidence evidence = verify(evt, resolver);
 
         // SCORING → terminal
-        return fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
-                riskClass(evt));
+        return new DriveOutcome(
+                fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
+                        riskClass(evt)),
+                statusOf(resolver),
+                evidence == null ? null : evidence.protocol());
+    }
+
+    /** Resolver stage outcome label for the flow CDR. */
+    private static String statusOf(ResolverResult resolver) {
+        if (resolver == null) {
+            return FallbackReason.RESOLVER_ERROR.name();
+        }
+        return resolver.found() ? "BOUND" : resolver.miss().name();
     }
 
     /**
@@ -128,7 +163,7 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
             throws Exception {
         return switch (evt.accessTech()) {
             case LTE, NR -> verifyS6a(evt, resolver);
-            case WIFI -> VerificationEvidence.fail(FallbackReason.WIFI_NOT_READY, "SWx");
+            case WIFI -> VerificationEvidence.fail(FallbackReason.WIFI_NOT_READY, "SWX");
             case GS_2G3G -> verifyMap(evt, resolver);
         };
     }
@@ -200,15 +235,21 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         }
     }
 
-    private VerifyResult verifySwx(VerifyRequestEvent evt) throws Exception {
+    private DriveOutcome verifySwx(VerifyRequestEvent evt) throws Exception {
         // Wi-Fi path: the claimed MSISDN is the identity anchor (no IP resolver).
         // Missing anchor ⇒ fail closed before touching the SWx RA.
         if (evt.claimedMsisdn() == null || evt.claimedMsisdn().isBlank()) {
-            return VerifyResult.fallback(evt.reqId(), FallbackReason.INVALID_REQUEST);
+            return new DriveOutcome(
+                    fsm.fallback(evt.reqId(), FallbackReason.INVALID_REQUEST, null, null,
+                            riskClass(evt)),
+                    "SKIPPED_WIFI", null);
         }
         RaCommandPort port = swxVerifierRa;
         if (port == null) {
-            return VerifyResult.fallback(evt.reqId(), FallbackReason.VERIFY_ERROR);
+            return new DriveOutcome(
+                    fsm.fallback(evt.reqId(), FallbackReason.VERIFY_ERROR, null, null,
+                            riskClass(evt)),
+                    "SKIPPED_WIFI", null);
         }
         CompletableFuture<VerificationEvidence> reply = new CompletableFuture<>();
         // B2: claimed IMSI (from the TS.43 entitlement token) rides with the
@@ -229,7 +270,57 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         }
         // Wi-Fi path: no resolver — use claimed MSISDN as the identity anchor.
         ResolverResult resolver = ResolverResult.bound(evt.claimedMsisdn(), null, 0L);
-        return fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
-                riskClass(evt));
+        return new DriveOutcome(
+                fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
+                        riskClass(evt)),
+                "SKIPPED_WIFI",
+                evidence == null ? null : evidence.protocol());
+    }
+
+    // ---- full-flow CDR ----------------------------------------------------
+
+    /**
+     * Writes the one flow CDR row for this request. Resolves the CDI service
+     * lazily (the SBB is constructed by the container factory, not by Arc);
+     * outside a CDI environment (pure unit tests) the write is skipped —
+     * never fatal.
+     */
+    private void recordFlowCdr(VerifyRequestEvent evt, DriveOutcome outcome, long totalMs) {
+        try {
+            Instance<SasCdrService> instances =
+                    CDI.current().select(SasCdrService.class);
+            if (!instances.isResolvable()) {
+                LOG.debug("[SAS] flow CDR skipped reqId={} (service absent)", evt.reqId());
+                return;
+            }
+            VerifyResult r = outcome.result();
+            instances.get().recordFlow(evt.reqId(), evt.claimedMsisdn(),
+                    new SasCdrService.FlowDetail(
+                            r.match(),
+                            r.decision(),
+                            r.score(),
+                            r.threshold(),
+                            r.assurance() == null ? null : r.assurance().name(),
+                            r.riskClass(),
+                            evt.accessTech().name(),
+                            r.fallbackReason() == null ? null : r.fallbackReason().name(),
+                            outcome.resolverStatus(),
+                            outcome.evidenceSource(),
+                            VerifyFlowJson.build(r, stageNotes(outcome)),
+                            (int) Math.min(Integer.MAX_VALUE, totalMs)));
+        } catch (IllegalStateException stateless) {
+            LOG.debug("[SAS] flow CDR skipped reqId={} (no CDI)", evt.reqId());
+        } catch (RuntimeException ex) {
+            LOG.warn("[SAS] flow CDR failed reqId={}: {}", evt.reqId(), ex.toString());
+        }
+    }
+
+    private static List<String> stageNotes(DriveOutcome outcome) {
+        VerifyResult r = outcome.result();
+        return List.of(
+                "resolver:" + outcome.resolverStatus(),
+                "verifier:" + (outcome.evidenceSource() == null ? "NONE" : outcome.evidenceSource()),
+                "decision:" + r.decision(),
+                "fallback:" + (r.fallbackReason() == null ? "NONE" : r.fallbackReason().name()));
     }
 }

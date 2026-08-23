@@ -26,6 +26,7 @@ public final class HssSimulator {
     private final MessageLog messageLog;
     private final Map<String, SubscriberState> byImsi = new LinkedHashMap<>();
     private final Map<String, SubscriberState> byMsisdn = new LinkedHashMap<>();
+    private final BindingRegistry bindings = new BindingRegistry();
 
     public HssSimulator(MessageLog messageLog) {
         this.messageLog = messageLog;
@@ -79,10 +80,17 @@ public final class HssSimulator {
         return messageLog;
     }
 
+    /** Gx IP → subscriber bindings served by the simulated PCRF side. */
+    public BindingRegistry bindings() {
+        return bindings;
+    }
+
     /** Clear the ring buffer and restore every subscriber's default state. */
     public synchronized void reset() {
         messageLog.clear();
         byImsi.values().forEach(SubscriberState::resetDefaults);
+        bindings.clear();
+        bindings.upsert(BindingRegistry.DEMO_IP, DEMO_MSISDN, DEMO_IMSI);
     }
 
     /** True when the Username matches no provisioned subscriber. */

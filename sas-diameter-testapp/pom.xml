@@ -10,10 +10,11 @@
   <packaging>jar</packaging>
 
   <name>SAS Diameter TestApp (HSS / 3GPP AAA simulator)</name>
-  <description>Operator-side HSS + 3GPP AAA Diameter simulator for the Silent
-    Auth SAS lab loop: browser/web -> POST /verify -> SAS -> this test app.
-    Serves S6a (ULR/AIR/IDR, TS 29.272) and SWx (MAR/SAR/PPR, TS 29.273)
-    answers over corsac-diameter, plus a control web UI.</description>
+  <description>Operator-side HSS + 3GPP AAA + PCRF (Gx) Diameter simulator for
+    the Silent Auth SAS lab loop: browser/web -> POST /verify -> SAS -> this
+    test app. Serves S6a (ULR/AIR/IDR, TS 29.272), SWx (MAR/SAR/PPR, TS 29.273)
+    and Gx CCR binding lookups (TS 29.212) over corsac-diameter, plus a control
+    web UI.</description>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

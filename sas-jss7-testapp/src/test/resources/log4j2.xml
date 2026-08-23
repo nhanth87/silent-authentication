@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="stdout" target="SYSTEM_OUT">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5p %c{1} - %m%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Logger name="org.mobicents" level="warn"/>
+    <Logger name="org.restcomm.protocols.ss7.sccp" level="warn"/>
+    <Logger name="org.restcomm.protocols.ss7.tcap" level="warn"/>
+    <Logger name="org.restcomm.protocols.ss7.m3ua" level="info"/>
+    <Root level="info">
+      <AppenderRef ref="stdout"/>
+    </Root>
+  </Loggers>
+</Configuration>

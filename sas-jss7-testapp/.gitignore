@@ -1,0 +1,5 @@
+target/
+hlr-sim-*.xml
+sas-live-*.xml
+dependency-reduced-pom.xml
+M3ua_ManagementMessageHandler.xml
