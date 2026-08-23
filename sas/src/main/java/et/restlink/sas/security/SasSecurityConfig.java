@@ -24,17 +24,17 @@ public class SasSecurityConfig {
     @ConfigProperty(name = "sas.security.token-validation-enabled", defaultValue = "false")
     boolean tokenValidationEnabled;
 
-    @ConfigProperty(name = "sas.security.hmac-secret", defaultValue = "")
-    String hmacSecret;
+    @ConfigProperty(name = "sas.security.hmac-secret")
+    java.util.Optional<String> hmacSecret;
 
-    @ConfigProperty(name = "sas.security.expected-issuer", defaultValue = "")
-    String expectedIssuer;
+    @ConfigProperty(name = "sas.security.expected-issuer")
+    java.util.Optional<String> expectedIssuer;
 
-    @ConfigProperty(name = "sas.security.expected-audience", defaultValue = "")
-    String expectedAudience;
+    @ConfigProperty(name = "sas.security.expected-audience")
+    java.util.Optional<String> expectedAudience;
 
-    @ConfigProperty(name = "sas.security.required-scopes", defaultValue = "")
-    String requiredScopesRaw;
+    @ConfigProperty(name = "sas.security.required-scopes")
+    java.util.Optional<String> requiredScopesRaw;
 
     @ConfigProperty(name = "sas.security.clock-skew-seconds", defaultValue = "30")
     long clockSkewSeconds;
@@ -45,27 +45,33 @@ public class SasSecurityConfig {
     @ConfigProperty(name = "sas.security.reqid-ttl-seconds", defaultValue = "600")
     long reqIdTtlSeconds;
 
+    @ConfigProperty(name = "sas.security.api-key")
+    java.util.Optional<String> apiKey;
+
+    @ConfigProperty(name = "sas.security.enforce-api-keys", defaultValue = "false")
+    boolean enforceApiKeys;
+
     public boolean tokenValidationEnabled() {
         return tokenValidationEnabled;
     }
 
     public String hmacSecret() {
-        return hmacSecret;
+        return hmacSecret.orElse("");
     }
 
     public String expectedIssuer() {
-        return expectedIssuer;
+        return expectedIssuer.orElse("");
     }
 
     public String expectedAudience() {
-        return expectedAudience;
+        return expectedAudience.orElse("");
     }
 
     public Set<String> requiredScopes() {
-        if (requiredScopesRaw == null || requiredScopesRaw.isBlank()) {
+        if (requiredScopesRaw == null || requiredScopesRaw.isEmpty() || requiredScopesRaw.get().isBlank()) {
             return Set.of();
         }
-        return Set.of(requiredScopesRaw.split(","));
+        return Set.of(requiredScopesRaw.get().split(","));
     }
 
     public long clockSkewSeconds() {
@@ -78,5 +84,24 @@ public class SasSecurityConfig {
 
     public long reqIdTtlSeconds() {
         return reqIdTtlSeconds;
+    }
+
+    public String apiKey() {
+        return apiKey.orElse("");
+    }
+
+    public boolean enforceApiKeys() {
+        return enforceApiKeys;
+    }
+
+    /** Parsed {@code sas.security.api-key} list; empty means disabled (lab). */
+    public List<String> expectedApiKeys() {
+        if (apiKey == null || apiKey.isEmpty() || apiKey.get().isBlank()) {
+            return List.of();
+        }
+        return List.of(apiKey.get().split(",")).stream()
+                .map(String::trim)
+                .filter(k -> !k.isEmpty())
+                .toList();
     }
 }

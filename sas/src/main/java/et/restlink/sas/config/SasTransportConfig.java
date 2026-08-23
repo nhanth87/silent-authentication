@@ -41,12 +41,32 @@ public class SasTransportConfig {
     String resolverTransport;
 
     /** CGNAT log path (used when resolver transport = cgnat). */
-    @ConfigProperty(name = "sas.transport.resolver.cgnat-log", defaultValue = "")
-    String cgnatLogPath;
+    @ConfigProperty(name = "sas.transport.resolver.cgnat-log")
+    java.util.Optional<String> cgnatLogPath;
+
+    /** RADIUS accounting listener UDP port (used when resolver transport = radius). */
+    @ConfigProperty(name = "sas.transport.resolver.radius.port", defaultValue = "1813")
+    int radiusPort;
+
+    /** RADIUS shared secret (empty disables authenticator verification — lab only). */
+    @ConfigProperty(name = "sas.transport.resolver.radius.secret")
+    java.util.Optional<String> radiusSecret;
+
+    /** RADIUS binding staleness window in ms. */
+    @ConfigProperty(name = "sas.transport.resolver.radius.stale-after-ms", defaultValue = "60000")
+    long radiusStaleAfterMs;
+
+    /** CGNAT log tail refresh interval in ms. */
+    @ConfigProperty(name = "sas.transport.resolver.cgnat-log.refresh-ms", defaultValue = "2000")
+    long cgnatRefreshMs;
+
+    /** CGNAT point-in-time staleness window in ms. */
+    @ConfigProperty(name = "sas.transport.resolver.cgnat-log.stale-ms", defaultValue = "60000")
+    long cgnatStaleMs;
 
     /** Path to the jSS7 stack JSON (used when map transport = jss7). */
-    @ConfigProperty(name = "sas.transport.jss7.config", defaultValue = "")
-    String jss7ConfigPath;
+    @ConfigProperty(name = "sas.transport.jss7.config")
+    java.util.Optional<String> jss7ConfigPath;
 
     /** Diameter peer host for S6a/SWx (used when transport = corsac). */
     @ConfigProperty(name = "sas.transport.diameter.peer-host", defaultValue = "127.0.0.1")
@@ -55,6 +75,14 @@ public class SasTransportConfig {
     /** Diameter peer port for S6a/SWx. */
     @ConfigProperty(name = "sas.transport.diameter.peer-port", defaultValue = "3868")
     int diameterPeerPort;
+
+    /**
+     * SWx-specific peer port override — lets the SWx stack dial a separate
+     * AAA/HSS simulator instance (one inbound SCTP association per listen
+     * port on the lab HSS). Falls back to the common peer port.
+     */
+    @ConfigProperty(name = "sas.transport.diameter.swx.peer-port", defaultValue = "3868")
+    int diameterSwxPeerPort;
 
     /** Local Diameter origin host. */
     @ConfigProperty(name = "sas.transport.diameter.origin-host",
@@ -103,12 +131,32 @@ public class SasTransportConfig {
         return "radius".equalsIgnoreCase(resolverTransport);
     }
 
+    public int radiusPort() {
+        return radiusPort;
+    }
+
+    public String radiusSecret() {
+        return radiusSecret.orElse("");
+    }
+
+    public long radiusStaleAfterMs() {
+        return radiusStaleAfterMs;
+    }
+
+    public long cgnatRefreshMs() {
+        return cgnatRefreshMs;
+    }
+
+    public long cgnatStaleMs() {
+        return cgnatStaleMs;
+    }
+
     public String cgnatLogPath() {
-        return cgnatLogPath;
+        return cgnatLogPath.orElse("");
     }
 
     public String jss7ConfigPath() {
-        return jss7ConfigPath;
+        return jss7ConfigPath.orElse("");
     }
 
     public String diameterPeerHost() {
@@ -117,6 +165,10 @@ public class SasTransportConfig {
 
     public int diameterPeerPort() {
         return diameterPeerPort;
+    }
+
+    public int diameterSwxPeerPort() {
+        return diameterSwxPeerPort;
     }
 
     public String diameterOriginHost() {

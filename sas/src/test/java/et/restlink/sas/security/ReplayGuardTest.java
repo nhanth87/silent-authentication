@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * P1 replay-window + reqId dedup tests.
+ * P1 replay-window + reqId dedup + token-key replay/single-use tests.
  */
 class ReplayGuardTest {
 
@@ -80,9 +80,94 @@ class ReplayGuardTest {
         assertNotNull(guard.check(old, "req-x"));
     }
 
+    // ---- token-key replay (jti + correlator) ----
+
+    @Test
+    void firstTokenKeyCorrelator_passes() {
+        assertNull(guard.checkReplay("jti-1", "corr-1"));
+    }
+
+    @Test
+    void sameKeySameCorrelator_isIdempotentRetry_passes() {
+        assertNull(guard.checkReplay("jti-2", "corr-a"));
+        assertNull(guard.checkReplay("jti-2", "corr-a"));
+        assertEquals(1, guard.keyCount());
+    }
+
+    @Test
+    void sameKeyDifferentCorrelator_isReplay_rejected() {
+        assertNull(guard.checkReplay("jti-3", "corr-a"));
+        String err = guard.checkReplay("jti-3", "corr-b");
+        assertNotNull(err);
+        assertTrue(err.contains("different x-correlator"));
+    }
+
+    @Test
+    void blankTokenKey_rejected() {
+        assertNotNull(guard.checkReplay(null, "corr"));
+        assertNotNull(guard.checkReplay("", "corr"));
+        assertNotNull(guard.checkReplay("  ", "corr"));
+    }
+
+    @Test
+    void nullCorrelator_normalisedToEmpty_andConsistent() {
+        assertNull(guard.checkReplay("jti-4", null));
+        assertNull(guard.checkReplay("jti-4", ""));
+        // a later non-empty correlator is still a different pairing
+        assertNotNull(guard.checkReplay("jti-4", "corr-x"));
+    }
+
+    @Test
+    void differentKeys_independent() {
+        assertNull(guard.checkReplay("jti-a", "shared-corr"));
+        assertNull(guard.checkReplay("jti-b", "shared-corr"));
+        assertEquals(2, guard.keyCount());
+    }
+
+    // ---- single-use consumed tokens ----
+
+    @Test
+    void unconsumedToken_notConsumed() {
+        assertFalse(guard.isConsumed("fresh-jti"));
+    }
+
+    @Test
+    void consume_marksTokenUsed() {
+        guard.consume("used-jti");
+        assertTrue(guard.isConsumed("used-jti"));
+        assertEquals(1, guard.consumedCount());
+    }
+
+    @Test
+    void consume_isIdempotent() {
+        guard.consume("dup-jti");
+        guard.consume("dup-jti");
+        assertEquals(1, guard.consumedCount());
+        assertTrue(guard.isConsumed("dup-jti"));
+    }
+
+    @Test
+    void consume_blankKey_noOp() {
+        guard.consume(null);
+        guard.consume("");
+        assertEquals(0, guard.consumedCount());
+    }
+
+    @Test
+    void consumedToken_expiresAfterWindow() throws Exception {
+        setField(config, "replayWindowSeconds", 0L); // TTL 0 → immediate expiry
+        guard.consume("short-jti");
+        Thread.sleep(20); // let the clock move past the zero window
+        assertFalse(guard.isConsumed("short-jti"));
+    }
+
     private static void setField(Object obj, String name, Object value) throws Exception {
         var field = obj.getClass().getDeclaredField(name);
         field.setAccessible(true);
-        field.set(obj, value);
+        if (field.getType() == java.util.Optional.class) {
+            field.set(obj, java.util.Optional.ofNullable((String) value));
+        } else {
+            field.set(obj, value);
+        }
     }
 }

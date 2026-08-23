@@ -16,6 +16,7 @@ import com.microjainslee.api.annotations.InjectRa;
 
 import et.restlink.sas.coordinator.VerifyCoordinator;
 import et.restlink.sas.events.VerifyRequestEvent;
+import et.restlink.sas.fsm.AssurancePolicy;
 import et.restlink.sas.fsm.SasTimeouts;
 import et.restlink.sas.fsm.VerificationFsm;
 import et.restlink.sas.model.AccessTech;
@@ -79,9 +80,11 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         if (!(event instanceof VerifyRequestEvent evt)) {
             return;
         }
-        LOG.info("[SAS] verify start reqId={} ip={}:{} ts={} claimed={} access={}",
+        LOG.info("[SAS] verify start reqId={} ip={}:{} ts={} claimed={} access={} risk={}",
                 evt.reqId(), evt.srcIp(), evt.srcPort(), evt.tsEpochMs(),
-                evt.claimedMsisdn(), evt.accessTech());
+                evt.claimedMsisdn(), evt.accessTech(),
+                evt.riskClass() == null
+                        ? AssurancePolicy.RiskClass.LOGIN : evt.riskClass());
 
         VerifyResult result = drive(evt);
         coordinator.complete(evt.reqId(), result);
@@ -108,7 +111,16 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         VerificationEvidence evidence = verify(evt, resolver);
 
         // SCORING → terminal
-        return fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn());
+        return fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
+                riskClass(evt));
+    }
+
+    /**
+     * Unknown/absent risk class maps to LOGIN — documented fail-safe default,
+     * since {@code /verify} is itself a login flow (lowest bar).
+     */
+    private static AssurancePolicy.RiskClass riskClass(VerifyRequestEvent evt) {
+        return evt.riskClass() == null ? AssurancePolicy.RiskClass.LOGIN : evt.riskClass();
     }
 
     /** Route the identity-plane verify to the correct RA by access technology. */
@@ -199,8 +211,10 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
             return VerifyResult.fallback(evt.reqId(), FallbackReason.VERIFY_ERROR);
         }
         CompletableFuture<VerificationEvidence> reply = new CompletableFuture<>();
-        port.sendCommand(new SwxVerifyCommand(evt.reqId(), evt.claimedMsisdn(), null,
-                evt.accessTech(), reply));
+        // B2: claimed IMSI (from the TS.43 entitlement token) rides with the
+        // SWx verify; the backend treats a mismatch as SIM-swap suspect.
+        port.sendCommand(new SwxVerifyCommand(evt.reqId(), evt.claimedMsisdn(),
+                evt.claimedImsi(), evt.accessTech(), reply));
         VerificationEvidence evidence;
         try {
             evidence = reply.get(SasTimeouts.DIAMETER_MS + 100L, TimeUnit.MILLISECONDS);
@@ -215,6 +229,7 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         }
         // Wi-Fi path: no resolver — use claimed MSISDN as the identity anchor.
         ResolverResult resolver = ResolverResult.bound(evt.claimedMsisdn(), null, 0L);
-        return fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn());
+        return fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
+                riskClass(evt));
     }
 }

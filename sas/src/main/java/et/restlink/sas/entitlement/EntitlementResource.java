@@ -7,9 +7,12 @@
 
 package et.restlink.sas.entitlement;
 
+import et.restlink.sas.security.ApiKeyAuthenticator;
+
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -30,8 +33,15 @@ import java.util.Map;
  *   <li>{@code POST /entitlement/exchange} — called by the bank backend to
  *       exchange the entitlement token for the bound MSISDN (used to drive
  *       the Wi-Fi {@code /verify} path or CIBA {@code login_hint}).</li>
- *   <li>{@code GET /entitlement/status} — health check.</li>
+ *   <li>{@code GET /entitlement/status} — health check (unauthenticated).</li>
  * </ul>
+ *
+ * <p><strong>Authentication</strong>: {@code /issue} and {@code /exchange}
+ * are machine endpoints and require {@code X-Api-Key: <key>} when
+ * {@code sas.security.enforce-api-keys=true}; keys are the comma-separated
+ * {@code sas.security.api-key} list. Missing/mismatched key →
+ * {@code 401 UNAUTHENTICATED} (fail-closed, see {@link ApiKeyAuthenticator}).
+ * {@code /status} stays open as a health endpoint.</p>
  *
  * <p>Privacy (H8): the exchange endpoint returns the MSISDN only to the
  * authenticated bank backend (mTLS + token), never to the mobile app.</p>
@@ -47,6 +57,9 @@ public class EntitlementResource {
     @Inject
     EntitlementConfig config;
 
+    @Inject
+    ApiKeyAuthenticator apiKeys;
+
     public record IssueRequest(String msisdn, String imsi, String eapMethod) {}
     public record IssueResponse(String token, long expiresInSeconds) {}
     public record ExchangeRequest(String token) {}
@@ -56,14 +69,25 @@ public class EntitlementResource {
     @Path("/issue")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response issue(IssueRequest body) {
+    public Response issue(IssueRequest body, @HeaderParam("X-Api-Key") String apiKey) {
+        String keyError = apiKeys.validate(apiKey);
+        if (keyError != null) {
+            return error(401, "UNAUTHENTICATED", keyError);
+        }
         if (!config.enabled()) {
             return error(503, "ENTITLEMENT_DISABLED", "Entitlement service is disabled");
         }
         if (body == null || body.msisdn() == null || body.msisdn().isBlank()) {
             return error(400, "INVALID_REQUEST", "msisdn is required");
         }
-        String eapMethod = body.eapMethod() != null ? body.eapMethod() : "EAP-AKA";
+        String requestedEap = body.eapMethod() != null ? body.eapMethod()
+                : EntitlementTokenService.EAP_AKA;
+        String eapMethod = EntitlementTokenService.canonicalEapMethod(requestedEap);
+        if (eapMethod == null) {
+            return error(400, "INVALID_REQUEST",
+                    "eapMethod must be " + EntitlementTokenService.EAP_AKA + " or "
+                            + EntitlementTokenService.EAP_AKA_PRIME);
+        }
         String token = tokenService.issueToken(body.msisdn(), body.imsi(), eapMethod);
         return Response.ok(new IssueResponse(token, config.tokenTtlSeconds())).build();
     }
@@ -72,7 +96,11 @@ public class EntitlementResource {
     @Path("/exchange")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response exchange(ExchangeRequest body) {
+    public Response exchange(ExchangeRequest body, @HeaderParam("X-Api-Key") String apiKey) {
+        String keyError = apiKeys.validate(apiKey);
+        if (keyError != null) {
+            return error(401, "UNAUTHENTICATED", keyError);
+        }
         if (!config.enabled()) {
             return error(503, "ENTITLEMENT_DISABLED", "Entitlement service is disabled");
         }
@@ -91,10 +119,14 @@ public class EntitlementResource {
     @Path("/status")
     @Produces(MediaType.APPLICATION_JSON)
     public Response status() {
+        String secret = config.hmacSecret();
+        boolean signed = secret != null && !secret.isBlank();
         return Response.ok(Map.of(
                 "enabled", config.enabled(),
                 "activeTokens", tokenService.activeTokenCount(),
-                "cibaEnabled", config.cibaEnabled()
+                "cibaEnabled", config.cibaEnabled(),
+                "signedTokens", signed,
+                "requireSigned", config.requireSigned()
         )).build();
     }
 

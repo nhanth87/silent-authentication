@@ -76,7 +76,10 @@ public final class InMemorySwxVerifierBackend implements SwxVerifierBackend {
             if (r == null) {
                 return VerificationEvidence.fail(FallbackReason.PURGED, "SWX-EAP");
             }
-            if (imsi != null && !imsi.equals(r.imsi())) {
+            // B2: claimed-IMSI binding is ACTIVE evidence — a present-but-
+            // mismatched IMSI (e.g. from the TS.43 entitlement token) means the
+            // SIM no longer matches the claimed identity ⇒ fail closed.
+            if (imsi != null && !imsi.isBlank() && !imsi.equals(r.imsi())) {
                 return VerificationEvidence.fail(FallbackReason.SIM_SWAP_SUSPECT, "SWX-EAP");
             }
             boolean reachable = r.eapAkaRegistered();

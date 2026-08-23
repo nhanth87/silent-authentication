@@ -10,6 +10,7 @@ package et.restlink.sas.events;
 import com.microjainslee.api.SleeEvent;
 import com.microjainslee.api.annotations.EventType;
 
+import et.restlink.sas.fsm.AssurancePolicy;
 import et.restlink.sas.model.AccessTech;
 
 /**
@@ -19,6 +20,14 @@ import et.restlink.sas.model.AccessTech;
  * {@code ts}) — point-in-time, CGNAT-safe — plus an optional claimed MSISDN.
  * When {@code claimedMsisdn} is {@code null} the SAS runs in number-discovery
  * mode (returns the verified MSISDN to the backend only).</p>
+ *
+ * <p>{@code claimedImsi} is optional and nullable: on the Wi-Fi TS.43 path it
+ * is the IMSI bound to the operator entitlement token. When present, the SWx
+ * verifier treats an IMSI mismatch as SIM-swap suspect (fail-closed); when
+ * absent the backend falls back to its own HSS record.</p>
+ *
+ * <p>{@code riskClass} is optional; {@code null} means LOGIN (the /verify flow
+ * is itself a login) and is normalised fail-safe downstream.</p>
  */
 @EventType(name = "VerifyRequest", vendor = "et.restlink.sas", version = "1.0")
 public final class VerifyRequestEvent implements SleeEvent {
@@ -28,7 +37,9 @@ public final class VerifyRequestEvent implements SleeEvent {
     private final int srcPort;
     private final long tsEpochMs;
     private final String claimedMsisdn;
+    private final String claimedImsi;
     private final AccessTech accessTech;
+    private final AssurancePolicy.RiskClass riskClass;
 
     public VerifyRequestEvent(String reqId,
                               String srcIp,
@@ -36,12 +47,36 @@ public final class VerifyRequestEvent implements SleeEvent {
                               long tsEpochMs,
                               String claimedMsisdn,
                               AccessTech accessTech) {
+        this(reqId, srcIp, srcPort, tsEpochMs, claimedMsisdn, accessTech, null);
+    }
+
+    public VerifyRequestEvent(String reqId,
+                              String srcIp,
+                              int srcPort,
+                              long tsEpochMs,
+                              String claimedMsisdn,
+                              AccessTech accessTech,
+                              AssurancePolicy.RiskClass riskClass) {
+        this(reqId, srcIp, srcPort, tsEpochMs, claimedMsisdn, null, accessTech, riskClass);
+    }
+
+    /** Full overload: carries the optional TS.43 entitlement-token IMSI. */
+    public VerifyRequestEvent(String reqId,
+                              String srcIp,
+                              int srcPort,
+                              long tsEpochMs,
+                              String claimedMsisdn,
+                              String claimedImsi,
+                              AccessTech accessTech,
+                              AssurancePolicy.RiskClass riskClass) {
         this.reqId = reqId;
         this.srcIp = srcIp;
         this.srcPort = srcPort;
         this.tsEpochMs = tsEpochMs;
         this.claimedMsisdn = claimedMsisdn;
+        this.claimedImsi = claimedImsi;
         this.accessTech = accessTech;
+        this.riskClass = riskClass;
     }
 
     public String reqId() {
@@ -64,7 +99,17 @@ public final class VerifyRequestEvent implements SleeEvent {
         return claimedMsisdn;
     }
 
+    /** Optional claimed IMSI (TS.43 entitlement token); {@code null} = absent. */
+    public String claimedImsi() {
+        return claimedImsi;
+    }
+
     public AccessTech accessTech() {
         return accessTech;
+    }
+
+    /** Optional transaction risk class; {@code null} = LOGIN. */
+    public AssurancePolicy.RiskClass riskClass() {
+        return riskClass;
     }
 }

@@ -102,4 +102,63 @@ class VerificationFsmTest {
         assertTrue(SasTimeouts.MAP_MS < SasTimeouts.TOTAL_MS);
         assertTrue(SasTimeouts.DIAMETER_MS < SasTimeouts.TOTAL_MS);
     }
+
+    // ---- Risk-aware overload (P2 #8) -------------------------------------
+
+    /** Score 75: stale bearer + reachable + non-swapped + plausible location. */
+    private static ResolverResult staleBinding() {
+        return ResolverResult.bound("+251911111111", "655010000000001",
+                AssurancePolicy.STALE_BEARER_MS + 1L);
+    }
+
+    /** Score 85: fresh bearer + reachable + non-swapped, location implausible. */
+    private static VerificationEvidence noLocationEvidence() {
+        return VerificationEvidence.ok(true, true, false, "S6a-IDR+AIR");
+    }
+
+    @Test
+    void transferThresholdRejectsLoginOnlyScore() {
+        // Score 75 ≥ LOGIN(70) but < TRANSFER(80).
+        VerifyResult login = fsm.decide("risk-1", staleBinding(),
+                VerificationEvidence.ok(true, true, true, "MAP-PSI+SAI"), null,
+                AssurancePolicy.RiskClass.LOGIN);
+        assertTrue(login.match());
+        VerifyResult transfer = fsm.decide("risk-2", staleBinding(),
+                VerificationEvidence.ok(true, true, true, "MAP-PSI+SAI"), null,
+                AssurancePolicy.RiskClass.TRANSFER);
+        assertFalse(transfer.match());
+        assertEquals(FallbackReason.LOW_ASSURANCE, transfer.fallbackReason());
+    }
+
+    @Test
+    void highValueThresholdSitsAboveTransfer() {
+        // Score 85 ≥ TRANSFER(80) but < HIGH_VALUE(90).
+        VerifyResult transfer = fsm.decide("risk-3", bound(), noLocationEvidence(), null,
+                AssurancePolicy.RiskClass.TRANSFER);
+        assertTrue(transfer.match());
+        VerifyResult highValue = fsm.decide("risk-4", bound(), noLocationEvidence(), null,
+                AssurancePolicy.RiskClass.HIGH_VALUE);
+        assertFalse(highValue.match());
+        assertEquals(FallbackReason.LOW_ASSURANCE, highValue.fallbackReason());
+    }
+
+    @Test
+    void nullRiskClassFallsBackToLogin() {
+        VerifyResult viaNull = fsm.decide("risk-5", staleBinding(),
+                VerificationEvidence.ok(true, true, true, "MAP-PSI+SAI"), null, null);
+        VerifyResult viaLogin = fsm.decide("risk-6", staleBinding(),
+                VerificationEvidence.ok(true, true, true, "MAP-PSI+SAI"), null,
+                AssurancePolicy.RiskClass.LOGIN);
+        assertEquals(viaLogin.match(), viaNull.match());
+        assertTrue(viaNull.match());
+    }
+
+    @Test
+    void legacyFourArgDecideUsesLoginThreshold() {
+        // Score 75 passes only because the 4-arg overload pins LOGIN.
+        VerifyResult r = fsm.decide("risk-7", staleBinding(),
+                VerificationEvidence.ok(true, true, true, "MAP-PSI+SAI"), null);
+        assertTrue(r.match());
+        assertEquals(AssuranceLevel.HIGH, r.assurance());
+    }
 }

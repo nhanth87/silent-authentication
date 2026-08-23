@@ -27,6 +27,12 @@ public class DiameterConfig {
     public static final String DEFAULT_TYPE_VENDOR = "vendor";
     public static final long DEFAULT_VENDOR_3GPP = 10_415L;
 
+    /**
+     * Visited-PLMN digits when {@link #visitedPlmn} is unset: MCC 636
+     * (Ethiopia) + MNC 01 (Ethio Telecom) — the home PLMN of restlink.et.
+     */
+    public static final String DEFAULT_VISITED_PLMN = "63601";
+
     public String localHost;
     public String localRealm;
     public String destinationHost;
@@ -35,6 +41,18 @@ public class DiameterConfig {
     public int peerPort = 3868;
     public boolean isServer;
     public boolean isSctp = true;
+
+    /** Visited-PLMN digits (5–6 numeric, MCC+MNC) sent as Visited-PLMN-Id AVP. */
+    public String visitedPlmn;
+
+    /** TS 29.272 IDR/IDA probe stage (HSS-initiated per spec — lab only). Default off. */
+    public Boolean s6aIdrProbeEnabled;
+
+    /** TS 29.273 SAR/SAA server-name registration after MAR. Default on. */
+    public Boolean swxSarEnabled;
+
+    /** TS 29.273 PPR/PPA probe stage (HSS-initiated per spec — lab only). Default off. */
+    public Boolean swxPprProbeEnabled;
 
     public List<Application> applications = new ArrayList<>();
     public List<Realm> realms = new ArrayList<>();
@@ -132,6 +150,23 @@ public class DiameterConfig {
         return isBlank(peerHost) ? "127.0.0.1" : peerHost;
     }
 
+    /** Visited-PLMN digits for the Verifier probes (never blank). */
+    public String effectiveVisitedPlmn() {
+        return isBlank(visitedPlmn) ? DEFAULT_VISITED_PLMN : visitedPlmn.trim();
+    }
+
+    public boolean idrProbeOrDefault() {
+        return s6aIdrProbeEnabled != null && s6aIdrProbeEnabled;
+    }
+
+    public boolean sarOrDefault() {
+        return swxSarEnabled == null || swxSarEnabled;
+    }
+
+    public boolean pprProbeOrDefault() {
+        return swxPprProbeEnabled != null && swxPprProbeEnabled;
+    }
+
     public List<String> validationErrors() {
         List<String> errors = new ArrayList<>();
         if (isBlank(localHost)) {
@@ -142,6 +177,9 @@ public class DiameterConfig {
         }
         if (isBlank(destinationRealm)) {
             errors.add("destinationRealm is required");
+        }
+        if (!isBlank(visitedPlmn) && !visitedPlmn.trim().matches("\\d{5,6}")) {
+            errors.add("visitedPlmn must be 5-6 numeric digits (MCC+MNC)");
         }
         if (applications == null || applications.isEmpty()) {
             errors.add("at least one application is required");

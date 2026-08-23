@@ -45,6 +45,22 @@ public final class VerificationFsm {
                                ResolverResult resolver,
                                VerificationEvidence evidence,
                                String claimedMsisdn) {
+        return decide(reqId, resolver, evidence, claimedMsisdn, AssurancePolicy.RiskClass.LOGIN);
+    }
+
+    /**
+     * Risk-aware decision: the score is compared against
+     * {@link AssurancePolicy#thresholdScore(AssurancePolicy.RiskClass)}. A
+     * {@code null} {@code riskClass} falls back to LOGIN (the /verify flow is a
+     * login; documented fail-safe default).
+     */
+    public VerifyResult decide(String reqId,
+                               ResolverResult resolver,
+                               VerificationEvidence evidence,
+                               String claimedMsisdn,
+                               AssurancePolicy.RiskClass riskClass) {
+        AssurancePolicy.RiskClass risk =
+                riskClass == null ? AssurancePolicy.RiskClass.LOGIN : riskClass;
         if (resolver == null || !resolver.found()) {
             return VerifyResult.fallback(reqId,
                     resolver != null && resolver.miss() != null
@@ -71,10 +87,10 @@ public final class VerificationFsm {
         }
 
         int score = policy.score(resolver, evidence);
-        if (score < policy.thresholdScore()) {
+        if (score < policy.thresholdScore(risk)) {
             return VerifyResult.fallback(reqId, FallbackReason.LOW_ASSURANCE);
         }
 
-        return VerifyResult.approved(reqId, resolver.msisdn(), policy.assuranceFor(score));
+        return VerifyResult.approved(reqId, resolver.msisdn(), policy.assuranceFor(score, risk));
     }
 }

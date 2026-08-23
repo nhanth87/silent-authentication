@@ -63,6 +63,24 @@ class InMemorySwxVerifierBackendTest {
     }
 
     @Test
+    void claimedImsiMatchingRecord_approves() throws Exception {
+        // B2 end-to-end contract: the entitlement-token IMSI rides through the
+        // command; when it matches the HSS record the evidence stays clean.
+        backend.seed(MSISDN, IMSI, true, daysAgo(10), "AA");
+        VerificationEvidence ev = backend.verify(MSISDN, IMSI, AccessTech.WIFI, now())
+                .get();
+        assertFalse(ev.failed(), "claimed IMSI equal to the HSS record must approve");
+    }
+
+    @Test
+    void blankClaimedImsi_treatedAsAbsent() throws Exception {
+        backend.seed(MSISDN, IMSI, true, daysAgo(10), "AA");
+        VerificationEvidence ev = backend.verify(MSISDN, "  ", AccessTech.WIFI, now())
+                .get();
+        assertFalse(ev.failed(), "blank claimed IMSI is not a mismatch");
+    }
+
+    @Test
     void freshImsiChange_simSwapSuspect() throws Exception {
         backend.seed(MSISDN, IMSI, true, now(), "AA"); // changed just now
         VerificationEvidence ev = backend.verify(MSISDN, IMSI, AccessTech.WIFI, now())

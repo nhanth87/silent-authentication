@@ -10,9 +10,11 @@ package et.restlink.sas.api;
 import et.restlink.sas.ras.resolver.InMemoryResolverBackend;
 import et.restlink.sas.ras.resolver.ResolverBackend;
 import et.restlink.sas.bootstrap.SasBootstrap;
+import et.restlink.sas.security.ApiKeyAuthenticator;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -47,6 +49,14 @@ import java.util.Map;
  *   "msisdn":  "+251911111111"   // optional claimed MSISDN
  * }
  * </pre>
+ *
+ * <p><strong>Authentication</strong>: this endpoint seeds IP→MSISDN bindings
+ * and MUST NOT be open in production. Clients send
+ * {@code X-Api-Key: <key>}. Enforcement is controlled by
+ * {@code sas.security.enforce-api-keys} (default false = lab) against the
+ * comma-separated {@code sas.security.api-key} list; when enforced, a missing
+ * or mismatched key is rejected with {@code 401 UNAUTHENTICATED} (fail-closed,
+ * see {@link ApiKeyAuthenticator}).</p>
  */
 @Path("/session-tuple")
 public class SessionTupleResource {
@@ -56,12 +66,21 @@ public class SessionTupleResource {
     @Inject
     SasBootstrap bootstrap;
 
+    @Inject
+    ApiKeyAuthenticator apiKeys;
+
     public record TupleRequest(String srcIp, Integer srcPort, Long ts, String msisdn, String imsi) {}
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response register(TupleRequest body) {
+    public Response register(TupleRequest body, @HeaderParam("X-Api-Key") String apiKey) {
+        String keyError = apiKeys.validate(apiKey);
+        if (keyError != null) {
+            return Response.status(401)
+                    .entity(Map.of("code", "UNAUTHENTICATED", "message", keyError))
+                    .build();
+        }
         if (body == null || body.srcIp() == null || body.srcIp().isBlank()) {
             return Response.status(400)
                     .entity(Map.of("code", "VALIDATION.FAILED", "message", "srcIp is required"))

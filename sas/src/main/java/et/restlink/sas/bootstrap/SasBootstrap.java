@@ -11,6 +11,7 @@ import com.microjainslee.api.ActivityContextInterface;
 import com.microjainslee.core.MicroSleeContainer;
 import com.microjainslee.core.SimpleSbbLocalObject;
 
+import et.restlink.sas.config.SasAdminRuntimeConfig;
 import et.restlink.sas.config.SasTransportConfig;
 import et.restlink.sas.coordinator.VerifyCoordinator;
 import et.restlink.sas.events.VerifyRequestEvent;
@@ -25,7 +26,7 @@ import et.restlink.sas.ras.mapverifier.MapVerifierRaEndpoint;
 import et.restlink.sas.ras.mapverifier.MapVerifierResourceAdaptor;
 import et.restlink.sas.ras.resolver.CgnatLogResolverBackend;
 import et.restlink.sas.ras.resolver.InMemoryResolverBackend;
-import et.restlink.sas.ras.resolver.RadiusAccountingResolverBackend;
+import et.restlink.sas.ras.resolver.RadiusAccountingListenerBackend;
 import et.restlink.sas.ras.resolver.ResolverBackend;
 import et.restlink.sas.ras.resolver.ResolverRaEndpoint;
 import et.restlink.sas.ras.resolver.ResolverResourceAdaptor;
@@ -73,8 +74,11 @@ public class SasBootstrap {
     @Inject
     SasTransportConfig transportConfig;
 
-    private final AssurancePolicy policy = AssurancePolicy.defaults();
-    private final VerificationFsm fsm = new VerificationFsm(policy);
+    @Inject
+    SasAdminRuntimeConfig adminRuntimeConfig;
+
+    private volatile AssurancePolicy policy;
+    private volatile VerificationFsm fsm;
 
     private volatile ResolverRaEndpoint resolverEndpoint;
     private volatile ResolverBackend resolverBackendRef;
@@ -84,6 +88,8 @@ public class SasBootstrap {
     private volatile Jss7MapVerifierBackend jss7MapBackend;
     private volatile CorsacS6aVerifierBackend corsacS6aBackend;
     private volatile CorsacSwxVerifierBackend corsacSwxBackend;
+    private volatile RadiusAccountingListenerBackend radiusListenerBackend;
+    private volatile CgnatLogResolverBackend cgnatLogBackend;
     private volatile boolean started;
 
     void onStart(@Observes StartupEvent ev) {
@@ -91,6 +97,8 @@ public class SasBootstrap {
             return;
         }
         started = true;
+        policy = assurancePolicy();
+        fsm = new VerificationFsm(policy);
         LOG.info("Silent Auth SAS bootstrap starting (fail-closed)");
         if (container.getState() != MicroSleeContainer.State.STARTED) {
             container.start();
@@ -116,14 +124,26 @@ public class SasBootstrap {
                 backend = inMemoryResolver();
             } else {
                 CgnatLogResolverBackend cgnat = new CgnatLogResolverBackend(
-                        java.nio.file.Path.of(logPath));
+                        java.nio.file.Path.of(logPath),
+                        transportConfig.cgnatRefreshMs(),
+                        transportConfig.cgnatStaleMs());
                 cgnat.reload();
+                cgnat.start();
+                cgnatLogBackend = cgnat;
                 backend = cgnat;
-                LOG.info("[SAS] Resolver transport = CGNAT log ({})", logPath);
+                LOG.info("[SAS] Resolver transport = CGNAT log tail ({}, refresh={}ms, stale={}ms)",
+                        logPath, transportConfig.cgnatRefreshMs(), transportConfig.cgnatStaleMs());
             }
         } else if (transportConfig.useRadiusResolver()) {
-            backend = new RadiusAccountingResolverBackend();
-            LOG.info("[SAS] Resolver transport = RADIUS accounting");
+            RadiusAccountingListenerBackend radius = new RadiusAccountingListenerBackend(
+                    transportConfig.radiusPort(),
+                    transportConfig.radiusSecret(),
+                    transportConfig.radiusStaleAfterMs());
+            radius.start();
+            radiusListenerBackend = radius;
+            backend = radius;
+            LOG.info("[SAS] Resolver transport = RADIUS accounting listener (udp/{}, stale={}ms)",
+                    radius.localPort(), transportConfig.radiusStaleAfterMs());
         } else {
             backend = inMemoryResolver();
         }
@@ -277,6 +297,12 @@ public class SasBootstrap {
         if (resolverEndpoint != null) {
             resolverEndpoint.deactivate();
         }
+        if (radiusListenerBackend != null) {
+            radiusListenerBackend.stop();
+        }
+        if (cgnatLogBackend != null) {
+            cgnatLogBackend.stop();
+        }
         if (container.getState() == MicroSleeContainer.State.STARTED) {
             container.stop();
         }
@@ -284,6 +310,15 @@ public class SasBootstrap {
     }
 
     // ---- pilot seeds (replace with operator-side PGW/HLR adapters) ----
+
+    private AssurancePolicy assurancePolicy() {
+        try {
+            return AssurancePolicy.fromRuntime(adminRuntimeConfig::read);
+        } catch (RuntimeException e) {
+            LOG.error("[SAS] invalid sas.assurance.* config — using built-in defaults (fail-closed)", e);
+            return AssurancePolicy.defaults();
+        }
+    }
 
     private InMemoryResolverBackend inMemoryResolver() {
         InMemoryResolverBackend b = new InMemoryResolverBackend();
