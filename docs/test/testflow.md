@@ -30,7 +30,7 @@ curl/browser          SAS (Quarkus :8085)         sas-diameter-testapp (HSS/AAA 
 
 ```bash
 cd sas-diameter-testapp && mvn -q package
-cd ../sas               && mvn -q package -DskipTests
+cd ..                   && mvn -q package -DskipTests   # root aggregator: sas-api + sas-entitlement + sas-host
 ```
 
 ## 2. Chạy 2 instance HSS simulator
@@ -50,7 +50,7 @@ java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar \
 ## 3. Chạy SAS với corsac transports
 
 ```bash
-cd sas && java \
+cd sas-host && java \
   -Dsas.transport.s6a=corsac \
   -Dsas.transport.swx=corsac \
   -Dsas.entitlement.hmac-secret=e2e-lab-secret \
@@ -153,7 +153,7 @@ token) rồi bank mới gọi `/verify` so sánh. Chạy SAS với validation b�
 ```bash
 java -Dsas.security.token-validation-enabled=true \
      -Dsas.security.hmac-secret=k1 -Dsas.oauth.secret=k1 \
-     -jar target/quarkus-app/quarkus-run.jar &
+     -jar sas-host/target/quarkus-app/quarkus-run.jar &
 ```
 
 ```bash
@@ -209,7 +209,7 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 ## 7. Kiểm thử khác trong tree
 
 ```bash
-cd sas && mvn test                       # 212 unit/scenario tests (JUnit 5, không cần mạng)
+mvn clean test                           # từ repo root: 337 tests trên 3 module (JUnit 5, không cần mạng)
 python3 harness/run_hardness.py          # 24/24 contract gates
 ```
 

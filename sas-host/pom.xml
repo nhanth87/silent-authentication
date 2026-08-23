@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>et.restlink</groupId>
+    <artifactId>sas-core</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>sas-host</artifactId>
+  <packaging>jar</packaging>
+
+  <name>Silent Auth SAS Host</name>
+  <description>Runnable Quarkus composition app (equivalent of epc-host):
+    SLEE bootstrap, FSM, RAS transports (jSS7 MAP / corsac Diameter / RADIUS /
+    CGNAT), CDR, admin. Composes the CAMARA northbound (sas-api) and the
+    TS.43/Wi-Fi entitlement track (sas-entitlement).</description>
+
+  <dependencies>
+    <!-- Composition: CAMARA northbound + entitlement track libraries. -->
+    <dependency>
+      <groupId>et.restlink</groupId>
+      <artifactId>sas-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>et.restlink</groupId>
+      <artifactId>sas-entitlement</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-jackson</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-arc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jdbc-h2</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jdbc-postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-hibernate-orm-panache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-flyway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-elytron-security-common</artifactId>
+    </dependency>
+    <!-- Provides the MicroSleeContainer CDI bean (MicroJainsleeProducer). -->
+    <dependency>
+      <groupId>com.microjainslee</groupId>
+      <artifactId>adapter-quarkus</artifactId>
+      <version>${microjainslee.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.microjainslee</groupId>
+      <artifactId>jainslee-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.microjainslee</groupId>
+      <artifactId>jainslee-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.microjainslee</groupId>
+      <artifactId>jainslee-apt</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- P2: real MAP transport (jSS7 coral-valley) -->
+    <dependency>
+      <groupId>org.restcomm.protocols.ss7.config</groupId>
+      <artifactId>ss7-config</artifactId>
+      <version>${jss7.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.restcomm.protocols.ss7.map</groupId>
+      <artifactId>map-api</artifactId>
+      <version>${jss7.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.restcomm.protocols.ss7.map</groupId>
+      <artifactId>map-impl</artifactId>
+      <version>${jss7.version}</version>
+    </dependency>
+
+    <!-- P2: real Diameter S6a / SWx transport (corsac-diameter) -->
+    <dependency>
+      <groupId>com.mobius-software.protocols.diameter</groupId>
+      <artifactId>diameter-api</artifactId>
+      <version>${corsac-diameter.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.mobius-software.protocols.diameter</groupId>
+      <artifactId>diameter-impl</artifactId>
+      <version>${corsac-diameter.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.quarkus.platform</groupId>
+        <artifactId>quarkus-maven-plugin</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <extensions>true</extensions>
+        <executions>
+          <execution>
+            <goals>
+              <goal>build</goal>
+              <goal>generate-code</goal>
+              <goal>generate-code-tests</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

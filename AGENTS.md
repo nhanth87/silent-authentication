@@ -23,7 +23,9 @@ main/
 ├── docs/design/              ← SAS flow + unified architecture
 ├── docs/research/            ← SMS channel protection + GSMA FS index
 ├── proposal/                 ← formal DOCX chapters + build script
-├── sas/                      ← P0 micro-jainslee app (CAMARA /verify adapter)
+├── sas-api/                  ← CAMARA northbound library (/verify, oauth, security)
+├── sas-entitlement/          ← TS.43/Wi-Fi entitlement track library
+├── sas-host/                 ← runnable Quarkus app (SLEE bootstrap, RAS, CDR, admin)
 └── slides/                   ← PPTX v1/v2/v3 + SVG assets + build scripts
 ```
 
@@ -261,20 +263,20 @@ Open items (do not silently invent answers):
 - [ ] Resolver source per operator (PGW RADIUS vs PCRF Sd vs CGNAT log)
 - [ ] jDiameter S6a client module
 - [x] CAMARA NV **Java adapter** over SAS `/verify` — **P0 scaffold implemented** in
-  [`sas/`](sas/README.md) (Quarkus + micro-jainslee; clones `ra-diameter` + `ElisaBootstrap`).
+  [`sas-host/`](sas-host/README.md) (Quarkus + micro-jainslee; clones `ra-diameter` + `ElisaBootstrap`).
   Contract: `docs/research/camara-number-verification.md`.
 - [x] **P2 real MAP transport** — `Jss7MapVerifierBackend` (jSS7 coral-valley) drives
   PSI + SAI dialogs against the own HLR/HSS, never ATI. Opt-in via `sas.transport.map=jss7`
-  (sample config `sas/src/main/resources/ss7-sas.json`). Fail-closed on any timeout/reject/abort.
+  (sample config `sas-host/src/main/resources/ss7-sas.json`). Fail-closed on any timeout/reject/abort.
 - [ ] Assurance weights + per-risk thresholds
 - [ ] TS.43 entitlement server feasibility (Wi‑Fi path)
 - [ ] Strategy B product choice (SMS Router / SS7 FW vs jSS7-based)
 - [ ] Digicom-ET pilot API contract for Ethiopian banks
 - [ ] **SAS admin dashboard** (clone gmlc admin) — dashboard, SS7, HTTP endpoint, Diameter
   (JSON, multi-realm/multi-app + on-the-fly reload), CDR, tenant→networkId, user→networkId+
-  bearer/API key. In progress in `sas/` (see `sas/TODO.md` for production hardening backlog).
+  bearer/API key. In progress in `sas-host/` (see `sas-host/TODO.md` for production hardening backlog).
 - [ ] Production hardening for the SAS HTTP `/verify` endpoint — **lab accepts HTTP + no auth**;
-      production must require **HTTPS-only + Bearer/API-key**. Tracked in `sas/TODO.md`.
+      production must require **HTTPS-only + Bearer/API-key**. Tracked in `sas-host/TODO.md`.
 
 ---
 

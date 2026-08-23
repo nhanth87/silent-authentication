@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>et.restlink</groupId>
+    <artifactId>sas-core</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>sas-api</artifactId>
+  <name>sas-core :: sas-api</name>
+  <description>CAMARA Number Verification northbound track: /verify +
+    /device-phone-number, CIBA money-loop (oauth), security validators and the
+    shared SAS kernel types (model/fsm/events/resolver port). No dependency on
+    the entitlement track.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-jackson</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-arc</artifactId>
+    </dependency>
+    <!-- SleeEvent + @EventType for VerifyRequestEvent (compile-only API). -->
+    <dependency>
+      <groupId>com.microjainslee</groupId>
+      <artifactId>jainslee-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
