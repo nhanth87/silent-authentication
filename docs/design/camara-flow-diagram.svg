@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 560" font-family="Segoe UI,Arial,sans-serif">
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0L10,4L0,8z" fill="#1a365d"/></marker>
+    <marker id="m" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0L10,4L0,8z" fill="#b7791f"/></marker>
+  </defs>
+  <rect width="1180" height="560" fill="#f7fafc"/>
+  <text x="590" y="34" text-anchor="middle" font-size="21" font-weight="700" fill="#1a365d">Silent Authentication — CAMARA Number Verification Flow</text>
+  <text x="590" y="56" text-anchor="middle" font-size="13" fill="#4a5568">Digicom-ET · GSMA Open Gateway / CAMARA NV v2.1.0</text>
+
+  <!-- zones -->
+  <rect x="20"  y="80" width="200" height="380" rx="12" fill="#edf2f7" stroke="#cbd5e0"/>
+  <text x="120" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#2d3748">BANK SIDE</text>
+  <rect x="300" y="80" width="560" height="380" rx="12" fill="#fffaf0" stroke="#f6d38f" stroke-width="2"/>
+  <text x="580" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#b7791f">DIGICOM-ET CAMARA GATEWAY  ★ SẢN PHẨM BÁN CHO BANK ★</text>
+  <rect x="940" y="80" width="220" height="380" rx="12" fill="#ebf8ff" stroke="#90cdf4"/>
+  <text x="1050" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#2b6cb0">ETHIO TELECOM CORE</text>
+
+  <!-- actors -->
+  <rect x="40"  y="130" width="160" height="60" rx="8" fill="#fff" stroke="#a0aec0"/><text x="120" y="156" text-anchor="middle" font-size="13" font-weight="600">Mobile App (UE)</text><text x="120" y="174" text-anchor="middle" font-size="11" fill="#718096">SIM của user</text>
+  <rect x="40"  y="330" width="160" height="60" rx="8" fill="#fff" stroke="#a0aec0"/><text x="120" y="356" text-anchor="middle" font-size="13" font-weight="600">Bank Backend</text><text x="120" y="374" text-anchor="middle" font-size="11" fill="#718096">khách hàng trả tiền</text>
+
+  <rect x="320" y="130" width="230" height="86" rx="8" fill="#fff" stroke="#dd6b20" stroke-width="2"/><text x="435" y="158" text-anchor="middle" font-size="13.5" font-weight="700" fill="#c05621">Auth Server</text>
+  <text x="435" y="178" text-anchor="middle" font-size="11">POST /bc-authorize · /token</text><text x="435" y="196" text-anchor="middle" font-size="11">token gắn số điện thoại (300s)</text>
+
+  <rect x="600" y="130" width="240" height="86" rx="8" fill="#fff" stroke="#dd6b20" stroke-width="2"/><text x="720" y="158" text-anchor="middle" font-size="13.5" font-weight="700" fill="#c05621">NV API · CAMARA v2.1.0</text>
+  <text x="720" y="178" text-anchor="middle" font-size="11">POST …/v2/verify · GET device-phone-number</text><text x="720" y="196" text-anchor="middle" font-size="11">metering + CDR → billing per call</text>
+
+  <rect x="320" y="330" width="520" height="96" rx="8" fill="#fff" stroke="#dd6b20" stroke-width="1.5"/><text x="580" y="354" text-anchor="middle" font-size="13" font-weight="700" fill="#c05621">Network Adapter Layer (chi phí vận hành)</text>
+  <text x="580" y="374" text-anchor="middle" font-size="11">Resolver: PCRF Gx · RADIUS · CGNAT   |   Verifier: S6a · SWx · MAP(jSS7)</text>
+  <text x="580" y="392" text-anchor="middle" font-size="11">fail-closed FSM · assurance scoring · cache evidence</text>
+  <text x="580" y="410" text-anchor="middle" font-size="11" fill="#718096">(chỉ gọi mạng khi cần bằng chứng — không phải sản phẩm)</text>
+
+  <rect x="960" y="150" width="180" height="70" rx="8" fill="#fff" stroke="#63b3ed"/><text x="1050" y="176" text-anchor="middle" font-size="13" font-weight="600">HSS / HLR</text><text x="1050" y="194" text-anchor="middle" font-size="11" fill="#4a5568">S6a · MAP</text>
+  <rect x="960" y="250" width="180" height="70" rx="8" fill="#fff" stroke="#63b3ed"/><text x="1050" y="276" text-anchor="middle" font-size="13" font-weight="600">PCRF / AAA</text><text x="1050" y="294" text-anchor="middle" font-size="11" fill="#4a5568">Gx · SWx</text>
+  <rect x="960" y="350" width="180" height="70" rx="8" fill="#fff" stroke="#63b3ed"/><text x="1050" y="376" text-anchor="middle" font-size="13" font-weight="600">PGW / CGNAT</text><text x="1050" y="394" text-anchor="middle" font-size="11" fill="#4a5568">RADIUS · log</text>
+
+  <!-- flows -->
+  <line x1="200" y1="160" x2="318" y2="160" stroke="#1a365d" marker-end="url(#a)"/><text x="256" y="150" text-anchor="middle" font-size="10.5" fill="#2d3748">data on cellular</text>
+  <line x1="200" y1="360" x2="318" y2="360" stroke="#1a365d" marker-end="url(#a)"/><text x="258" y="350" text-anchor="middle" font-size="10.5" fill="#2d3748">HTTPS + API key</text>
+
+  <path d="M550 173 H600" stroke="#b7791f" stroke-width="2" fill="none" marker-end="url(#m)"/>
+  <line x1="435" y1="216" x2="435" y2="328" stroke="#b7791f" marker-end="url(#m)" opacity="0.6"/>
+
+  <line x1="840" y1="185" x2="958" y2="185" stroke="#b7791f" stroke-width="2" marker-end="url(#m)"/><text x="900" y="175" text-anchor="middle" font-size="10.5" fill="#b7791f">SCTP/Diameter S6a</text>
+  <line x1="840" y1="205" x2="958" y2="280" stroke="#b7791f" stroke-width="2" marker-end="url(#m)"/><text x="898" y="248" text-anchor="middle" font-size="10.5" fill="#b7791f">Gx probe</text>
+  <line x1="840" y1="215" x2="958" y2="380" stroke="#b7791f" stroke-width="1.6" marker-end="url(#m)" opacity="0.7"/><text x="893" y="330" text-anchor="middle" font-size="10.5" fill="#b7791f">RADIUS/log</text>
+
+  <!-- numbered steps -->
+  <g font-size="12" fill="#2d3748">
+    <circle cx="340" cy="255" r="11" fill="#dd6b20"/><text x="340" y="259" text-anchor="middle" fill="#fff" font-weight="700">1</text>
+    <text x="356" y="259">App login → bank xin token: POST /bc-authorize (anchor: IP:port hoặc TS.43 token Wi-Fi)</text>
+    <circle cx="340" cy="285" r="11" fill="#dd6b20"/><text x="340" y="289" text-anchor="middle" fill="#fff" font-weight="700">2</text>
+    <text x="356" y="289">POST /token → access_token gắn phone_number (JWS ≤300s, single-use)</text>
+    <circle cx="340" cy="315" r="11" fill="#dd6b20"/><text x="356" y="319"></text>
+    <text x="340" y="319" opacity="0"></text>
+    <circle cx="340" cy="452" r="0"/>
+  </g>
+  <g font-size="12" fill="#2d3748">
+    <circle cx="340" cy="452" r="0"/>
+    <text x="356" y="456"></text>
+  </g>
+  <g font-size="12" fill="#2d3748">
+    <circle cx="700" cy="255" r="11" fill="#dd6b20"/><text x="700" y="259" text-anchor="middle" fill="#fff" font-weight="700">3</text>
+    <text x="716" y="259">Bank POST /verify {phone} + Bearer token → so khớp claimed vs bound + score</text>
+    <circle cx="700" cy="285" r="11" fill="#dd6b20"/><text x="700" y="289" text-anchor="middle" fill="#fff" font-weight="700">4</text>
+    <text x="716" y="289">{verified:true/false} (+assurance opt-in) — CDR ghi full flow để billing</text>
+  </g>
+
+  <text x="590" y="498" text-anchor="middle" font-size="12.5" font-weight="600" fill="#b7791f">CAMARA API = ranh giới kinh doanh: bank chỉ thấy HTTPS chuẩn Open Gateway; signalling Diameter/MAP nằm hoàn toàn trong nhà.</text>
+  <text x="590" y="520" text-anchor="middle" font-size="11.5" fill="#4a5568">Giá trị: silent auth không OTP + SIM-swap check + risk score — bán per-call cho bank; HSS/HLR là tài nguyên thuê của operator.</text>
+</svg>
