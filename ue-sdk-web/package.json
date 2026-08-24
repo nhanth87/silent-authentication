@@ -1,0 +1,25 @@
+{
+  "name": "@restlink/ue-sdk-web",
+  "version": "0.1.0",
+  "description": "Silent Auth UE SDK (Web) — browser-side session-tuple poster for the SAS /session-tuple endpoint. Zero dependencies, ES2020.",
+  "type": "module",
+  "main": "src/session-tuple.js",
+  "types": "src/session-tuple.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/session-tuple.d.ts",
+      "default": "./src/session-tuple.js"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
