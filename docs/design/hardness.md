@@ -13,6 +13,7 @@ an observable (the exact MAP op / Diameter command, the fail-closed outcome, the
 
 ```bash
 python3 harness/run_hardness.py           # contract self-check (documented SoT)
+python3 harness/run_hardness.py --mutations   # H24 slee_boundary mutation self-test (10/10)
 python3 harness/run_hardness.py --trace path/to/verifier_trace.json   # (future) Java verifier
 python3 harness/preflight_prod.py         # deployment verdict for THIS environment
 python3 harness/preflight_prod.py --selftest   # prove the deployment gate bites
@@ -100,7 +101,10 @@ entry (debt repaid without deleting the exception) fails the gate as hard as new
 debt. Mutation-checked: a transport import in a REST resource, a container import in
 an SBB, a thread pool in the northbound, a bare `new DatagramSocket(` (plain and
 fully-qualified), an RA accessor call, a second SLEE pom dependency, a child-pom pin,
-and a stale allow-list entry are all detected and fail the gate. Design rationale:
+and a stale allow-list entry are all detected and fail the gate. The scenarios live
+in-repo (`harness/mut_slee_boundary.py`, runnable via
+`python3 harness/run_hardness.py --mutations`) so the checker's mutation coverage
+travels with the tree. Design rationale:
 [`../../AGENTS.md`](../../AGENTS.md) §10 and [`cellular-bearer-login.md`](cellular-bearer-login.md).
 
 Coverage contract (stage-by-stage): [`3gpp-spec-coverage.md`](3gpp-spec-coverage.md).

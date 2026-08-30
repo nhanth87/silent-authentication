@@ -151,6 +151,7 @@ python3 harness/run_hardness.py     # 34/34 — design contract (H1–H14) + dep
                                     #       + device bearer-declaration parity (H22)
                                     #       + dual-license parity (H23)
                                     #       + micro-jainslee boundary (H24)
+python3 harness/run_hardness.py --mutations   # H24 checker mutation self-test (10/10)
 python3 harness/preflight_prod.py   # refuse a lab-shaped prod deployment; exit = #failed checks
 ```
 

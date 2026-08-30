@@ -450,6 +450,16 @@ def run_harness(gates, contract, trace=None):
 
 
 def main(argv):
+    if "--mutations" in argv:
+        # Prove the H24 checker bites: inject one violation at a time, restore
+        # afterwards, fail the run when any scenario escapes or the baseline fails.
+        try:
+            import mut_slee_boundary
+        except ImportError as exc:  # pragma: no cover - must be next to this file
+            print(f"mut_slee_boundary.py unusable: {exc}", file=sys.stderr)
+            return 2
+        return mut_slee_boundary.main()
+
     trace_arg = None
     for i, a in enumerate(argv):
         if a == "--trace" and i + 1 < len(argv):

@@ -240,6 +240,7 @@ write-ups does not exist — `requiredInterfaceType` is on `NWParameters` and bi
 
 ```bash
 python3 harness/run_hardness.py    # contract + deployment gates — 34/34, exit 0 = pass
+python3 harness/run_hardness.py --mutations   # H24 slee_boundary mutation self-test — 10/10
 python3 harness/preflight_prod.py  # prod-profile verdict for THIS environment (exit = #fails)
 python3 harness/preflight_prod.py --selftest   # 22/22 mutation scenarios detected
 ```
@@ -253,7 +254,8 @@ device bearer-declaration parity** across the SAS enum and all four UE SDKs
 across `LICENSE.md`, the root + component READMEs, Maven `<licenses>` and npm `license`
 (checker `license_parity`, mutation-checked); **H24 asserts the micro-jainslee
 boundary** — only micro-jainslee services run the SAS, nothing is coded around the
-container (checker `slee_boundary`, mutation-checked, see §10). Runner:
+container (checker `slee_boundary`, mutation-checked via
+`harness/mut_slee_boundary.py` / `--mutations`, see §10). Runner:
 `harness/run_hardness.py`. Spec text SoT: `docs/research/`.
 
 ---
