@@ -1,4 +1,4 @@
-/* Digicom OTA ops tokens — dark default; light via html[data-theme="light"]. */
+/* Restlink OTA ops tokens — dark default; light via html[data-theme="light"]. */
 :root {
   --color-ink: #0c1220;
   --color-ink-panel: #141c2b;
@@ -37,7 +37,7 @@ html[data-theme="light"] {
   --header-bg: rgba(238, 241, 246, 0.92);
 }
 
-/* Remap Tailwind CDN ink/signal utilities so light theme stays Digicom ops (amber accent).
+/* Remap Tailwind CDN ink/signal utilities so light theme stays Restlink ops (amber accent).
  * Opacity variants (bg-ink/40, bg-ink-panel/40, …) are SEPARATE classes — listing .bg-ink
  * alone leaves nested black holes on light pages (CDR ledger, dashboard tiles). */
 html[data-theme="light"] body.bg-ink,
@@ -100,7 +100,7 @@ html:not([data-theme="light"]) .theme-toggle-label::after { content: " · light"
 .htmx-request .htmx-indicator,
 .htmx-request.htmx-indicator { opacity: 1; }
 
-/* Visible HTMX affordance — amber chip matching Digicom signal accent */
+/* Visible HTMX affordance — amber chip matching Restlink signal accent */
 .hx-live-badge {
   display: inline-flex;
   align-items: center;
@@ -352,7 +352,7 @@ tbody.hx-table-live.htmx-settling {
 
 /* ── CDR session ledger (bridge-phase spine) ───────────────────────────────
  * Signature: vertical phase rail on each When cell — S1→S2→ok/fail at a glance.
- * Stays inside Digicom ink/signal tokens; no purple/cream/broadsheet skins.
+ * Stays inside Restlink ink/signal tokens; no purple/cream/broadsheet skins.
  */
 .cdr-filter-card {
   max-width: none;

@@ -89,7 +89,7 @@ import java.util.concurrent.TimeoutException;
  * {@code accessTech=WIFI}; normal bearer/amr/body checks are skipped and an
  * invalid/expired/replayed token answers {@code 401 UNAUTHENTICATED}. The
  * token is single-use. The {@code operatortoken:} direct-bearer form and the
- * entitlement endpoints are Digicom extensions (TS.43 track), not part of
+ * entitlement endpoints are Restlink extensions (TS.43 track), not part of
  * the CAMARA contract.</p>
  *
  * <p><strong>Bearer-path security (token validation enabled)</strong>:</p>

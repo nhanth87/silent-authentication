@@ -175,8 +175,8 @@ removes SMS where it can; a signalling firewall protects the SMS that must still
 
 ## Proposal DOCX
 
-[`proposal/DigicomET_Silent_Auth_Proposal_v3.docx`](proposal/DigicomET_Silent_Auth_Proposal_v3.docx) —
-~50-page formal proposal derived from `slides/DigicomET_Silent_AuthProposal_v3.pptx`:
+[`proposal/Restlink_Silent_Auth_Proposal_v3.docx`](proposal/Restlink_Silent_Auth_Proposal_v3.docx) —
+~50-page formal proposal derived from `slides/Restlink_Silent_AuthProposal_v3.pptx`:
 fraud/UN–ITU evidence, two-stage MAP/Diameter design, CAMARA + GSMA FASG tables,
 commercial ROI (illustrative), roadmap. Chapters in `proposal/chapters/`; rebuild via
 `python3 proposal/scripts/build_proposal_docx.py`.
@@ -185,7 +185,7 @@ commercial ROI (illustrative), roadmap. Chapters in `proposal/chapters/`; rebuil
 
 ### Mix v3 (recommended)
 
-[`slides/DigicomET_Silent_Auth_Mix_v3.pptx`](slides/DigicomET_Silent_Auth_Mix_v3.pptx) —
+[`slides/Restlink_Silent_Auth_Mix_v3.pptx`](slides/Restlink_Silent_Auth_Mix_v3.pptx) —
 **28 slides**: government/bank story + MAP/Diameter tech **plus** CAMARA API table and
 GSMA FASG security tables (FS.07–FS.36, SG.22, FF.09, FS.11 categories).
 
@@ -197,12 +197,12 @@ python3 slides/scripts/build_pptx_v3.py
 
 ### Technical v2 only
 
-[`slides/DigicomET_Silent_Auth_Technical_v2.pptx`](slides/DigicomET_Silent_Auth_Technical_v2.pptx) —
+[`slides/Restlink_Silent_Auth_Technical_v2.pptx`](slides/Restlink_Silent_Auth_Technical_v2.pptx) —
 17 slides, message-flow only. `generate_svgs_v2.py` + `build_pptx_v2.py`.
 
 ### Marketing v1 only
 
-[`slides/DigicomET_Silent_Auth_Ethiopia.pptx`](slides/DigicomET_Silent_Auth_Ethiopia.pptx) —
+[`slides/Restlink_Silent_Auth_Ethiopia.pptx`](slides/Restlink_Silent_Auth_Ethiopia.pptx) —
 20-slide bank pitch. `generate_svgs.py` + `build_pptx.py`.
 
 ## Next steps
@@ -212,7 +212,7 @@ python3 slides/scripts/build_pptx_v3.py
 - [ ] MAP verifier on jSS7 (PSI/ATI/SAI) + jDiameter S6a (IDR/AIR)
 - [ ] Assurance scoring weights + per-risk thresholds
 - [ ] Fallback MFA policy when cellular path unavailable
-- [ ] Digicom-ET pilot packaging (API contract for Ethiopian banks)
+- [ ] Restlink pilot packaging (API contract for Ethiopian banks)
 
 ## License & Commercial Model (dual-license)
 
@@ -228,7 +228,7 @@ stacked, and the Operator grant is not a supplement to AGPL.
 | Edition | License | Who | Gets | Channel |
 |---|---|---|---|---|
 | **Community** | AGPL-3.0-or-later | Free — **whole repo** (sas-api + sas-entitlement + sas-host + UE SDKs; D1=A) | Source, mods, redistribution — **copyleft incl. network use** (AGPL §13: serve it, publish your changes) | Public source |
-| **Operator** | Commercial (owner-held) | Banks / SIs / operators (Digicom-ET deployments) | **Production rights without copyleft** (incl. micro-jainslee, D2) + license key, L1/L2 SLA, training, integration engineering | Private offers, license-key enforced |
+| **Operator** | Commercial (owner-held) | Banks / SIs / operators (Restlink deployments) | **Production rights without copyleft** (incl. micro-jainslee, D2) + license key, L1/L2 SLA, training, integration engineering | Private offers, license-key enforced |
 
 Neither edition is a warranty or a compliance claim: `/verify` answers for
 **network reachability of the MSISDN**, never for the human behind the app, and
@@ -250,7 +250,7 @@ A bank that wants a permissive client (Apache-2.0/MIT) takes it through the
 
 **Open source + revenue ("trả tiền"):** Community edition is the free funnel
 (bank/operator onboarding, PoCs); the paid Operator edition earns per-deployment
-license revenue (per verify / node / year) through the Digicom-ET VAS model,
+license revenue (per verify / node / year) through the Restlink VAS model,
 supported by L1/L2 SLA, training and integration engineering.
 
 Research & decision records and the commercial / go-to-market plan are

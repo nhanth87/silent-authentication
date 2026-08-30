@@ -2,7 +2,7 @@
 
 The **P0** of the Silent Authentication implementation: a Quarkus + micro-jainslee
 application that implements the CAMARA NumberVerification `POST /verify` surface over
-the Digicom-ET Silent Auth Service (SAS) — Resolver → Verifier → Policy, **fail-closed**.
+the Restlink Silent Auth Service (SAS) — Resolver → Verifier → Policy, **fail-closed**.
 
 Cloned from the two templates named in `AGENTS.md` §10:
 
@@ -30,16 +30,16 @@ POST /verify { phoneNumber }            (CAMARA NV v2.1.0)
 
 | Package | Role |
 |---------|------|
-| `et.digicomet.sas.api` | CAMARA REST surface (`/verify`, `/retrieve-phone-number`) + DTOs |
-| `et.digicomet.sas.bootstrap` | `SasBootstrap` (ElisaBootstrap clone) |
-| `et.digicomet.sas.events` | `VerifyRequestEvent` (`@EventType`) |
-| `et.digicomet.sas.sbbs` | `VerifySbb` (the entitlement-service SBB) |
-| `et.digicomet.sas.fsm` | `VerificationFsm`, `AssurancePolicy`, `SasTimeouts` |
-| `et.digicomet.sas.ras.resolver` | Resolver RA (wrapper + delegate + backend) |
-| `et.digicomet.sas.ras.mapverifier` | MAP Verifier RA (wrapper + delegate + dialog + backend) |
-| `et.digicomet.sas.ras.s6averifier` | Diameter S6a Verifier RA (wrapper + delegate + session + backend) |
-| `et.digicomet.sas.model` | Value records (`VerifyResult`, `ResolverResult`, …) |
-| `et.digicomet.sas.coordinator` | Async SLEE ↔ sync HTTP bridge + idempotency |
+| `et.restlink.sas.api` | CAMARA REST surface (`/verify`, `/retrieve-phone-number`) + DTOs |
+| `et.restlink.sas.bootstrap` | `SasBootstrap` (ElisaBootstrap clone) |
+| `et.restlink.sas.events` | `VerifyRequestEvent` (`@EventType`) |
+| `et.restlink.sas.sbbs` | `VerifySbb` (the entitlement-service SBB) |
+| `et.restlink.sas.fsm` | `VerificationFsm`, `AssurancePolicy`, `SasTimeouts` |
+| `et.restlink.sas.ras.resolver` | Resolver RA (wrapper + delegate + backend) |
+| `et.restlink.sas.ras.mapverifier` | MAP Verifier RA (wrapper + delegate + dialog + backend) |
+| `et.restlink.sas.ras.s6averifier` | Diameter S6a Verifier RA (wrapper + delegate + session + backend) |
+| `et.restlink.sas.model` | Value records (`VerifyResult`, `ResolverResult`, …) |
+| `et.restlink.sas.coordinator` | Async SLEE ↔ sync HTTP bridge + idempotency |
 
 ## Build & run
 
@@ -178,8 +178,8 @@ Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md
 
 | Edition | Terms |
 |---|---|
-| **Community** | **AGPL-3.0-or-later** — free to use, modify and redistribute; copyleft, and AGPL §13 also bites when you host it as a service. No SLA, no support, no warranty, no trademark rights in Digicom-ET. |
-| **Operator** | **Proprietary, owner-held.** Production rights without copyleft, signed builds + license key, security advisories, L1/L2 SLA, training and integration engineering. Terms per deployment via Digicom-ET. |
+| **Community** | **AGPL-3.0-or-later** — free to use, modify and redistribute; copyleft, and AGPL §13 also bites when you host it as a service. No SLA, no support, no warranty, no trademark rights in Restlink. |
+| **Operator** | **Proprietary, owner-held.** Production rights without copyleft, signed builds + license key, security advisories, L1/L2 SLA, training and integration engineering. Terms per deployment via Restlink. |
 
 The lab / dev profile of this component accepts plain HTTP and mock transports on purpose. Neither license changes that: **do not ship it** — see `harness/preflight_prod.py`.
 

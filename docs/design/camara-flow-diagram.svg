@@ -5,13 +5,13 @@
   </defs>
   <rect width="1180" height="560" fill="#f7fafc"/>
   <text x="590" y="34" text-anchor="middle" font-size="21" font-weight="700" fill="#1a365d">Silent Authentication — CAMARA Number Verification Flow</text>
-  <text x="590" y="56" text-anchor="middle" font-size="13" fill="#4a5568">Digicom-ET · GSMA Open Gateway / CAMARA NV v2.1.0</text>
+  <text x="590" y="56" text-anchor="middle" font-size="13" fill="#4a5568">Restlink · GSMA Open Gateway / CAMARA NV v2.1.0</text>
 
   <!-- zones -->
   <rect x="20"  y="80" width="200" height="380" rx="12" fill="#edf2f7" stroke="#cbd5e0"/>
   <text x="120" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#2d3748">BANK SIDE</text>
   <rect x="300" y="80" width="560" height="380" rx="12" fill="#fffaf0" stroke="#f6d38f" stroke-width="2"/>
-  <text x="580" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#b7791f">DIGICOM-ET CAMARA GATEWAY  ★ SẢN PHẨM BÁN CHO BANK ★</text>
+  <text x="580" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#b7791f">RESTLINK CAMARA GATEWAY  ★ SẢN PHẨM BÁN CHO BANK ★</text>
   <rect x="940" y="80" width="220" height="380" rx="12" fill="#ebf8ff" stroke="#90cdf4"/>
   <text x="1050" y="104" text-anchor="middle" font-size="14" font-weight="700" fill="#2b6cb0">ETHIO TELECOM CORE</text>
 

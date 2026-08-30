@@ -81,8 +81,8 @@ public class AdminPageRenderer {
     }
 
     public static String fallbackDashboard() {
-        return "<!DOCTYPE html><html><head><meta charset=utf-8/><title>Digicom-ET SAS</title></head>"
-                + "<body><h1>Digicom-ET Silent Auth SAS</h1><ul>"
+        return "<!DOCTYPE html><html><head><meta charset=utf-8/><title>Restlink SAS</title></head>"
+                + "<body><h1>Restlink Silent Auth SAS</h1><ul>"
                 + "<li><a href=/admin/ss7>SS7</a></li><li><a href=/admin/http>HTTP</a></li>"
                 + "<li><a href=/admin/diameter>Diameter</a></li><li><a href=/admin/cdr>CDR</a></li>"
                 + "<li><a href=/admin/tenants>Tenants</a></li><li><a href=/admin/users>Users</a></li>"

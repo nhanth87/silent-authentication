@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble Digicom-ET Silent Auth proposal DOCX (~50 pages) from markdown chapters + charts."""
+"""Assemble Restlink Silent Auth proposal DOCX (~50 pages) from markdown chapters + charts."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHAPTERS = ROOT / "chapters"
 ASSETS = ROOT / "assets"
 CHARTS = ASSETS / "charts"
-OUT = ROOT / "DigicomET_Silent_Auth_Proposal_v3.docx"
+OUT = ROOT / "Restlink_Silent_Auth_Proposal_v3.docx"
 
 GREEN = RGBColor(0x07, 0x89, 0x30)
 DARK = RGBColor(0x1A, 0x1A, 0x2E)
@@ -81,7 +81,7 @@ def setup_doc() -> Document:
         footer.is_linked_to_previous = False
         p = footer.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run("Digicom-ET Silent Authentication Proposal  ·  Ethiopia  ·  Page ")
+        run = p.add_run("Restlink Silent Authentication Proposal  ·  Ethiopia  ·  Page ")
         set_run_font(run, size=9, color=RGBColor(0x6B, 0x72, 0x80))
         add_page_number(p)
 
@@ -211,7 +211,7 @@ def add_cover(doc: Document):
         doc.add_paragraph()
     t = doc.add_paragraph()
     t.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = t.add_run("DIGICOM-ET")
+    r = t.add_run("RESTLINK")
     set_run_font(r, size=18, bold=True, color=GREEN)
 
     t = doc.add_paragraph()
@@ -226,8 +226,8 @@ def add_cover(doc: Document):
 
     doc.add_paragraph()
     meta = [
-        "Document: DigicomET Silent Authentication Proposal v3",
-        "Based on: DigicomET_Silent_AuthProposal_v3.pptx",
+        "Document: Restlink Silent Authentication Proposal v3",
+        "Based on: Restlink_Silent_AuthProposal_v3.pptx",
         "Audience: Government digital services · Banks · Ethio Telecom partnership",
         "Classification: Proposal — For Official Use",
         "Date: July 2026",
@@ -242,7 +242,7 @@ def add_cover(doc: Document):
     note = doc.add_paragraph()
     note.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = note.add_run(
-        "Digicom-ET is a VAS / adapter layer on Ethio Telecom signalling & data. "
+        "Restlink is a VAS / adapter layer on Ethio Telecom signalling & data. "
         "It does not take SMS interconnect revenue. Fallback OTP remains operator-billed."
     )
     set_run_font(r, size=10, color=RGBColor(0x0D, 0x73, 0x77))
