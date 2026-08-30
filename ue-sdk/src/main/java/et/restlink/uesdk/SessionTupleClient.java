@@ -12,6 +12,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -19,7 +20,13 @@ import java.nio.charset.StandardCharsets;
  * {@code POST /session-tuple} endpoint over {@link HttpURLConnection}.
  *
  * <p>Body shape mirrors the server DTO ({@code srcIp, srcPort, ts, msisdn,
- * imsi}); null fields are omitted.</p>
+ * imsi, accessTech}); null fields are omitted. The same tuple is echoed as
+ * {@code X-Sas-Access-Tech} so the SAS can log what the device claimed next to
+ * what its own Resolver observes.</p>
+ *
+ * <p>Pass a {@link Connector} bound to the cellular bearer (see
+ * {@code ue-sdk-android}'s {@code CellularBearer}) so the address the SAS sees
+ * is the bearer's, not the Wi-Fi default route's.</p>
  */
 public final class SessionTupleClient {
 
@@ -40,13 +47,25 @@ public final class SessionTupleClient {
      */
     public int post(String sasBaseUrl, SessionTupleCollector.TupleSnapshot snapshot,
                     String apiKeyNullable) throws IOException {
+        return post(sasBaseUrl, snapshot, apiKeyNullable, Connector.DEFAULT);
+    }
+
+    /**
+     * Cellular-aware variant: the request is opened through {@code connector},
+     * so a platform implementation can pin it to the cellular bearer.
+     */
+    public int post(String sasBaseUrl, SessionTupleCollector.TupleSnapshot snapshot,
+                    String apiKeyNullable, Connector connector) throws IOException {
         URL url = URI.create(trimTrailingSlash(sasBaseUrl) + "/session-tuple").toURL();
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        HttpURLConnection conn = asHttp(connector.open(url), url);
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(connectTimeoutMs);
         conn.setReadTimeout(readTimeoutMs);
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/json");
+        if (snapshot.accessTech() != null && snapshot.accessTech() != AccessTech.UNKNOWN) {
+            conn.setRequestProperty("X-Sas-Access-Tech", snapshot.accessTech().name());
+        }
         if (apiKeyNullable != null && !apiKeyNullable.isBlank()) {
             conn.setRequestProperty("X-Api-Key", apiKeyNullable);
         }
@@ -62,6 +81,19 @@ public final class SessionTupleClient {
         }
         conn.disconnect();
         return status;
+    }
+
+    /**
+     * HttpURLConnection is what the SAS contract needs (method, headers,
+     * status). A bearer-bound platform connection must already be an
+     * HttpURLConnection; anything else is a wiring bug, not a soft failure.
+     */
+    private static HttpURLConnection asHttp(URLConnection conn, URL url) throws IOException {
+        if (conn instanceof HttpURLConnection http) {
+            return http;
+        }
+        throw new IOException("connector returned " + conn.getClass().getName()
+                + " for " + url + ", expected an HTTP connection");
     }
 
     static String trimTrailingSlash(String baseUrl) {
@@ -94,6 +126,11 @@ public final class SessionTupleClient {
         if (snapshot.imsi() != null) {
             appendComma(sb, first);
             sb.append("\"imsi\":").append(Json.quote(snapshot.imsi()));
+            first = false;
+        }
+        if (snapshot.accessTech() != null && snapshot.accessTech() != AccessTech.UNKNOWN) {
+            appendComma(sb, first);
+            sb.append("\"accessTech\":").append(Json.quote(snapshot.accessTech().name()));
         }
         sb.append('}');
         return sb.toString();

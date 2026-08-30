@@ -16,6 +16,21 @@
     (FS.11 Cat 1 demo), plus a control web UI and a live-loop integration test
     that proves client-to-server signalling end to end.</description>
 
+  <licenses>
+    <license>
+      <name>GNU Affero General Public License v3.0 or later (Community edition)</name>
+      <url>https://www.gnu.org/licenses/agpl-3.0.html</url>
+      <distribution>manual</distribution>
+      <comments>Dual licensed work; SPDX expression:
+        AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0. This entry is
+        the AGPL Community grant only: copyleft, and AGPL section 13 also covers
+        serving the software over a network. Production rights without copyleft,
+        private builds, a permissive client option and L1/L2 SLA come from the
+        proprietary Operator license held by the copyright owner; see LICENSE.md.
+      </comments>
+    </license>
+  </licenses>
+
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>25</maven.compiler.release>

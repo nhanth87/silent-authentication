@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="540" viewBox="0 0 800 540">
+  <rect width="800" height="540" fill="#FFF8E7" rx="8"/>
+  
+  <defs>
+    <marker id="fd-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+    <marker id="fd-arr-rev" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+
+  <text x="400.0" y="28" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15"
+        font-weight="bold" fill="#1A1A2E">Silent-auth path decision by access technology</text>
+
+  <rect x="300" y="60" width="200" height="46" rx="6" fill="#FFFFFF" stroke="#1A1A2E" stroke-width="2"/>
+  <text x="400.0" y="82" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#1A1A2E">Auth request</text>
+  <line x1="308" y1="90" x2="492" y2="90" stroke="#1A1A2E" stroke-width="1" opacity="0.4"/>
+
+  <text x="312" y="108" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">login · /verify</text>
+
+  <rect x="60" y="150" width="300" height="78" rx="6" fill="#FFFFFF" stroke="#078930" stroke-width="2"/>
+  <text x="210.0" y="172" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#078930">Cellular data (5G/4G/3G)</text>
+  <line x1="68" y1="180" x2="352" y2="180" stroke="#078930" stroke-width="1" opacity="0.4"/>
+
+  <text x="72" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">IP-match: Resolver reads</text>
+
+  <text x="72" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">PGW/PCRF binding</text>
+
+  <rect x="440" y="150" width="300" height="78" rx="6" fill="#FFFFFF" stroke="#0D7377" stroke-width="2"/>
+  <text x="590.0" y="172" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#0D7377">Wi-Fi / browser</text>
+  <line x1="448" y1="180" x2="732" y2="180" stroke="#0D7377" stroke-width="1" opacity="0.4"/>
+
+  <text x="452" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">TS.43 EAP-AKA (SIM credential)</text>
+
+  <text x="452" y="214" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">works without cellular radio</text>
+
+  <line x1="400" y1="106" x2="400" y2="144" stroke="#1A1A2E" stroke-width="2"
+        marker-end="url(#fd-arr)"/>
+  
+
+  <rect x="600" y="260" width="180" height="82" rx="6" fill="#FFFFFF" stroke="#DA121A" stroke-width="2"/>
+  <text x="690.0" y="282" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#DA121A">No TS.43 / MNO?</text>
+  <line x1="608" y1="290" x2="772" y2="290" stroke="#DA121A" stroke-width="1" opacity="0.4"/>
+
+  <text x="612" y="308" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">TOTP / Passkey</text>
+
+  <text x="612" y="324" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">SMS OTP (home-routed)</text>
+
+  <line x1="740" y1="228" x2="740" y2="254" stroke="#DA121A" stroke-width="2" stroke-dasharray="5,4"
+        marker-end="url(#fd-arr)"/>
+  
+
+  <rect x="60" y="260" width="300" height="82" rx="6" fill="#FFFFFF" stroke="#C9A227" stroke-width="2"/>
+  <text x="210.0" y="282" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#C9A227">Verifier gates (fail-closed)</text>
+  <line x1="68" y1="290" x2="352" y2="290" stroke="#C9A227" stroke-width="1" opacity="0.4"/>
+
+  <text x="72" y="308" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">Resolver: IP+port+ts ≤ 300 ms</text>
+
+  <text x="72" y="324" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">MAP/Diameter ≤ 2 s · abort on timeout</text>
+
+  <rect x="440" y="260" width="136" height="82" rx="6" fill="#FFFFFF" stroke="#0D7377" stroke-width="2"/>
+  <text x="508.0" y="282" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13"
+        font-weight="bold" fill="#0D7377">SIM proof</text>
+  <line x1="448" y1="290" x2="568" y2="290" stroke="#0D7377" stroke-width="1" opacity="0.4"/>
+
+  <text x="452" y="308" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">TS.43 handshake</text>
+
+  <text x="452" y="324" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#1A1A2E">SIM-bound app instance</text>
+
+  <rect x="250" y="380" width="300" height="52" rx="6" fill="#07893016" stroke="#078930" stroke-width="2"/>
+  <text x="400" y="402" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="bold" fill="#078930">APPROVED — no OTP</text>
+  <text x="400" y="420" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#1A1A2E">assurance ≥ threshold · resolved == claimed</text>
+
+  <rect x="250" y="464" width="300" height="46" rx="6" fill="#DA121A14" stroke="#DA121A" stroke-width="2"/>
+  <text x="400" y="484" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="bold" fill="#DA121A">FALLBACK — step-up MFA</text>
+  <text x="400" y="500" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#1A1A2E">missing evidence never approves</text>
+
+  <line x1="210" y1="228" x2="210" y2="254" stroke="#078930" stroke-width="2"
+        marker-end="url(#fd-arr)"/>
+  
+
+  <line x1="560" y1="228" x2="560" y2="254" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#fd-arr)"/>
+  
+
+  <polyline points="690,342 690,402 548,402 548,481" fill="none" stroke="#DA121A" stroke-width="2"
+            stroke-dasharray="5,4" marker-end="url(#fd-arr)"/>
+  <text x="650" y="394" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#DA121A">no TS.43 SIM method</text>
+
+  <line x1="360" y1="301" x2="434" y2="301" stroke="#6B7280" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#fd-arr)"/>
+  <line x1="400" y1="301" x2="400" y2="372" stroke="#6B7280" stroke-width="2" marker-end="url(#fd-arr)"/>
+  <text x="414" y="340" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">score ≥ threshold?</text>
+  <line x1="400" y1="432" x2="400" y2="458" stroke="#DA121A" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#fd-arr)"/>
+  <text x="414" y="450" text-anchor="start" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#DA121A">low score</text>
+
+  <text x="400" y="533" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#6B7280">
+    TS.43 shrinks the Wi-Fi fallback surface · Strategy B still firewalls residual SMS OTP
+  </text>
+
+</svg>

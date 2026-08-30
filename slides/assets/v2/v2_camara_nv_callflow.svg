@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="560" viewBox="0 0 800 560">
+  <rect width="800" height="560" fill="#FFF8E7" rx="8"/>
+  
+  <defs>
+    <marker id="nv-arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#C9A227"/>
+    </marker>
+    <marker id="nv-arr-rev" markerWidth="8" markerHeight="8" refX="0" refY="3" orient="auto">
+      <path d="M7,0 L0,3 L7,6 Z" fill="#C9A227"/>
+    </marker>
+  </defs>
+
+  <text x="400.0" y="28" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15"
+        font-weight="bold" fill="#1A1A2E">CAMARA Number Verification — /verify code call flow</text>
+
+  <line x1="100" y1="60" x2="100" y2="520" stroke="#6B7280" stroke-width="1" stroke-dasharray="3,4" opacity="0.5"/>
+  <rect x="54" y="64" width="92" height="24" rx="4" fill="#1A1A2E" opacity="0.08" stroke="#1A1A2E" stroke-width="1"/>
+  <text x="100" y="80" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="bold" fill="#1A1A2E">Bank Backend</text>
+
+  <line x1="250" y1="60" x2="250" y2="520" stroke="#6B7280" stroke-width="1" stroke-dasharray="3,4" opacity="0.5"/>
+  <rect x="204" y="64" width="92" height="24" rx="4" fill="#1A1A2E" opacity="0.08" stroke="#1A1A2E" stroke-width="1"/>
+  <text x="250" y="80" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="bold" fill="#1A1A2E">SAS /verify</text>
+
+  <line x1="400" y1="60" x2="400" y2="520" stroke="#6B7280" stroke-width="1" stroke-dasharray="3,4" opacity="0.5"/>
+  <rect x="354" y="64" width="92" height="24" rx="4" fill="#1A1A2E" opacity="0.08" stroke="#1A1A2E" stroke-width="1"/>
+  <text x="400" y="80" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="bold" fill="#1A1A2E">PGW Resolver</text>
+
+  <line x1="550" y1="60" x2="550" y2="520" stroke="#6B7280" stroke-width="1" stroke-dasharray="3,4" opacity="0.5"/>
+  <rect x="504" y="64" width="92" height="24" rx="4" fill="#1A1A2E" opacity="0.08" stroke="#1A1A2E" stroke-width="1"/>
+  <text x="550" y="80" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="bold" fill="#1A1A2E">Verifier</text>
+
+  <line x1="700" y1="60" x2="700" y2="520" stroke="#6B7280" stroke-width="1" stroke-dasharray="3,4" opacity="0.5"/>
+  <rect x="654" y="64" width="92" height="24" rx="4" fill="#1A1A2E" opacity="0.08" stroke="#1A1A2E" stroke-width="1"/>
+  <text x="700" y="80" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="bold" fill="#1A1A2E">HLR / HSS</text>
+
+  <line x1="100" y1="112" x2="244" y2="112" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#nv-arr)"/>
+  <text x="175.0" y="104" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">POST /verify · 3-legged token</text>
+  
+  <circle cx="175.0" cy="112" r="9" fill="#0D7377" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="175.0" y="116" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">1</text>
+
+
+  <rect x="175.0" y="140" width="150" height="40" rx="4" fill="#C9A227" opacity="0.12" stroke="#C9A227" stroke-width="1"/>
+
+  <text x="250" y="155" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" fill="#1A1A2E">validate JWT: scope · amr</text>
+
+  <text x="250" y="169" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" fill="#1A1A2E">jti single-use ≤ 300 s</text>
+
+  <line x1="250" y1="212" x2="394" y2="212" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#nv-arr)"/>
+  <text x="325.0" y="204" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">resolve(srcIP, srcPort, ts)</text>
+  
+  <circle cx="325.0" cy="212" r="9" fill="#0D7377" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="325.0" y="216" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">2</text>
+
+
+  <line x1="400" y1="240" x2="254" y2="240" stroke="#078930" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="325" y="232" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#078930">MSISDN + IMSI + bearerAge</text>
+  <circle cx="325" cy="240" r="9" fill="#078930" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="325" y="244" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">3</text>
+
+  <line x1="250" y1="268" x2="544" y2="268" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#nv-arr)"/>
+  <text x="400.0" y="260" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">verify(MSISDN / IMSI)</text>
+  
+  <circle cx="400.0" cy="268" r="9" fill="#0D7377" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="400.0" y="272" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">4</text>
+
+
+  <line x1="550" y1="296" x2="694" y2="296" stroke="#0D7377" stroke-width="2"
+        marker-end="url(#nv-arr)"/>
+  <text x="625.0" y="288" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#1A1A2E">IDR/AIR (S6a) · PSI (MAP)</text>
+  
+  <circle cx="625.0" cy="296" r="9" fill="#0D7377" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="625.0" y="300" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">5</text>
+
+
+  <line x1="700" y1="324" x2="554" y2="324" stroke="#078930" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="627" y="316" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#078930">subscriberState + lastUpdate</text>
+  <circle cx="627" cy="324" r="9" fill="#078930" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="627" y="328" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">6</text>
+
+  <line x1="550" y1="352" x2="254" y2="352" stroke="#078930" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="402" y="344" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#078930">reachable · notSimSwapped · plausible</text>
+  <circle cx="402" cy="352" r="9" fill="#078930" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="402" y="356" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">7</text>
+
+  <rect x="165.0" y="376" width="170" height="40" rx="4" fill="#C9A227" opacity="0.12" stroke="#C9A227" stroke-width="1"/>
+
+  <text x="250" y="391" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" fill="#1A1A2E">Policy scoring ≥ threshold</text>
+
+  <text x="250" y="405" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" fill="#1A1A2E">resolved == claimed?</text>
+
+  <line x1="250" y1="440" x2="104" y2="440" stroke="#078930" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="177" y="430" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#078930">200 {devicePhoneNumberVerified:true}</text>
+  <circle cx="177" cy="440" r="9" fill="#078930" stroke="#FFFFFF" stroke-width="1"/>
+  <text x="177" y="444" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#FFFFFF" font-weight="bold">8</text>
+
+  <rect x="40" y="472" width="720" height="44" rx="6" fill="#DA121A14" stroke="#DA121A" stroke-width="1"/>
+  <text x="400" y="490" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#DA121A" font-weight="bold">
+    Fail-closed: any timeout / no binding / score below threshold → 403, never soft-pass
+  </text>
+  <text x="400" y="506" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9" fill="#1A1A2E">
+    MSISDN/IMSI stays on bank backend · never returned to the app · reqId dedup
+  </text>
+
+</svg>

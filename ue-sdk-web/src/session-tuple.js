@@ -9,6 +9,72 @@
 const DEFAULT_TIMEOUT_MS = 3000;
 
 /**
+ * Access technologies the SAS understands. Names mirror
+ * `et.restlink.sas.model.AccessTech`.
+ */
+export const AccessTech = Object.freeze({
+  GS_2G3G: 'GS_2G3G',
+  LTE: 'LTE',
+  NR: 'NR',
+  WIFI: 'WIFI',
+  FIXED: 'FIXED',
+  UNKNOWN: 'UNKNOWN',
+});
+
+/** True only for a cellular 2G/3G/4G/5G bearer. */
+export function isCellular(accessTech) {
+  return accessTech === AccessTech.GS_2G3G
+    || accessTech === AccessTech.LTE
+    || accessTech === AccessTech.NR;
+}
+
+/**
+ * Best-effort bearer classification from the Network Information API.
+ *
+ * A browser cannot pin a request to a radio: the OS routing table decides, and
+ * on a phone attached to both Wi-Fi and LTE the page almost always leaves over
+ * Wi-Fi. `navigator.connection` (Chromium/Android only; absent in Safari and
+ * Firefox) is therefore an *observation*, never a control — which is exactly
+ * why the default answer is UNKNOWN and why `requireCellular` fails closed
+ * instead of guessing.
+ *
+ * @param {Navigator|undefined} nav environment to probe (injectable for tests)
+ * @returns {string} one of AccessTech
+ */
+export function detectAccessTech(nav = globalThis.navigator) {
+  const conn = nav && nav.connection;
+  if (!conn || typeof conn !== 'object') {
+    return AccessTech.UNKNOWN;
+  }
+  const type = typeof conn.type === 'string' ? conn.type.toLowerCase() : '';
+  if (type === 'wifi') return AccessTech.WIFI;
+  if (type === 'ethernet') return AccessTech.FIXED;
+  if (type === 'cellular') {
+    // `effectiveType` is a throughput estimate, not a radio reading: "4g" means
+    // "fast enough to look like LTE", so it must never be reported as NR. LTE is
+    // the strongest claim a browser may make.
+    const eff = typeof conn.effectiveType === 'string' ? conn.effectiveType.toLowerCase() : '';
+    return eff === '4g' ? AccessTech.LTE : AccessTech.GS_2G3G;
+  }
+  // 'none', 'bluetooth', 'wimax', 'other', 'unknown', or no API at all.
+  return AccessTech.UNKNOWN;
+}
+
+/**
+ * Thrown when a cellular bearer was demanded but the browser could not confirm
+ * one. The app must fall back to OTP/passkey — never retry over Wi-Fi.
+ */
+export class CellularUnavailableError extends Error {
+  constructor(observed) {
+    super(`silent auth needs a cellular bearer, browser reports ${observed}`
+      + ' - fall back to OTP; a web page cannot pin traffic to the radio');
+    this.name = 'CellularUnavailableError';
+    this.code = 'CELLULAR_UNAVAILABLE';
+    this.observed = observed;
+  }
+}
+
+/**
  * Trims one trailing slash (keeps bare origins intact).
  */
 export function trimTrailingSlash(baseUrl) {
@@ -35,6 +101,9 @@ export function sessionTupleBody(snapshot) {
   if (snapshot.imsi != null) {
     body.imsi = snapshot.imsi;
   }
+  if (snapshot.accessTech != null && snapshot.accessTech !== AccessTech.UNKNOWN) {
+    body.accessTech = snapshot.accessTech;
+  }
   return body;
 }
 
@@ -51,8 +120,18 @@ export class SessionTupleClient {
    * @param {string} [options.apiKey] sent as X-Api-Key when non-blank.
    * @param {(error: unknown) => void} [options.onError] transport-failure hook.
    * @param {number} [options.timeoutMs] overall timeout, default 3000 ms.
+   * @param {boolean} [options.requireCellular] refuse to post when the browser
+   *        cannot confirm a cellular bearer (default false = lab behaviour).
+   * @param {Navigator} [options.navigator] probe override for tests.
    */
-  constructor({ baseUrl, apiKey = null, onError = null, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  constructor({
+    baseUrl,
+    apiKey = null,
+    onError = null,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    requireCellular = false,
+    navigator: nav = globalThis.navigator,
+  }) {
     if (!baseUrl) {
       throw new TypeError('baseUrl is required');
     }
@@ -60,15 +139,30 @@ export class SessionTupleClient {
     this.apiKey = apiKey;
     this.onError = onError;
     this.timeoutMs = timeoutMs;
+    this.requireCellular = requireCellular;
+    this.navigator = nav;
+  }
+
+  /** Bearer observed at call time (never cached — radios change mid-session). */
+  accessTech() {
+    return detectAccessTech(this.navigator);
   }
 
   /**
    * Sends the tuple; resolves {status} or throws on network failure/timeout.
    * @param {{msisdn?: string|null}} [options]
    * @returns {Promise<{status: number}>}
+   * @throws {CellularUnavailableError} when requireCellular is set and the
+   *         browser is not on a cellular bearer — before any request is sent.
    */
   async send({ msisdn = null } = {}) {
-    const snapshot = { srcIp: null, srcPort: null, ts: Date.now(), msisdn, imsi: null };
+    const accessTech = this.accessTech();
+    if (this.requireCellular && !isCellular(accessTech)) {
+      throw new CellularUnavailableError(accessTech);
+    }
+    const snapshot = {
+      srcIp: null, srcPort: null, ts: Date.now(), msisdn, imsi: null, accessTech,
+    };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -95,7 +189,8 @@ export class SessionTupleClient {
   }
 
   /**
-   * Request headers: Content-Type always; X-Api-Key only when configured.
+   * Request headers: Content-Type always; X-Api-Key only when configured;
+   * X-Sas-Access-Tech only when the bearer is actually known.
    */
   headers() {
     const headers = { 'Content-Type': 'application/json' };

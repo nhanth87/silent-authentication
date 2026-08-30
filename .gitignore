@@ -1,0 +1,25 @@
+# local/editor noise
+__pycache__/
+*.pyc
+.venv/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# build output (never commit; keeps generated artifacts out of a public repo)
+target/
+.build/
+node_modules/
+dist/
+
+# local H2 databases / runtime data — contains UAT CDR + session rows
+*.mv.db
+*.trace.db
+sas-host/data/
+
+# gradle / xcode noise for the SDK samples
+.gradle/
+build/
+DerivedData/
+xcuserdata/

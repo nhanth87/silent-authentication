@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SessionTupleClientTest {
 
@@ -33,6 +35,7 @@ class SessionTupleClientTest {
     private final AtomicReference<String> apiKey = new AtomicReference<>();
     private final AtomicReference<String> contentType = new AtomicReference<>();
     private final AtomicReference<String> requestBody = new AtomicReference<>();
+    private final AtomicReference<String> accessTechHeader = new AtomicReference<>();
 
     @BeforeEach
     void startServer() throws IOException {
@@ -62,6 +65,7 @@ class SessionTupleClientTest {
         method.set(exchange.getRequestMethod());
         apiKey.set(exchange.getRequestHeaders().getFirst("X-Api-Key"));
         contentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+        accessTechHeader.set(exchange.getRequestHeaders().getFirst("X-Sas-Access-Tech"));
         try (InputStream in = exchange.getRequestBody()) {
             requestBody.set(readAll(in));
         }
@@ -155,4 +159,46 @@ class SessionTupleClientTest {
         assertEquals("http://h", SessionTupleClient.trimTrailingSlash("http://h/"));
         assertEquals("http://h", SessionTupleClient.trimTrailingSlash("http://h"));
     }
+
+    @Test
+    void cellularTupleDeclaresAccessTechOnBodyAndHeader() throws IOException {
+        TupleSnapshot snapshot = new TupleSnapshot(
+                null, null, 1724200000010L, null, null, AccessTech.LTE);
+
+        int status = new SessionTupleClient().post(
+                "http://127.0.0.1:" + port, snapshot, "k", Connector.DEFAULT);
+
+        assertEquals(200, status);
+        assertEquals("LTE", accessTechHeader.get(),
+                "the SAS logs the declared tech from the header too");
+        assertEquals("{\"ts\":1724200000010,\"accessTech\":\"LTE\"}", requestBody.get());
+    }
+
+    @Test
+    void wifiBearerCannotSatisfyACellularRequirement() {
+        TupleSnapshot wifi = new TupleSnapshot(
+                null, null, 1724200000011L, null, null, AccessTech.WIFI);
+
+        CellularUnavailableException ex = assertThrows(CellularUnavailableException.class,
+                () -> new SessionTupleClient().post("http://127.0.0.1:" + port,
+                        wifi, null, Connector.DEFAULT, CellularRequirement.CELLULAR));
+        assertEquals(AccessTech.WIFI, ex.observed());
+    }
+
+    @Test
+    void cellularBearerIsTheConnectorUsedForTheRequest() throws IOException {
+        final boolean[] used = new boolean[1];
+        Connector pinning = url -> {
+            used[0] = true;
+            return url.openConnection();
+        };
+        TupleSnapshot snapshot = TupleSnapshot.cellularNow(null, AccessTech.NR);
+
+        new SessionTupleClient().post("http://127.0.0.1:" + port, snapshot,
+                null, pinning, CellularRequirement.CELLULAR_4G_PLUS);
+
+        assertTrue(used[0], "the bearer must be the thing that opens the connection");
+        assertEquals("NR", accessTechHeader.get());
+    }
 }
+

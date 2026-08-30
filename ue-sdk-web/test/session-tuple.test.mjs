@@ -183,3 +183,66 @@ test('trims trailing slash on base URL', () => {
   assert.equal(trimTrailingSlash('http://h/'), 'http://h');
   assert.equal(trimTrailingSlash('http://h'), 'http://h');
 });
+
+test('detects bearer from the Network Information API, conservatively', async () => {
+  const { detectAccessTech, isCellular, AccessTech } = await import('../src/session-tuple.js');
+
+  assert.equal(detectAccessTech({ connection: { type: 'cellular', effectiveType: '4g' } }), AccessTech.LTE);
+  assert.equal(detectAccessTech({ connection: { type: 'cellular', effectiveType: '3g' } }), AccessTech.GS_2G3G);
+  // effectiveType is a throughput estimate: a browser must never claim 5G.
+  assert.equal(detectAccessTech({ connection: { type: 'cellular', effectiveType: '5g' } }), AccessTech.GS_2G3G);
+  assert.equal(detectAccessTech({ connection: { type: 'wifi' } }), AccessTech.WIFI);
+  assert.equal(detectAccessTech({ connection: { type: 'ethernet' } }), AccessTech.FIXED);
+  assert.equal(detectAccessTech({ connection: {} }), AccessTech.UNKNOWN);
+  assert.equal(detectAccessTech(undefined), AccessTech.UNKNOWN);
+  assert.ok(isCellular(AccessTech.NR) && !isCellular(AccessTech.WIFI) && !isCellular(AccessTech.UNKNOWN));
+});
+
+test('requireCellular refuses to send at all when the bearer is not cellular', async () => {
+  const { SessionTupleClient, CellularUnavailableError } = await import('../src/session-tuple.js');
+  let requests = 0;
+  const server = await listen((req, res) => {
+    requests += 1;
+    readBody(req).then(() => { res.statusCode = 200; res.end(); });
+  });
+  try {
+    const client = new SessionTupleClient({
+      baseUrl: baseUrlOf(server),
+      requireCellular: true,
+      navigator: { connection: { type: 'wifi' } },
+    });
+    await assert.rejects(client.send(), (error) => error.code === 'CELLULAR_UNAVAILABLE');
+    assert.equal(requests, 0, 'must fail before the request, not after');
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('cellular bearer is declared on the wire', async () => {
+  let rawBody = '';
+  const { SessionTupleClient } = await import('../src/session-tuple.js');
+  const server = await listen((req, res) => {
+    readBody(req).then((body) => {
+      rawBody = body;
+      res.statusCode = 200;
+      res.end();
+    });
+  });
+  try {
+    const originalNow = Date.now;
+    Date.now = () => 1724200000009;
+    try {
+      const client = new SessionTupleClient({
+        baseUrl: baseUrlOf(server),
+        navigator: { connection: { type: 'cellular', effectiveType: '4g' } },
+      });
+      await client.send();
+    } finally {
+      Date.now = originalNow;
+    }
+    assert.equal(rawBody, '{"ts":1724200000009,"accessTech":"LTE"}');
+  } finally {
+    await stopServer(server);
+  }
+});
+

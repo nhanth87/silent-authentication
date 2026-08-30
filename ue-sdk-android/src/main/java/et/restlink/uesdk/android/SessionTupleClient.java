@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -20,8 +21,14 @@ import java.nio.charset.StandardCharsets;
  * endpoint over {@link HttpURLConnection}.
  *
  * <p>Body shape mirrors the server DTO ({@code srcIp, srcPort, ts, msisdn,
- * imsi}); null fields are omitted. Run {@link #post} off the main thread —
- * this is blocking network I/O.</p>
+ * imsi, accessTech}); null fields are omitted. Run {@link #post} off the main
+ * thread — this is blocking network I/O.</p>
+ *
+ * <p><strong>Cellular login.</strong> Pass a {@link CellularBearer} as the
+ * {@link Connector} and the tuple is emitted from a socket pinned to the
+ * cellular {@code Network}, which is what makes the SAS-side IP&rarr;MSISDN
+ * correlation meaningful. Without it the OS may pick Wi-Fi and the SAS sees a
+ * non-operator address (silent-auth cannot work; it must fall back).</p>
  */
 public final class SessionTupleClient {
 
@@ -42,13 +49,43 @@ public final class SessionTupleClient {
      */
     public int post(String sasBaseUrl, TupleSnapshot snapshot,
                     String apiKeyNullable) throws IOException {
+        return post(sasBaseUrl, snapshot, apiKeyNullable, Connector.DEFAULT);
+    }
+
+    /**
+     * Cellular variant: the request is opened through {@code connector}, so a
+     * {@link CellularBearer} pins it to the cellular bearer.
+     *
+     * @throws CellularUnavailableException when {@code requirement} is not
+     *         satisfied by the bearer — the app must fall back to OTP/passkey
+     */
+    public int post(String sasBaseUrl, TupleSnapshot snapshot, String apiKeyNullable,
+                    Connector connector, CellularRequirement requirement)
+            throws IOException {
+        if (requirement != null) {
+            requirement.check(snapshot.accessTech());
+        }
+        return post(sasBaseUrl, snapshot, apiKeyNullable, connector);
+    }
+
+    /** Cellular variant with the default {@link CellularRequirement#ANY} policy. */
+    public int post(String sasBaseUrl, TupleSnapshot snapshot,
+                    String apiKeyNullable, Connector connector) throws IOException {
         URL url = new URL(trimTrailingSlash(sasBaseUrl) + "/session-tuple");
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        URLConnection raw = connector.open(url);
+        if (!(raw instanceof HttpURLConnection)) {
+            throw new IOException("connector returned " + raw.getClass().getName()
+                    + " for " + url + ", expected an HTTP connection");
+        }
+        HttpURLConnection conn = (HttpURLConnection) raw;
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(connectTimeoutMs);
         conn.setReadTimeout(readTimeoutMs);
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/json");
+        if (snapshot.accessTech() != AccessTech.UNKNOWN) {
+            conn.setRequestProperty("X-Sas-Access-Tech", snapshot.accessTech().name());
+        }
         if (apiKeyNullable != null && apiKeyNullable.trim().length() > 0) {
             conn.setRequestProperty("X-Api-Key", apiKeyNullable);
         }
@@ -99,6 +136,11 @@ public final class SessionTupleClient {
         if (snapshot.imsi() != null) {
             appendComma(sb, first);
             sb.append("\"imsi\":").append(Json.quote(snapshot.imsi()));
+            first = false;
+        }
+        if (snapshot.accessTech() != AccessTech.UNKNOWN) {
+            appendComma(sb, first);
+            sb.append("\"accessTech\":").append(Json.quote(snapshot.accessTech().name()));
         }
         sb.append('}');
         return sb.toString();

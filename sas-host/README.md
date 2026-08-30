@@ -86,21 +86,52 @@ mints it from the CIBA/network-auth token).
 ## Harness mapping
 
 The pure decision engine (`VerificationFsm`) + budgets (`SasTimeouts`) encode the same
-contracts asserted by `harness/gates.yaml` (H1–H14). Run the project gate from the tree root:
+contracts asserted by `harness/gates.yaml` (H1–H14). H15–H21 additionally gate the
+**deployment artifact** (`application-prod.properties` + environment). Run from the tree root:
 
 ```bash
-python3 harness/run_hardness.py          # 24/24 pass (contract mode)
+python3 harness/run_hardness.py          # 31/31 pass (contract + deployment gates)
+python3 harness/preflight_prod.py        # prod-profile verdict for THIS environment
+python3 harness/preflight_prod.py --selftest   # prove the deployment gate bites
 ```
 
 Java-side unit tests (pure JUnit 5, no Quarkus boot): `mvn test`.
 
-## P1 (not in this module yet)
+## Production profile (`QUARKUS_PROFILE=prod`)
 
-- TS.43 / EAP-AKA SWm/SWx verifier (Wi-Fi path) — fails closed with `WIFI_NOT_READY`.
-- Real OIDC token validation + single-use ≤300 s token enforcement (pilot: header check).
-- Operator-side Resolver source (PGW RADIUS / PCRF Sd / CGNAT log).
-- S6a transport is currently an in-memory HSS stand-in; wire corsac-diameter/jDiameter AIR/ULR
-  (mirror `vendor-ras/ra-diameter`) for a live S6a client.
+`src/main/resources/application-prod.properties` is the deployment-safe overlay. It
+carries **no lab defaults**: every credential and operator-specific value is
+`${ENV_VAR}` with **no `:default`**, so a missing secret fails the config read at boot
+instead of silently reverting to `change-me` / `demo` / loopback.
+
+```bash
+# from the tree root (the script resolves its own paths — run it anywhere)
+export QUARKUS_PROFILE=prod
+python3 harness/preflight_prod.py || exit 1                # gate BEFORE the JVM
+java -jar sas-host/target/quarkus-app/quarkus-run.jar      # HTTPS :8443 only, mTLS
+```
+
+Highlights: `insecure-requests=disabled`, `ssl.client-auth=required`,
+`token-validation-enabled=true`, `enforce-api-keys=true`, `transport.map=jss7`,
+`s6a/swx=corsac`, PostgreSQL + Flyway (`database.generation=none`),
+`entitlement.require-signed=true`, `cdr.db.enabled=true`.
+
+The preflight (`PRO-01`…`PRO-28`) reports what is missing/unsafe without printing any
+secret value — names, lengths and fingerprints only. Exit code = number of failed checks.
+
+**Not covered by the profile:** HSTS (Quarkus core has no such property — terminate it at
+the edge proxy), live mTLS/SS7/Diameter handshakes, key rotation. See
+[TODO.md](TODO.md) and [`../docs/result_p1_reaudit.md`](../docs/result_p1_reaudit.md).
+
+## Deferred / still stand-in in lab mode
+
+- `X-Sas-Access-Tech: WIFI` in **lab** mode returns `WIFI_NOT_READY` (in-memory SWx);
+  the real TS.43 / EAP-AKA SWx verifier RA is wired behind `sas.transport.swx=corsac`.
+- Token validation + single-use ≤300 s enforcement is **on only in `prod`**
+  (base profile keeps `token-validation-enabled=false` for demos).
+- Resolver source (PGW RADIUS / PCRF Sd / CGNAT log) is an operator input:
+  `sas.transport.resolver=${SAS_TRANSPORT_RESOLVER}` ∈ `radius|cgnat|sd`.
+- S6a in lab mode is an in-memory HSS stand-in; `corsac-diameter` S6a is opt-in.
 
 ## P2 — real signalling transport (wired, opt-in)
 
@@ -137,4 +168,19 @@ sas.transport.jss7.local-gt=<SAS local global title>
 
 If `sas.transport.jss7.config` is blank the bootstrap logs a warning and falls back
 to the in-memory backend (fail-closed — a misconfiguration never silently opens a
-signalling path).
+si
+
+## License
+
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+
+`SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
+
+| Edition | Terms |
+|---|---|
+| **Community** | **AGPL-3.0-or-later** — free to use, modify and redistribute; copyleft, and AGPL §13 also bites when you host it as a service. No SLA, no support, no warranty, no trademark rights in Digicom-ET. |
+| **Operator** | **Proprietary, owner-held.** Production rights without copyleft, signed builds + license key, security advisories, L1/L2 SLA, training and integration engineering. Terms per deployment via Digicom-ET. |
+
+The lab / dev profile of this component accepts plain HTTP and mock transports on purpose. Neither license changes that: **do not ship it** — see `harness/preflight_prod.py`.
+
+Copyright © 2026 Tran Nhan.

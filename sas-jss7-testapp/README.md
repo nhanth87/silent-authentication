@@ -139,3 +139,18 @@ up. The live-loop test and the control API `/messages` view make this visible.
   itself; `.gitignore` covers manual-run leftovers.
 - The simulator pins `"backend": "netty_kernel"` so no DPDK/fstack native
   library is needed on lab hosts.
+
+## License
+
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+
+`SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
+
+| Edition | Terms |
+|---|---|
+| **Community** | **AGPL-3.0-or-later** — free to use, modify and redistribute; copyleft, and AGPL §13 also bites when you host it as a service. No SLA, no support, no warranty, no trademark rights in Digicom-ET. |
+| **Operator** | **Proprietary, owner-held.** Production rights without copyleft, signed builds + license key, security advisories, L1/L2 SLA, training and integration engineering. Terms per deployment via Digicom-ET. |
+
+The lab / dev profile of this component accepts plain HTTP and mock transports on purpose. Neither license changes that: **do not ship it** — see `harness/preflight_prod.py`.
+
+Copyright © 2026 Tran Nhan.

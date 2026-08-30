@@ -21,23 +21,29 @@ public struct TupleSnapshot: Codable, Equatable {
     public var ts: Int64
     public var msisdn: String?
     public var imsi: String?
+    /// Bearer the tuple was captured on. Omitted from the wire when nil or
+    /// unknown — the SAS treats an absent declaration as "not attested", never
+    /// as cellular.
+    public var accessTech: AccessTech?
 
     public init(srcIp: String? = nil,
                 srcPort: Int? = nil,
                 ts: Int64,
                 msisdn: String? = nil,
-                imsi: String? = nil) {
+                imsi: String? = nil,
+                accessTech: AccessTech? = nil) {
         self.srcIp = srcIp
         self.srcPort = srcPort
         self.ts = ts
         self.msisdn = msisdn
         self.imsi = imsi
+        self.accessTech = accessTech
     }
 
     /// Device-visible snapshot: capture timestamp now, no CGNAT visibility.
-    public init(msisdn: String? = nil) {
+    public init(msisdn: String? = nil, accessTech: AccessTech? = nil) {
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000.0)
-        self.init(ts: nowMillis, msisdn: msisdn)
+        self.init(ts: nowMillis, msisdn: msisdn, accessTech: accessTech)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -46,6 +52,7 @@ public struct TupleSnapshot: Codable, Equatable {
         case ts
         case msisdn
         case imsi
+        case accessTech
     }
 
     public init(from decoder: Decoder) throws {
@@ -55,6 +62,7 @@ public struct TupleSnapshot: Codable, Equatable {
         ts = try container.decode(Int64.self, forKey: .ts)
         msisdn = try container.decodeIfPresent(String.self, forKey: .msisdn)
         imsi = try container.decodeIfPresent(String.self, forKey: .imsi)
+        accessTech = try container.decodeIfPresent(AccessTech.self, forKey: .accessTech)
     }
 
     /// Encodes only present fields so nulls are omitted from the wire body.
@@ -65,5 +73,9 @@ public struct TupleSnapshot: Codable, Equatable {
         try container.encode(ts, forKey: .ts)
         try container.encodeIfPresent(msisdn, forKey: .msisdn)
         try container.encodeIfPresent(imsi, forKey: .imsi)
+        if let accessTech = accessTech, accessTech != .unknown {
+            try container.encode(accessTech, forKey: .accessTech)
+        }
     }
 }
+

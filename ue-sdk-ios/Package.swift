@@ -11,6 +11,12 @@ import PackageDescription
 
 let package = Package(
     name: "UESDK",
+    platforms: [
+        // NWPathMonitor's path update + CoreTelephony radio reporting need this
+        // floor; CAMARA Number Verification on iOS is a 14+ story anyway.
+        .iOS(.v14),
+        .macOS(.v11)
+    ],
     products: [
         .library(name: "UESDK", targets: ["UESDK"])
     ],

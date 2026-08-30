@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SessionTupleClientTest {
 
@@ -126,4 +128,39 @@ class SessionTupleClientTest {
         assertEquals("http://h", SessionTupleClient.trimTrailingSlash("http://h/"));
         assertEquals("http://h", SessionTupleClient.trimTrailingSlash("http://h"));
     }
+
+    @Test
+    void bodyCarriesDeclaredAccessTech() {
+        var cellular = new SessionTupleCollector.TupleSnapshot(
+                "10.64.12.34", null, 1724200000004L, null, null, AccessTech.LTE);
+
+        assertEquals("{\"srcIp\":\"10.64.12.34\",\"ts\":1724200000004,\"accessTech\":\"LTE\"}",
+                SessionTupleClient.body(cellular));
+    }
+
+    @Test
+    void bodyOmitsUnknownAccessTech() {
+        var legacy = new SessionTupleCollector.TupleSnapshot(
+                null, null, 1724200000005L, null, null);
+
+        assertEquals("{\"ts\":1724200000005}", SessionTupleClient.body(legacy));
+        assertEquals(AccessTech.UNKNOWN, legacy.accessTech());
+    }
+
+    @Test
+    void postsThroughTheInjectedConnectorSoTheBearerIsPinned() {
+        var opened = new java.util.concurrent.atomic.AtomicBoolean();
+        Connector pinning = url -> {
+            opened.set(true);
+            throw new java.io.IOException("stop before the socket");
+        };
+        var snapshot = new SessionTupleCollector.TupleSnapshot(
+                null, null, 1724200000006L, null, null, AccessTech.NR);
+
+        assertThrows(java.io.IOException.class, () -> new SessionTupleClient()
+                .post("http://127.0.0.1:9", snapshot, null, pinning));
+        assertTrue(opened.get(),
+                "the SDK must ask the bearer for the connection, not the default route");
+    }
 }
+

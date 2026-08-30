@@ -128,3 +128,210 @@ gates:
     rule: /verify ⇒ devicePhoneNumberVerified boolean; single-use ≤300s token; 403 non-mobile auth
     check: flag
     expect: { key: "camara_contract", value: true }
+  # -------------------------------------------------------------------------
+  # P-H1…P-H7 — production deployment gates.
+  # Unlike H1–H14 (which assert the documented design contract), these assert
+  # that harness/preflight_prod.py refuses a deployment that would start in a
+  # lab-shaped state. Each scenario is a deliberate misconfiguration applied to
+  # a synthetic complete `prod` profile; the gate passes only if the expected
+  # PRO-xx checks fire. No JVM, no SS7 stack, no secrets required.
+  # -------------------------------------------------------------------------
+  - id: H15
+    title: prod profile admits a correctly provisioned deployment
+    spec: ["FS.31", "CAMARA NV v2.1.0"]
+    clause: baseline
+    rule: a complete prod profile + real secrets passes every PRO check (gate is not vacuous)
+    check: preflight
+    expect: { baseline: true }
+
+  - id: H16
+    title: northbound authentication cannot be softened
+    spec: ["FS.11", "CAMARA NV v2.1.0"]
+    clause: /verify authorization (FS.11 §3.3.4 spoofed identity)
+    rule: token validation off, API-key enforcement off, short/dropped secret, over-pinned
+      scope or a reused tenant key must all block deployment
+    check: preflight
+    expect:
+      scenarios: ["auth off", "api-key enforcement off", "over-pinned scope",
+                  "duplicate tenant key", "key dropped from profile",
+                  "secret too short", "secret env var unset"]
+
+  - id: H17
+    title: cleartext and unauthenticated transport are refused
+    spec: ["FS.07", "FS.31"]
+    clause: transport protection
+    rule: insecure-requests enabled, client-auth none, or a lab-relative keystore must fail
+    check: preflight
+    expect:
+      scenarios: ["cleartext HTTP allowed", "mTLS off", "lab keystore path"]
+
+  - id: H18
+    title: no fake signalling path in production
+    spec: ["TS 29.002", "TS 29.272", "TS 29.273"]
+    clause: PSI/ATI/SAI + AIR/AIA + S6b-RADIUS provisioning
+    rule: memory resolver, loopback Diameter peer or a missing/unparseable jSS7 stack
+      file must be caught before boot (unknown values fall back to memory in code)
+    check: preflight
+    expect:
+      scenarios: ["memory transport", "loopback Diameter peer", "missing jss7 stack file"]
+
+  - id: H19
+    title: TS.43 entitlement flow stays signed and attested
+    spec: ["TS 33.402", "GSMA TS.43", "CAMARA NV v2.1.0"]
+    clause: EAP-AKA SWm/SWx + entitlement token single-use
+    rule: unsigned entitlement tokens or /issue without AAA attestation must block deploy
+    check: preflight
+    expect:
+      scenarios: ["unsigned entitlement tokens", "attestation off"]
+
+  - id: H20
+    title: admin surface and persistence leave the lab
+    spec: ["FS.31"]
+    clause: baseline controls / auditability
+    rule: default admin key, non-Secure cookies, H2 file database or a relative log
+      directory must block deployment
+    check: preflight
+    expect:
+      scenarios: ["lab admin key", "insecure cookies", "H2 lab database", "relative log dir"]
+
+  - id: H21
+    title: tenant metering is bound and evidence stays internal
+    spec: ["CAMARA NV v2.1.0", "SG.22"]
+    clause: per-tenant accountability / /verify response body
+    rule: quota for a nonexistent tenant or assurance detail forced on globally must fail
+    check: preflight
+    expect:
+      scenarios: ["quota for unknown tenant", "assurance detail on"]
+
+  - id: H22
+    title: device bearer declarations use one vocabulary everywhere
+    spec: ["TS 29.002", "TS 29.272", "CAMARA NV v2.1.0"]
+    clause: POST /session-tuple accessTech / X-Sas-Access-Tech
+    rule: a device may only name a bearer the SAS can parse (GS_2G3G, LTE, NR) or admit
+      UNKNOWN; a Wi-Fi or unknown tuple must never seed a cellular binding
+    check: access_tech_parity
+    expect:
+      cellular: ["GS_2G3G", "LTE", "NR"]
+      non_cellular: ["WIFI"]
+      sources:
+        - sas-api/src/main/java/et/restlink/sas/model/AccessTech.java
+        - sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
+        - ue-sdk/src/main/java/et/restlink/uesdk/AccessTech.java
+        - ue-sdk-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
+        - ue-sdk-ios/Sources/UESDK/AccessTech.swift
+        - ue-sdk-web/src/session-tuple.js
+      unknown_sources:
+        - ue-sdk/src/main/java/et/restlink/uesdk/AccessTech.java
+        - ue-sdk-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
+        - ue-sdk-ios/Sources/UESDK/AccessTech.swift
+        - ue-sdk-web/src/session-tuple.js
+
+  - id: H23
+    title: the dual license is stated in every place that binds a user
+    spec: ["AGPL-3.0 §13 (remote network interaction)", "CAMARA NumberVerification v2.1.0 (Apache-2.0)"]
+    clause: LICENSE.md + component READMEs + Maven/npm license metadata
+    rule: >-
+      Community is AGPL-3.0-or-later and Operator is the proprietary grant; both
+      must be declared per component under one SPDX expression, the AGPL text must
+      ship inside the tree, and no component may assert a permissive grant — a
+      permissive client SDK is an Operator-license deliverable (owner decision),
+      never a silent code change
+    check: license_parity
+    expect:
+      spdx: "AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0"
+      editions: ["AGPL-3.0", "Operator"]
+      edition_rows:
+        - "(?m)^\\|\\s*\\*\\*Community\\*\\*\\s*\\|"
+        - "(?m)^\\|\\s*\\*\\*Operator\\*\\*\\s*\\|"
+      license_file: LICENSE.md
+      root_readme: README.md
+      bundled_texts:
+        - path: LICENSES/AGPL-3.0.txt
+          must_include:
+            - "GNU AFFERO GENERAL PUBLIC LICENSE"
+            - "13. Remote Network Interaction"
+      license_file_terms:
+        - "Option 1 — AGPL-3.0 (Community)"
+        - "Option 2 — Commercial Operator license"
+        - "AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0"
+        - "remote network interaction"
+        - "Spec material (not relicensed)"
+        - "LICENSES/AGPL-3.0.txt"
+      readmes:
+        - sas-host/README.md
+        - sas-jss7-testapp/README.md
+        - sas-diameter-testapp/README.md
+        - ue-sdk/README.md
+        - ue-sdk-android/README.md
+        - ue-sdk-ios/README.md
+        - ue-sdk-web/README.md
+      poms:
+        - pom.xml
+        - ue-sdk/pom.xml
+        - ue-sdk-android/pom.xml
+        - sas-jss7-testapp/pom.xml
+        - sas-diameter-testapp/pom.xml
+      npm:
+        - ue-sdk-web/package.json
+      forbid_in_license_section:
+        - "(?i)licensed under the (MIT|Apache|BSD|ISC)"
+        - "(?i)released under the (MIT|Apache|BSD|ISC)"
+        - "Permission is hereby granted, free of charge"
+        - "(?i)dedicated to the public domain"
+
+
+  # ---------------------------------------------------------------------------
+  # H24: architecture boundary. The SAS is a thin northbound over one micro-jainslee
+  # runtime. Wire a transport straight into a REST resource and the tree still
+  # compiles — it just stops having container-managed activities, bounded dialogs
+  # and one abort path. Exceptions are an explicit ratcheted allow-list.
+  # ---------------------------------------------------------------------------
+  - id: H24
+    title: only micro-jainslee services run the SAS — nothing is coded around them
+    spec: ["TS 23.018 / TS 23.060 (TC-TIMER)", "TS 29.002", "TS 29.272", "CAMARA NV v2.1.0"]
+    clause: >-
+      event routing, activity state, timers and signalling transports live inside
+      micro-jainslee (container + RA + SBB); the HTTP layer submits events and
+      awaits the outcome, never the other way round
+    rule: >-
+      the container API may be touched from the bootstrap seam only; SS7/Diameter
+      clients may be imported by RA delegates only; no raw SLEE API, no hand-rolled
+      dispatcher, timer or socket outside an RA, and no direct RA/backend call from
+      a REST or service class — each accepted exception is an allow-list entry, and
+      a stale entry fails the gate as hard as new debt
+    check: slee_boundary
+    expect:
+      runtime_modules: ["sas-api", "sas-entitlement", "sas-host"]
+      exempt_path_parts: ["/ras/"]
+      import_rules:
+        - label: "SLEE container touched outside the bootstrap seam"
+          exempt: []
+          imports: ["com.microjainslee.core."]
+          only_in:
+            - sas-host/src/main/java/et/restlink/sas/bootstrap/SasBootstrap.java
+        - label: "signalling transport imported outside an RA"
+          imports: ["com.mobius.", "org.restcomm.", "io.netty."]
+          only_in:
+            - sas-host/src/main/java/et/restlink/sas/config/Ss7AdminSupport.java
+        - label: "raw JSR-240 SLEE API imported (a second container)"
+          exempt: []
+          imports: ["javax.slee.", "jakarta.slee."]
+          only_in: []
+      pattern_rules:
+        - label: "thread or dispatcher hand-rolled outside an RA"
+          pattern: 'Executors\.new|new Thread\(|new Timer\(|scheduleAtFixedRate|ThreadPoolExecutor'
+          only_in:
+            - sas-host/src/main/java/et/restlink/sas/cdr/CdrDbFlusher.java
+        - label: "raw socket or HTTP client outside an RA"
+          pattern: 'new\s+(?:java\.net\.)?(?:ServerSocket|DatagramSocket|Socket)\(|HttpClient\.new|openConnection\('
+          only_in: []
+        - label: "RA delegate reached straight from a caller (bypasses the container)"
+          exempt: []
+          pattern: '\.(resolverBackend|mapVerifierBackend|s6aVerifierBackend|swxVerifierBackend)\s*\('
+          only_in:
+            - sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
+            - sas-api/src/main/java/et/restlink/sas/oauth/AuthorizationRequestService.java
+      poms: ["pom.xml", "sas-api/pom.xml", "sas-entitlement/pom.xml", "sas-host/pom.xml"]
+      pinned_group: "com.microjainslee"
+      pin_property: '${microjainslee.version}'
+

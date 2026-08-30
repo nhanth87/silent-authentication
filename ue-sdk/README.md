@@ -45,11 +45,44 @@ Request produced:
 POST /session-tuple
 Content-Type: application/json
 X-Api-Key: <key>
+X-Sas-Access-Tech: GS_2G3G
 
-{"srcIp":"10.20.30.40","ts":1724200000000}
+{"srcIp":"100.64.12.34","ts":1724200000000,"accessTech":"GS_2G3G"}
 ```
 
-Null fields are omitted from the body.
+Null fields are omitted; `accessTech` is omitted entirely when the bearer could
+not be read (`UNKNOWN`) — the SAS then treats the tuple as undeclared rather than
+assuming cellular.
+
+## Choosing the bearer: 2G/3G/4G/5G vs Wi-Fi
+
+The SAS IP-match path is only sound over a cellular data bearer — only the
+PGW/GGSN can attest `IP → MSISDN`. Every snapshot therefore declares the
+`AccessTech` it was captured on (`GS_2G3G | LTE | NR | WIFI | FIXED | UNKNOWN`),
+and the collector refuses to pretend:
+
+```java
+var collector = new SessionTupleCollector();
+var client = new SessionTupleClient();
+
+// Fail closed when the phone is on Wi-Fi: the caller falls back to OTP.
+var snapshot = collector.collectCellular(CellularRequirement.CELLULAR);
+client.post(sasBaseUrl, snapshot, apiKey, connector);
+```
+
+`CellularRequirement` has three levels — `ANY` (lab / TS.43 Wi-Fi), `CELLULAR`
+(any radio) and `CELLULAR_4G_PLUS` (LTE or NR, i.e. an S6a/5GS-verifiable
+subscriber). An unmet requirement throws
+`CellularRequirement.CellularBearerException` **before** anything is sent, so a
+Wi-Fi address can never land in the cellular binding table.
+
+`Connector` is the seam that makes the *transport* cellular, not just the label.
+On a desktop JVM there is no supported way to pin a socket to a radio, so
+`Connector.DEFAULT` uses the OS route; on Android the `ue-sdk-android`
+`CellularBearer` implements `Connector` with
+`android.net.Network.openConnection(URL)` and pins only this SDK's call. A phone
+app that wants silent auth should use that module rather than this one — the
+declaration is only trustworthy when the socket that carries it is pinned.
 
 ## Security notes
 
@@ -70,4 +103,17 @@ Null fields are omitted from the body.
 JAVA_HOME=$HOME/.local/share/mise/installs/java/zulu-25 mvn clean test
 ```
 
-Copyright (c) 2026 Tran Nhan (nhanth87). All rights reserved.
+## License
+
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+
+`SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
+
+| Edition | Terms |
+|---|---|
+| **Community** | **AGPL-3.0-or-later** — free to use, modify and redistribute; copyleft, and AGPL §13 also bites when you host it as a service. No SLA, no support, no warranty, no trademark rights in Digicom-ET. |
+| **Operator** | **Proprietary, owner-held.** Production rights without copyleft, private builds, **a permissive (Apache-2.0/MIT) SDK option** for apps that cannot carry AGPL, L1/L2 SLA and integration engineering. Terms per deployment via Digicom-ET. |
+
+The lab / dev profile of this component accepts plain HTTP and mock transports on purpose. Neither license changes that: **do not ship it** — see `harness/preflight_prod.py`.
+
+Copyright © 2026 Tran Nhan.

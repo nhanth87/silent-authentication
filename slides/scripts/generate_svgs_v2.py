@@ -117,6 +117,19 @@ def title(text, w=800, y=28):
 '''
 
 
+def chip(cx, y, w, lines, color=GOLD):
+    """Small self-label chip centered at cx (used for in-box steps)."""
+    h = 14 * len(lines) + 12
+    body = f'''
+  <rect x="{cx - w/2}" y="{y}" width="{w}" height="{h}" rx="4" fill="{color}" opacity="0.12" stroke="{color}" stroke-width="1"/>
+'''
+    for i, line in enumerate(lines):
+        body += f'''
+  <text x="{cx}" y="{y + 15 + i * 14}" text-anchor="middle" font-family="{FONT}" font-size="9.5" fill="{DARK}">{esc(line)}</text>
+'''
+    return body
+
+
 def make_two_stage():
     w, h = 800, 360
     body = marker_defs("ts") + title("Two-stage architecture — MAP cannot resolve IP→MSISDN", w)
@@ -394,6 +407,135 @@ def make_timeout():
     (OUT / "v2_timeout.svg").write_text(svg_wrap(w, h, body), encoding="utf-8")
 
 
+def make_camara_nv_callflow():
+    w, h = 800, 560
+    body = marker_defs("nv") + title("CAMARA Number Verification — /verify code call flow", w)
+
+    lanes = [
+        (100, "Bank Backend"),
+        (250, "SAS /verify"),
+        (400, "PGW Resolver"),
+        (550, "Verifier"),
+        (700, "HLR / HSS"),
+    ]
+    for x, name in lanes:
+        body += f'''
+  <line x1="{x}" y1="60" x2="{x}" y2="520" stroke="{GRAY}" stroke-width="1" stroke-dasharray="3,4" opacity="0.5"/>
+  <rect x="{x - 46}" y="64" width="92" height="24" rx="4" fill="{DARK}" opacity="0.08" stroke="{DARK}" stroke-width="1"/>
+  <text x="{x}" y="80" text-anchor="middle" font-family="{FONT_SANS}" font-size="10" font-weight="bold" fill="{DARK}">{esc(name)}</text>
+'''
+    body += arrow_h(100, 112, 250, "POST /verify · 3-legged token", TEAL, "nv", num="1")
+    body += chip(250, 140, 150, ["validate JWT: scope · amr", "jti single-use ≤ 300 s"])
+    body += arrow_h(250, 212, 400, "resolve(srcIP, srcPort, ts)", TEAL, "nv", num="2")
+    body += f'''
+  <line x1="400" y1="240" x2="254" y2="240" stroke="{GREEN}" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="325" y="232" text-anchor="middle" font-family="{FONT}" font-size="10" fill="{GREEN}">MSISDN + IMSI + bearerAge</text>
+  <circle cx="325" cy="240" r="9" fill="{GREEN}" stroke="{WHITE}" stroke-width="1"/>
+  <text x="325" y="244" text-anchor="middle" font-family="{FONT_SANS}" font-size="10" fill="{WHITE}" font-weight="bold">3</text>
+'''
+    body += arrow_h(250, 268, 550, "verify(MSISDN / IMSI)", TEAL, "nv", num="4")
+    body += arrow_h(550, 296, 700, "IDR/AIR (S6a) · PSI (MAP)", TEAL, "nv", num="5")
+    body += f'''
+  <line x1="700" y1="324" x2="554" y2="324" stroke="{GREEN}" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="627" y="316" text-anchor="middle" font-family="{FONT}" font-size="10" fill="{GREEN}">subscriberState + lastUpdate</text>
+  <circle cx="627" cy="324" r="9" fill="{GREEN}" stroke="{WHITE}" stroke-width="1"/>
+  <text x="627" y="328" text-anchor="middle" font-family="{FONT_SANS}" font-size="10" fill="{WHITE}" font-weight="bold">6</text>
+'''
+    body += f'''
+  <line x1="550" y1="352" x2="254" y2="352" stroke="{GREEN}" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="402" y="344" text-anchor="middle" font-family="{FONT}" font-size="10" fill="{GREEN}">reachable · notSimSwapped · plausible</text>
+  <circle cx="402" cy="352" r="9" fill="{GREEN}" stroke="{WHITE}" stroke-width="1"/>
+  <text x="402" y="356" text-anchor="middle" font-family="{FONT_SANS}" font-size="10" fill="{WHITE}" font-weight="bold">7</text>
+'''
+    body += chip(250, 376, 170, ["Policy scoring ≥ threshold", "resolved == claimed?"])
+    body += f'''
+  <line x1="250" y1="440" x2="104" y2="440" stroke="{GREEN}" stroke-width="2" stroke-dasharray="6,4"
+        marker-end="url(#nv-arr-rev)"/>
+  <text x="177" y="430" text-anchor="middle" font-family="{FONT}" font-size="10" fill="{GREEN}">200 {esc("{devicePhoneNumberVerified:true}")}</text>
+  <circle cx="177" cy="440" r="9" fill="{GREEN}" stroke="{WHITE}" stroke-width="1"/>
+  <text x="177" y="444" text-anchor="middle" font-family="{FONT_SANS}" font-size="10" fill="{WHITE}" font-weight="bold">8</text>
+'''
+    body += f'''
+  <rect x="40" y="472" width="720" height="44" rx="6" fill="{RED}14" stroke="{RED}" stroke-width="1"/>
+  <text x="400" y="490" text-anchor="middle" font-family="{FONT}" font-size="10" fill="{RED}" font-weight="bold">
+    Fail-closed: any timeout / no binding / score below threshold → 403, never soft-pass
+  </text>
+  <text x="400" y="506" text-anchor="middle" font-family="{FONT}" font-size="9" fill="{DARK}">
+    MSISDN/IMSI stays on bank backend · never returned to the app · reqId dedup
+  </text>
+'''
+    (OUT / "v2_camara_nv_callflow.svg").write_text(svg_wrap(w, h, body), encoding="utf-8")
+
+
+def make_fallback_decision():
+    w, h = 800, 540
+    body = marker_defs("fd") + title("Silent-auth path decision by access technology", w)
+
+    body += box(300, 60, 200, 46, "Auth request", ["login · /verify"], stroke=DARK, title_color=DARK)
+
+    body += box(60, 150, 300, 78, "Cellular data (5G/4G/3G)", [
+        "IP-match: Resolver reads",
+        "PGW/PCRF binding",
+    ], stroke=GREEN, title_color=GREEN)
+
+    body += box(440, 150, 300, 78, "Wi-Fi / browser", [
+        "TS.43 EAP-AKA (SIM credential)",
+        "works without cellular radio",
+    ], stroke=TEAL, title_color=TEAL)
+
+    body += arrow_v(400, 106, 150, color=DARK, marker="fd")
+
+    body += box(600, 260, 180, 82, "No TS.43 / MNO?", [
+        "TOTP / Passkey",
+        "SMS OTP (home-routed)",
+    ], stroke=RED, title_color=RED)
+    body += arrow_v(740, 228, 260, "", RED, "fd", dashed=True)
+
+    body += box(60, 260, 300, 82, "Verifier gates (fail-closed)", [
+        "Resolver: IP+port+ts ≤ 300 ms",
+        "MAP/Diameter ≤ 2 s · abort on timeout",
+    ], stroke=GOLD, title_color=GOLD)
+
+    body += box(440, 260, 136, 82, "SIM proof", [
+        "TS.43 handshake",
+        "SIM-bound app instance",
+    ], stroke=TEAL, title_color=TEAL)
+
+    body += f'''
+  <rect x="250" y="380" width="300" height="52" rx="6" fill="{GREEN}16" stroke="{GREEN}" stroke-width="2"/>
+  <text x="400" y="402" text-anchor="middle" font-family="{FONT_SANS}" font-size="12" font-weight="bold" fill="{GREEN}">APPROVED — no OTP</text>
+  <text x="400" y="420" text-anchor="middle" font-family="{FONT}" font-size="9" fill="{DARK}">assurance ≥ threshold · resolved == claimed</text>
+'''
+    body += f'''
+  <rect x="250" y="464" width="300" height="46" rx="6" fill="{RED}14" stroke="{RED}" stroke-width="2"/>
+  <text x="400" y="484" text-anchor="middle" font-family="{FONT_SANS}" font-size="11" font-weight="bold" fill="{RED}">FALLBACK — step-up MFA</text>
+  <text x="400" y="500" text-anchor="middle" font-family="{FONT}" font-size="9" fill="{DARK}">missing evidence never approves</text>
+'''
+    body += arrow_v(210, 228, 260, "", GREEN, "fd")
+    body += arrow_v(560, 228, 260, "", TEAL, "fd")
+    body += f'''
+  <polyline points="690,342 690,402 548,402 548,481" fill="none" stroke="{RED}" stroke-width="2"
+            stroke-dasharray="5,4" marker-end="url(#fd-arr)"/>
+  <text x="650" y="394" text-anchor="middle" font-family="{FONT}" font-size="9" fill="{RED}">no TS.43 SIM method</text>
+'''
+    body += f'''
+  <line x1="360" y1="301" x2="434" y2="301" stroke="{GRAY}" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#fd-arr)"/>
+  <line x1="400" y1="301" x2="400" y2="372" stroke="{GRAY}" stroke-width="2" marker-end="url(#fd-arr)"/>
+  <text x="414" y="340" text-anchor="start" font-family="{FONT}" font-size="10" fill="{DARK}">score ≥ threshold?</text>
+  <line x1="400" y1="432" x2="400" y2="458" stroke="{RED}" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#fd-arr)"/>
+  <text x="414" y="450" text-anchor="start" font-family="{FONT}" font-size="10" fill="{RED}">low score</text>
+'''
+    body += f'''
+  <text x="400" y="533" text-anchor="middle" font-family="{FONT}" font-size="9" fill="{GRAY}">
+    TS.43 shrinks the Wi-Fi fallback surface · Strategy B still firewalls residual SMS OTP
+  </text>
+'''
+    (OUT / "v2_fallback_decision.svg").write_text(svg_wrap(w, h, body), encoding="utf-8")
+
+
 def make_adapter():
     w, h = 800, 360
     body = marker_defs("ad") + title("Deployment — Digicom adapter layer", w)
@@ -440,6 +582,8 @@ def main():
         ("v2_psi_sai.svg", make_psi_sai),
         ("v2_diameter_s6a.svg", make_diameter_s6a),
         ("v2_fsm.svg", make_fsm),
+        ("v2_camara_nv_callflow.svg", make_camara_nv_callflow),
+        ("v2_fallback_decision.svg", make_fallback_decision),
         ("v2_timeout.svg", make_timeout),
         ("v2_adapter.svg", make_adapter),
     ]

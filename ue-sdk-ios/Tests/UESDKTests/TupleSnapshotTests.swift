@@ -46,4 +46,23 @@ final class TupleSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.msisdn, "+251911111111")
         XCTAssertNil(snapshot.imsi)
     }
+
+
+    func testAccessTechIsEncodedLastAndOmittedWhenUnknown() throws {
+        let cellular = TupleSnapshot(ts: 1724200000010, accessTech: .lte)
+        XCTAssertEqual(
+            String(data: try JSONEncoder().encode(cellular), encoding: .utf8),
+            "{\"ts\":1724200000010,\"accessTech\":\"LTE\"}")
+
+        let unknown = TupleSnapshot(ts: 1724200000011, accessTech: .unknown)
+        XCTAssertEqual(
+            String(data: try JSONEncoder().encode(unknown), encoding: .utf8),
+            "{\"ts\":1724200000011}", "an unread bearer must not become a claim")
+    }
+
+    func testAccessTechRoundTripsThroughDecoder() throws {
+        let data = Data("{\"ts\":1724200000012,\"accessTech\":\"NR\"}".utf8)
+        let snapshot = try JSONDecoder().decode(TupleSnapshot.self, from: data)
+        XCTAssertEqual(snapshot.accessTech, .nr)
+    }
 }

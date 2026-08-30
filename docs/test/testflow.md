@@ -210,7 +210,9 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 
 ```bash
 mvn clean test                           # từ repo root: 337 tests trên 3 module (JUnit 5, không cần mạng)
-python3 harness/run_hardness.py          # 24/24 contract gates
+python3 harness/run_hardness.py          # 31/31 gates (H1–H14 contract + H15–H21 deployment)
+python3 harness/preflight_prod.py        # verdict for THIS env (exit = số check fail)
+python3 harness/preflight_prod.py --selftest   # 22/22 kịch bản cấu hình sai bị bắt
 ```
 
 ## 8. Lỗi thường gặp
