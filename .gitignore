@@ -23,3 +23,6 @@ sas-host/data/
 build/
 DerivedData/
 xcuserdata/
+
+# pitch decks — presentation artifacts, not source; kept out of the repo
+slides/
