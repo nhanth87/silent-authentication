@@ -264,7 +264,7 @@ Files reviewed: `sas/src/main/java/et/restlink/sas/api/VerifyResource.java`,
    - Track 1 — "CAMARA NV v2 northbound": `/verify`, `/device-phone-number`, OIDC
      3-legged tokens, conformant errors/responses.
    - Track 2 — "TS.43 / Wi-Fi out-of-band": `/entitlement/*`, `operatortoken:` direct
-     bearer, `X-Sas-*` headers — explicitly marked as Digicom extensions implementing
+     bearer, `X-Sas-*` headers — explicitly marked as Restlink extensions implementing
      the operator-side roles CAMARA leaves open (Entitlement Server, network auth), not
      part of the CAMARA contract (V7, V8, V12). Roadmap item: implement real
      `/bc-authorize` + `/token` endpoints so `login_hint=operatortoken:<tk>` flows

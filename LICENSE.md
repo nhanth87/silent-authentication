@@ -43,7 +43,7 @@ Community grant is never a dangling link — a derivative must carry that file a
 Community in plain words — and what Community is **not**:
 
 - **No supply agreement implied.** AGPL is a copyright license, not a commercial
-  deal: no SLA, no support, no warranty, no trademark rights in "Digicom-ET", no
+  deal: no SLA, no support, no warranty, no trademark rights in "Restlink", no
   license keys, and no production integration package. Running a modified SAS as
   a service additionally triggers the §13 source-offer duty above.
 - **Copyleft reaches your derivatives**, including a modified SAS serving
@@ -69,11 +69,11 @@ Dependencies keep their own licenses and fall outside both grants below:
 
 ## Option 2 — Commercial Operator license
 
-Banks, system integrators and operators (Digicom-ET deployments) that need
+Banks, system integrators and operators (Restlink deployments) that need
 **production rights**, proprietary/private builds, or support must obtain a
 **commercial Operator license** from the copyright owner. Terms are agreed per
 deployment (per-verify / node / year), enforced by license key, and include
-L1/L2 SLA, training and integration engineering. Contact through Digicom-ET.
+L1/L2 SLA, training and integration engineering. Contact through Restlink.
 
 Option 2 exists precisely for users for whom AGPL is a blocker, and typically
 grants (subject to the signed offer):
@@ -83,7 +83,7 @@ grants (subject to the signed offer):
 - a **permissive UE SDK** option for mobile apps that cannot carry AGPL;
 - **support** — L1/L2 SLA, security advisories, integration engineering,
   training, and the pilot API contract for the operator's banks;
-- permission to use the Digicom-ET product name, if agreed.
+- permission to use the Restlink product name, if agreed.
 
 An Operator license **never** allows reselling or redistributing this software
 as your own product unless the signed offer explicitly says so.

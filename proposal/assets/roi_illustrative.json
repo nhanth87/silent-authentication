@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Digicom-ET Silent Auth — Illustrative ROI Scenarios",
+    "title": "Restlink Silent Auth — Illustrative ROI Scenarios",
     "version": "1.0",
     "date": "2026-07-20",
     "classification": "ILLUSTRATIVE — not binding commercial offer",
@@ -9,7 +9,7 @@
     "etb_per_usd": 56,
     "notes": [
       "All figures are modelling assumptions for proposal charts and Chapter 10 tables.",
-      "Replace with Ethio Telecom A2P tariffs and signed Digicom /verify rates before contract.",
+      "Replace with Ethio Telecom A2P tariffs and signed Restlink /verify rates before contract.",
       "Silent-auth adoption steady-state: 70%; fallback OTP: 30% of auth events."
     ]
   },
@@ -22,7 +22,7 @@
     "baseline_ato_rate": 0.0012,
     "ato_rate_reduction_with_silent_auth": 0.65,
     "average_fraud_loss_per_ato_usd": 85,
-    "digicom_platform_year1_usd": {
+    "restlink_platform_year1_usd": {
       "100k": 120000,
       "500k": 280000,
       "1M": 450000
@@ -42,7 +42,7 @@
       "net_auth_channel_savings_usd": 8400,
       "fraud_loss_avoided_usd": 157680,
       "total_annual_benefit_usd": 166080,
-      "digicom_platform_year1_usd": 120000,
+      "restlink_platform_year1_usd": 120000,
       "simple_year1_roi_pct": 38.4,
       "payback_months": 8.7,
       "sms_otp_annual_etb": 5644800,
@@ -62,7 +62,7 @@
       "net_auth_channel_savings_usd": 41800,
       "fraud_loss_avoided_usd": 788400,
       "total_annual_benefit_usd": 830200,
-      "digicom_platform_year1_usd": 280000,
+      "restlink_platform_year1_usd": 280000,
       "simple_year1_roi_pct": 196.5,
       "payback_months": 4.0,
       "sms_otp_annual_etb": 28224000,
@@ -82,7 +82,7 @@
       "net_auth_channel_savings_usd": 83600,
       "fraud_loss_avoided_usd": 1576800,
       "total_annual_benefit_usd": 1660400,
-      "digicom_platform_year1_usd": 450000,
+      "restlink_platform_year1_usd": 450000,
       "simple_year1_roi_pct": 269.0,
       "payback_months": 3.3,
       "sms_otp_annual_etb": 56448000,
@@ -101,7 +101,7 @@
     "total_annual_benefit_usd": [166080, 830200, 1660400]
   },
   "ethio_telecom_impact_illustrative": {
-    "notes": "Operator SMS revenue declines with silent-auth substitution; Digicom does not capture SMS margin.",
+    "notes": "Operator SMS revenue declines with silent-auth substitution; Restlink does not capture SMS margin.",
     "scenarios": [
       {
         "id": "100k_users",

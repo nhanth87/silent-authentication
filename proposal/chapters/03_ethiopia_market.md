@@ -1,7 +1,7 @@
-# Chapter 3 — Ethiopia Market Context and Digicom-ET Positioning
+# Chapter 3 — Ethiopia Market Context and Restlink Positioning
 
 **Proposal:** Network-Side Silent Authentication for Government and Banking  
-**Primary stakeholders:** Ethio Telecom, Ministry of Innovation and Technology (MInT), National Bank of Ethiopia (NBE), commercial banks, Digicom-ET  
+**Primary stakeholders:** Ethio Telecom, Ministry of Innovation and Technology (MInT), National Bank of Ethiopia (NBE), commercial banks, Restlink  
 **Version:** 1.0 — July 2026
 
 ---
@@ -10,7 +10,7 @@
 
 Ethiopia is one of Africa's largest telecommunications markets by population and the fastest-growing digital economy in the Horn of Africa region. With a population exceeding **120 million** (World Bank, 2024 estimate), a young demographic profile, and a national strategy to digitise public services under **Digital Ethiopia 2025**, authentication volume is scaling faster than legacy security controls. The mobile phone number—almost always an **Ethio Telecom MSISDN**—has become the universal login handle for banking, wallet, tax, and social programmes.
 
-This chapter describes the operator context, integrator landscape (government portals and banks), and **Digicom-ET's role as a VAS adapter** that enables silent authentication without competing with Ethio Telecom's SMSC or interconnect revenue. It is written for decision-makers who must reconcile **national digital ambition**, **financial stability**, and **operator commercial interests** in a single partnership framework.
+This chapter describes the operator context, integrator landscape (government portals and banks), and **Restlink's role as a VAS adapter** that enables silent authentication without competing with Ethio Telecom's SMSC or interconnect revenue. It is written for decision-makers who must reconcile **national digital ambition**, **financial stability**, and **operator commercial interests** in a single partnership framework.
 
 ---
 
@@ -36,7 +36,7 @@ flowchart TB
         GOV[e-Gov backends]
         BANK[Bank backends]
     end
-    subgraph digicom [Digicom-ET VAS Layer]
+    subgraph restlink [Restlink VAS Layer]
         SAS[Silent Auth Service]
         API[CAMARA NV API façade]
     end
@@ -62,20 +62,20 @@ flowchart TB
 | SMSC | **Fallback OTP only**; unchanged billing | Ethio Telecom |
 | SS7/Diameter firewall | Protect residual SMS (FS.11/FS.19) | Ethio Telecom (+ vendors) |
 
-**Deployment invariant:** Digicom SAS runs **inside the operator trust domain** (co-located or private interconnect), consistent with **GSMA FS.11 Category 1** rules: sensitive MAP queries are not exposed on international interconnect.
+**Deployment invariant:** Restlink SAS runs **inside the operator trust domain** (co-located or private interconnect), consistent with **GSMA FS.11 Category 1** rules: sensitive MAP queries are not exposed on international interconnect.
 
 ### 3.2.3 Why Ethio Telecom benefits
 
 | Benefit | Mechanism |
 |---------|-----------|
 | **New VAS revenue** | Optional revenue share on `/verify` API traffic |
-| **SMS revenue preserved** | Fallback OTP continues normal SMSC charging; Digicom does not wholesale SMS |
+| **SMS revenue preserved** | Fallback OTP continues normal SMSC charging; Restlink does not wholesale SMS |
 | **Data revenue uplift** | Silent path prefers active cellular data bearer |
 | **Reduced fraud reputational risk** | Fewer SS7/SIM-swap headlines affecting Telebirr and partner banks |
 | **Open Gateway positioning** | CAMARA-aligned APIs attract international fintech and development partners |
 | **Core asset monetisation** | HLR/PGW truth leveraged without selling raw signalling to third parties |
 
-Ethio Telecom is **not asked to become an application security company**. Digicom-ET absorbs integrator onboarding, SLAs, SDK distribution, and CAMARA contract normalisation.
+Ethio Telecom is **not asked to become an application security company**. Restlink absorbs integrator onboarding, SLAs, SDK distribution, and CAMARA contract normalisation.
 
 ---
 
@@ -114,7 +114,7 @@ Silent authentication on **cellular data** removes the wait state for compliant 
 
 ### 3.3.3 Government integration model
 
-Government backends call **Digicom-ET CAMARA Number Verification** (or national `/verify` profile) server-to-server with mTLS. Digicom returns `{match, assurance, reqId}`; ministries **never receive IMSI** and do not peer directly with SS7. Audit logs support **INSA** review and inter-ministry fraud information sharing.
+Government backends call **Restlink CAMARA Number Verification** (or national `/verify` profile) server-to-server with mTLS. Restlink returns `{match, assurance, reqId}`; ministries **never receive IMSI** and do not peer directly with SS7. Audit logs support **INSA** review and inter-ministry fraud information sharing.
 
 Recommended policy tiers:
 
@@ -143,7 +143,7 @@ NBE **Electronic Payment Instrument Issuer Directive** and cybersecurity expecta
 
 ### 3.4.2 Bank integration architecture
 
-Banks remain **data controllers** for customer relationships. Digicom-ET provides:
+Banks remain **data controllers** for customer relationships. Restlink provides:
 
 - **Server-side verification API** (no bank ↔ operator direct MAP exposure)  
 - **Mobile SDK** collecting `{srcIP, srcPort, timestamp}` on cellular bearer  
@@ -154,7 +154,7 @@ Banks remain **data controllers** for customer relationships. Digicom-ET provide
 sequenceDiagram
     participant App as Bank Mobile App
     participant BE as Bank Core / IAM
-    participant D as Digicom-ET SAS
+    participant D as Restlink SAS
     participant ET as Ethio Telecom
     App->>BE: Login (device credential)
     BE->>D: POST /verify
@@ -175,19 +175,19 @@ sequenceDiagram
 | Cost line | Today (OTP-primary) | With silent auth |
 |-----------|-------------------|------------------|
 | SMS OTP charges to Ethio Telecom | Per message | Reduced volume; fallback unchanged |
-| Digicom verification API | N/A | Per successful `/verify` or tiered subscription |
+| Restlink verification API | N/A | Per successful `/verify` or tiered subscription |
 | Fraud loss / call centre | Baseline | Target ↓ 40%+ ATO (pilot KPI) |
 | App conversion | Baseline | Target +15–25 pp login completion |
 
-Banks **pay Digicom for auth API**, **pay Ethio Telecom for SMS on fallback**, and **do not** route silent verification through alternate SMS aggregators that would bypass operator revenue.
+Banks **pay Restlink for auth API**, **pay Ethio Telecom for SMS on fallback**, and **do not** route silent verification through alternate SMS aggregators that would bypass operator revenue.
 
 ---
 
-## 3.5 Digicom-ET — VAS Adapter Role
+## 3.5 Restlink — VAS Adapter Role
 
-### 3.5.1 What Digicom-ET is
+### 3.5.1 What Restlink is
 
-Digicom-ET is a **Value-Added Services integrator** headquartered in Addis Ababa, specialising in telecom-adjacent platforms for financial and public-sector clients. For Silent Authentication, Digicom delivers:
+Restlink is a **Value-Added Services integrator** headquartered in Addis Ababa, specialising in telecom-adjacent platforms for financial and public-sector clients. For Silent Authentication, Restlink delivers:
 
 | Component | Description |
 |-----------|-------------|
@@ -197,7 +197,7 @@ Digicom-ET is a **Value-Added Services integrator** headquartered in Addis Ababa
 | **Operations** | Monitoring, SLA, incident response, audit log export |
 | **Signalling stack** | jSS7 MAP + jDiameter S6a client (operator-approved deployment) |
 
-### 3.5.2 What Digicom-ET is not
+### 3.5.2 What Restlink is not
 
 | Non-role | Rationale |
 |----------|-----------|
@@ -207,18 +207,18 @@ Digicom-ET is a **Value-Added Services integrator** headquartered in Addis Ababa
 | **Not exporting raw SS7 to banks** | FS.11 compliance; banks receive boolean match + assurance only |
 | **Not storing long-term citizen biometrics** | Verification metadata only per contract |
 
-This distinction is **commercially material** for Ethio Telecom partnership approval: Digicom expands the **application layer** atop existing core assets, similar to content billing, short-code VAS, or mobile financial service gateways historically deployed with incumbents worldwide.
+This distinction is **commercially material** for Ethio Telecom partnership approval: Restlink expands the **application layer** atop existing core assets, similar to content billing, short-code VAS, or mobile financial service gateways historically deployed with incumbents worldwide.
 
 ### 3.5.3 Revenue allocation principle
 
 | Revenue stream | Beneficiary | Notes |
 |----------------|-------------|-------|
-| SMS OTP (fallback) | **Ethio Telecom** | Unchanged tariff; Digicom may orchestrate trigger but not capture SMS margin |
+| SMS OTP (fallback) | **Ethio Telecom** | Unchanged tariff; Restlink may orchestrate trigger but not capture SMS margin |
 | Cellular data used during verify | **Ethio Telecom** | Bearer must be active for IP-match method |
-| Silent auth API fees | **Digicom-ET** (± revenue share to operator) | New category; priced per verify or enterprise licence |
+| Silent auth API fees | **Restlink** (± revenue share to operator) | New category; priced per verify or enterprise licence |
 | Fraud reduction savings | **Banks / Government** | Indirect economic benefit |
 
-Public messaging emphasises: **"Digicom does not take telco SMS revenue."**
+Public messaging emphasises: **"Restlink does not take telco SMS revenue."**
 
 ---
 
@@ -226,9 +226,9 @@ Public messaging emphasises: **"Digicom does not take telco SMS revenue."**
 
 ### 3.6.1 CAMARA Number Verification
 
-The **CAMARA Number Verification (NV)** API is the GSMA Open Gateway application interface for proving MSISDN possession via operator networks. Digicom-ET's SAS maps internal `/verify` to CAMARA NV semantics:
+The **CAMARA Number Verification (NV)** API is the GSMA Open Gateway application interface for proving MSISDN possession via operator networks. Restlink's SAS maps internal `/verify` to CAMARA NV semantics:
 
-| CAMARA field / behaviour | Digicom SAS implementation |
+| CAMARA field / behaviour | Restlink SAS implementation |
 |--------------------------|----------------------------|
 | `phoneNumber` (optional claimed) | Assert `resolved == claimed` when present |
 | Device IP / port metadata | Resolver input with CGNAT-safe triple |
@@ -239,23 +239,23 @@ Future optional APIs (**SIM Swap**, **KYC Match**, **Number Recycling**) share t
 
 ### 3.6.2 GSMA FS.11 operational compliance
 
-Digicom engineering adheres to **FS.11** interconnect monitoring categories:
+Restlink engineering adheres to **FS.11** interconnect monitoring categories:
 
 - **ATI blocked on interconnect** — Verifier uses intra-network PSI/IDR paths.  
 - **SAI / AIR** used with Category 3.2 time/location policy for SIM-swap freshness.  
 - **No dialog leaks** — MAP TC timers bounded; SAS aborts hung queries.  
 
-Strategy B controls (SMS Home Routing, SS7 firewall) remain **operator-led**; Digicom participates in joint runbooks for fallback OTP protection per **SG.22**.
+Strategy B controls (SMS Home Routing, SS7 firewall) remain **operator-led**; Restlink participates in joint runbooks for fallback OTP protection per **SG.22**.
 
 ### 3.6.3 GSMA TS.43 (future phase)
 
-The **SIM method (EAP-AKA)** extends silent auth to **Wi-Fi-only** devices by authenticating the SIM credential rather than IP binding. Phase 2 pilot may introduce TS.43 entitlement server capability, further reducing OTP fallback—still without Digicom operating SMSC.
+The **SIM method (EAP-AKA)** extends silent auth to **Wi-Fi-only** devices by authenticating the SIM credential rather than IP binding. Phase 2 pilot may introduce TS.43 entitlement server capability, further reducing OTP fallback—still without Restlink operating SMSC.
 
 ---
 
 ## 3.7 Competitive and Alternative Landscape
 
-| Alternative | Limitation in Ethiopia | Digicom differentiation |
+| Alternative | Limitation in Ethiopia | Restlink differentiation |
 |-------------|------------------------|-------------------------|
 | OTP-only status quo | SS7/SIM-swap/AIT exposure (Ch. 2) | Network proof without SMS |
 | App-based TOTP (Google Authenticator) | Support burden; low adoption in mass market | Zero citizen setup on silent path |
@@ -305,13 +305,13 @@ The **SIM method (EAP-AKA)** extends silent auth to **Wi-Fi-only** devices by au
 | Integrator API fatigue | Single CAMARA NV contract for many ministries via shared gateway |
 | Operator perceived cannibalisation | Contractual SMS revenue neutrality; shared API revenue option |
 | Regulatory uncertainty on third-party HLR access | SAS hosted in operator DC; no external GT |
-| Political scrutiny of foreign tech | Digicom local entity; open-source jSS7 stack auditable by INSA |
+| Political scrutiny of foreign tech | Restlink local entity; open-source jSS7 stack auditable by INSA |
 
 ---
 
 ## 3.10 Conclusion
 
-Ethiopia's authentication challenge is **scale and trust**: tens of millions of citizens, a dominant operator whose core assets hold the truth, and integrators (government and banks) who must not be exposed to raw signalling or forced into insecure OTP-only designs. **Digicom-ET Silent Authentication** occupies the narrow, high-value layer between these worlds—a **VAS adapter on Ethio Telecom**, billing integrators for verified identity events while **leaving SMSC and interconnect economics with the operator**.
+Ethiopia's authentication challenge is **scale and trust**: tens of millions of citizens, a dominant operator whose core assets hold the truth, and integrators (government and banks) who must not be exposed to raw signalling or forced into insecure OTP-only designs. **Restlink Silent Authentication** occupies the narrow, high-value layer between these worlds—a **VAS adapter on Ethio Telecom**, billing integrators for verified identity events while **leaving SMSC and interconnect economics with the operator**.
 
 For government, the programme accelerates **Fayda-linked e-services** with lower fraud and friction. For banks, it modernises strong customer authentication under NBE expectations. For Ethio Telecom, it opens **Open Gateway / CAMARA** revenue without surrendering network sovereignty. The technical foundation (Chapter 1) and threat case (Chapter 2) support a pilot that is **commercially neutral to SMS revenue**, **standards-aligned**, and **nationally scoped**.
 
@@ -319,4 +319,4 @@ For government, the programme accelerates **Fayda-linked e-services** with lower
 
 ---
 
-*References: Ethio Telecom public disclosures; GSMA Mobile Money Report 2024; World Bank Ethiopia population statistics; Digital Ethiopia 2025 strategy documents; CAMARA Number Verification API specification; GSMA FS.11 v4.0; Digicom-ET architecture `silent-auth-flow.md`, `unified-identity-sms-security-architecture.md`.*
+*References: Ethio Telecom public disclosures; GSMA Mobile Money Report 2024; World Bank Ethiopia population statistics; Digital Ethiopia 2025 strategy documents; CAMARA Number Verification API specification; GSMA FS.11 v4.0; Restlink architecture `silent-auth-flow.md`, `unified-identity-sms-security-architecture.md`.*

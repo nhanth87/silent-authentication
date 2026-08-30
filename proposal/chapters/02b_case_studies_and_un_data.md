@@ -1,6 +1,6 @@
 # Chapter 2b — Case Studies, International Data, and e-Government Authentication Comparison
 
-**Proposal:** Digicom-ET Silent Authentication — Ethiopia  
+**Proposal:** Restlink Silent Authentication — Ethiopia  
 **Audience:** Ministry of Innovation and Technology, National Bank of Ethiopia, Ethio Telecom, Commercial Banks, Development Partners  
 **Version:** 1.0 — July 2026  
 **Relationship to Chapter 2:** Chapter 2 summarises the threat landscape; this chapter provides **extended case narratives**, **multilateral statistics**, **authentication method comparison for e-Government**, and **Ethiopia-specific deployment implications**.
@@ -116,10 +116,10 @@ Public **disaggregated SIM-swap fraud statistics for Ethiopia are limited**. Ope
 |------------------|---------------------|------|
 | Retail/agent social engineering | Primary swap vector (*estimated*) | *ILLUSTRATIVE* |
 | Telebirr + bank OTP after swap | Attacker receives valid OTP | *ILLUSTRATIVE* mechanism |
-| SAS SAI cooldown (e.g., 72 h high-value) | Blocks silent APPROVED; forces branch step-up | Digicom design |
+| SAS SAI cooldown (e.g., 72 h high-value) | Blocks silent APPROVED; forces branch step-up | Restlink design |
 | Annual swap-attributed loss (unknown public total) | **ETB tens of millions+** if SSA averages apply scaled by digital adoption | *ILLUSTRATIVE* |
 
-**Digicom deployment implication:** SIM-swap detection via **SAI**, **IMSI change timestamp**, and **CAMARA SIM Swap** API must be **policy-weighted**—stricter for social-protection disbursement and wire transfer than for read-only e-Gov lookup.
+**Restlink deployment implication:** SIM-swap detection via **SAI**, **IMSI change timestamp**, and **CAMARA SIM Swap** API must be **policy-weighted**—stricter for social-protection disbursement and wire transfer than for read-only e-Gov lookup.
 
 ---
 
@@ -147,7 +147,7 @@ Public **disaggregated SIM-swap fraud statistics for Ethiopia are limited**. Ope
 | Side effect | Legitimate users delayed; SMSC queue latency | Support tickets |
 | Fraud overlay | Subset of OTPs used for credential stuffing | ATO attempts |
 
-**Silent auth effect:** Sessions reaching **APPROVED** emit **zero OTP SMS**, shrinking billable events proportional to silent coverage (Digicom pilot KPI: **≥50% OTP reduction** on integrated flows—*ILLUSTRATIVE* target).
+**Silent auth effect:** Sessions reaching **APPROVED** emit **zero OTP SMS**, shrinking billable events proportional to silent coverage (Restlink pilot KPI: **≥50% OTP reduction** on integrated flows—*ILLUSTRATIVE* target).
 
 **Residual control:** **SG.22** rate limits on fallback OTP; application-layer CAPTCHA and velocity limits (integrator responsibility).
 
@@ -167,7 +167,7 @@ The **International Telecommunication Union (ITU)** publishes global connectivit
 | ITU Global Cybersecurity Index (GCI) — Ethiopia | **Mid-tier** African score; policy improving | 2020 (4th ed.; 5th ed. ongoing) | ITU GCI | *cited* |
 | Mobile broadband subscriptions (Africa growth) | Fastest-growing region 2019–2023 | 2023 | ITU | *cited* |
 
-**Interpretation for authentication:** Rising **mobile broadband** penetration increases the fraction of citizens with **active cellular data bearers**—the Resolver input for IP-based silent auth. ITU data support **phased coverage**: urban 4G first (Digicom estimate **~60%** session eligibility Addis Ababa—*ILLUSTRATIVE*), rural FALLBACK-heavy.
+**Interpretation for authentication:** Rising **mobile broadband** penetration increases the fraction of citizens with **active cellular data bearers**—the Resolver input for IP-based silent auth. ITU data support **phased coverage**: urban 4G first (Restlink estimate **~60%** session eligibility Addis Ababa—*ILLUSTRATIVE*), rural FALLBACK-heavy.
 
 ### 2b.5.2 UNODC — cyber-enabled fraud and organised crime
 
@@ -223,7 +223,7 @@ Ethiopian e-Government must serve **Fayda-linked identity**, **Telebirr wallet u
 
 ### 2b.6.1 Qualitative comparison matrix
 
-| Criterion | SMS OTP | Silent Auth (Digicom SAS) | Passkey (FIDO2 / platform) |
+| Criterion | SMS OTP | Silent Auth (Restlink SAS) | Passkey (FIDO2 / platform) |
 |-----------|---------|---------------------------|------------------------------|
 | **Proof mechanism** | Possession of SMS inbox | Live cellular attachment + HLR state | Cryptographic key on device |
 | **SS7 / SMS intercept resistance** | **Poor** | **Strong** (no SMS on happy path) | **Strong** (no SMS) |
@@ -261,7 +261,7 @@ Assume **integrated e-Gov + 5 banks** post-pilot scale:
 | OTP SMS avoided | **16.5 million** / month | Derived |
 | SMS cost saved @ USD 0.03 | **USD 495k** / month | *ILLUSTRATIVE* |
 | Residual OTP messages | **13.5 million** / month | Derived |
-| SAS API revenue @ USD 0.008/call | **USD 132k** / month to Digicom | *ILLUSTRATIVE* commercial |
+| SAS API revenue @ USD 0.008/call | **USD 132k** / month to Restlink | *ILLUSTRATIVE* commercial |
 | Fraud loss avoided (swap+SS7 OTP) | **USD 50k–200k** / month equivalent | *ILLUSTRATIVE* |
 
 These figures are **order-of-magnitude placeholders** for steering discussion; replace with **ERCA + CBE + Telebirr** actuals during pilot charter.
@@ -276,7 +276,7 @@ These figures are **order-of-magnitude placeholders** for steering discussion; r
 | **A4 — High** | Silent Auth + passkey or Fayda step-up | Benefit payment, large transfer |
 | **A5 — Highest** | In-person / branch biometric | Account recovery, legal identity dispute |
 
-Digicom SAS delivers **A2–A3** evidence; integrators map to national policy.
+Restlink SAS delivers **A2–A3** evidence; integrators map to national policy.
 
 ---
 
@@ -336,7 +336,7 @@ Telebirr scale places Ethiopia in the **GSMA mobile-money fraud risk class** alo
 
 ## 2b.8 Threat–Control–Evidence Summary Table
 
-| Threat (case study) | Primary evidence source | SMS OTP alone | Strategy B | Strategy A (Digicom) |
+| Threat (case study) | Primary evidence source | SMS OTP alone | Strategy B | Strategy A (Restlink) |
 |---------------------|-------------------------|---------------|------------|----------------------|
 | SS7 OTP intercept (Case A) | Positive Technologies; GSMA 2018 | Fail | Home Routing + FW | **Pass** (no SMS) |
 | SIM-swap ATO (Case B) | FCC; Action Fraud; TRAI context | Fail | Limited | **Detect → FALLBACK** |
@@ -347,7 +347,7 @@ Telebirr scale places Ethiopia in the **GSMA mobile-money fraud risk class** alo
 
 ---
 
-## 2b.9 Implications for Digicom Silent Auth Deployment in Ethiopia
+## 2b.9 Implications for Restlink Silent Auth Deployment in Ethiopia
 
 ### 2b.9.1 Strategic implications
 
@@ -357,7 +357,7 @@ Telebirr scale places Ethiopia in the **GSMA mobile-money fraud risk class** alo
 | 2 | **Ethiopia's mobile-money and Fayda curves mirror high-risk jurisdictions** | Prioritise SIM-swap policy in SAS scoring |
 | 3 | **UN/ITU/World Bank programmes prioritise trust** | Position SAS as crime-prevention + inclusion (fallback) |
 | 4 | **Passkeys are long-term complement, not 2026 replacement** | Silent auth bridges 5–10 year device fleet |
-| 5 | **Operator partnership is non-negotiable** | Digicom remains adapter; Ethio Telecom retains SMSC revenue |
+| 5 | **Operator partnership is non-negotiable** | Restlink remains adapter; Ethio Telecom retains SMSC revenue |
 
 ### 2b.9.2 Pilot design implications (derived from case studies)
 
@@ -377,7 +377,7 @@ Telebirr scale places Ethiopia in the **GSMA mobile-money fraud risk class** alo
 | **Banks** | Baseline OTP spend × silent rate; fraud loss × reduction factor |
 | **Government** | Citizen completion rate uplift; benefit leakage reduction |
 | **Ethio Telecom** | Preserved fallback SMS + optional API share + data traffic |
-| **Digicom** | Per-verify fee on APPROVED + integration services |
+| **Restlink** | Per-verify fee on APPROVED + integration services |
 
 Use **`assets/roi_illustrative.json`** for chart generation—all labelled *ILLUSTRATIVE* in DOCX export.
 
@@ -411,7 +411,7 @@ Case studies support **Phase 1** immediately: Ethiopian fraud patterns already m
 
 International evidence—from **Positive Technologies' nine-in-ten SMS interceptability** findings, **US and UK SIM-swap enforcement actions**, **Indian scale OTP dependence**, **AIT billion-dollar messaging fraud estimates**, and **UNODC / ITU / World Bank digital trust frameworks**—converges on one policy conclusion: **phone-number-based services require possession proofs stronger than cleartext SMS OTP where impact is high**.
 
-For Ethiopian e-Government and banking, **Digicom-ET Silent Authentication** on **Ethio Telecom** infrastructure offers:
+For Ethiopian e-Government and banking, **Restlink Silent Authentication** on **Ethio Telecom** infrastructure offers:
 
 - **Structural elimination** of SS7 SMS intercept and OTP phishing on the silent happy path (Case A, relay).  
 - **SIM-swap downgrade** via SAI and location freshness rather than blind OTP approval (Case B).  
@@ -422,6 +422,6 @@ Passkeys remain the long-term **A4–A5 assurance** tier for officials and high-
 
 ---
 
-*Primary references: Positive Technologies SS7/SMS research 2016–2018; GSMA Diameter Vulnerabilities Exposure Report 2018; GSMA FS.07, FS.11, SG.22, FF.09; GSMA State of the Industry Report on Mobile Money 2024; ITU Facts and Figures 2023; ITU Global Cybersecurity Index; UNODC World Cybercrime Report 2024; UN E-Government Survey 2024; World Bank World Development Indicators 2024; UNDP Ethiopia digital assessments; FCC CSRIC SIM-swap proceedings; UK Action Fraud statistics; TRAI subscriber reports; ENISA Signalling Security; Mobile Ecosystem Forum AIT materials; Cybersecurity Ventures cybercrime cost estimates; CAMARA / GSMA Open Gateway documentation; Digicom-ET `fraud_stats.json` and `roi_illustrative.json` (ILLUSTRATIVE modelling).*
+*Primary references: Positive Technologies SS7/SMS research 2016–2018; GSMA Diameter Vulnerabilities Exposure Report 2018; GSMA FS.07, FS.11, SG.22, FF.09; GSMA State of the Industry Report on Mobile Money 2024; ITU Facts and Figures 2023; ITU Global Cybersecurity Index; UNODC World Cybercrime Report 2024; UN E-Government Survey 2024; World Bank World Development Indicators 2024; UNDP Ethiopia digital assessments; FCC CSRIC SIM-swap proceedings; UK Action Fraud statistics; TRAI subscriber reports; ENISA Signalling Security; Mobile Ecosystem Forum AIT materials; Cybersecurity Ventures cybercrime cost estimates; CAMARA / GSMA Open Gateway documentation; Restlink `fraud_stats.json` and `roi_illustrative.json` (ILLUSTRATIVE modelling).*
 
 *Previous chapter: [Chapter 2 — Global Fraud Landscape](02_fraud_landscape.md) · Next chapter: [Chapter 3 — Ethiopia Market Context](03_ethiopia_market.md)*

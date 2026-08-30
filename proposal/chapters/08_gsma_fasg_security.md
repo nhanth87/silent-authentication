@@ -1,6 +1,6 @@
 # Chapter 8 — GSMA FASG Signalling and SMS Security
 
-**Digicom-ET Silent Authentication for Ethiopia**  
+**Restlink Silent Authentication for Ethiopia**  
 **Document:** Proposal Chapter 08  
 **Version:** 1.0 · July 2026
 
@@ -8,15 +8,15 @@
 
 ## 8.1 Purpose and scope
 
-This chapter documents how the Digicom-ET Silent Authentication programme aligns with the GSMA **Fraud and Security Group (FASG)** document suite governing interconnect signalling and SMS channel protection. Silent Authentication operates primarily at the **application / identity layer** (Strategy A — replace OTP), but every residual SMS OTP and every MAP/Diameter query depends on a correctly defended **signalling border** (Strategy B — protect OTP). Both strategies are mandatory; neither alone covers the full account-takeover surface.
+This chapter documents how the Restlink Silent Authentication programme aligns with the GSMA **Fraud and Security Group (FASG)** document suite governing interconnect signalling and SMS channel protection. Silent Authentication operates primarily at the **application / identity layer** (Strategy A — replace OTP), but every residual SMS OTP and every MAP/Diameter query depends on a correctly defended **signalling border** (Strategy B — protect OTP). Both strategies are mandatory; neither alone covers the full account-takeover surface.
 
-The FASG references cited here are drawn from the GSMA Cybersecurity Knowledge Base. Most PRDs are members-only; **FS.11 v4.0** is publicly circulated and forms the authoritative basis for SS7 MAP categorisation used by the Digicom Verifier deployment model.
+The FASG references cited here are drawn from the GSMA Cybersecurity Knowledge Base. Most PRDs are members-only; **FS.11 v4.0** is publicly circulated and forms the authoritative basis for SS7 MAP categorisation used by the Restlink Verifier deployment model.
 
 ---
 
 ## 8.2 FASG document index — full catalogue
 
-| PRD | Title | Scope | Access | Relevance to Digicom-ET |
+| PRD | Title | Scope | Access | Relevance to Restlink |
 |-----|-------|-------|--------|-------------------------|
 | **FS.07** | SS7 and SIGTRAN Network Security | Stack-layer SS7/SIGTRAN threats, attack methods, countermeasures | GSMA members | Foundation threat model for SS7 SMS interception; informs Verifier threat assumptions |
 | **FS.11** | SS7 Interconnect Security Monitoring & Firewall Guidelines | Monitor SS7 MAP/CAMEL; packet categorisation (Cat 1/2/3); firewall rules; Annex A/B (SMS Home Routing) | v4.0 public; v6.0 members | **Core** — ATI Cat 1 block; SRI-SM filtering; MT-spoofing; Double MAP; Home Routing |
@@ -35,7 +35,7 @@ The FASG references cited here are drawn from the GSMA Cybersecurity Knowledge B
 | **Policy umbrella** | FS.21, FS.31 | Risk-based categorise → monitor → filter; baseline control catalogue |
 | **Protocol implementation** | FS.07 → FS.11 (SS7); FS.19 (Diameter); FS.20 (GTP); FS.36 (5G) | Per-generation border controls |
 | **SMS content / fraud** | FF.09 → SG.22 | Fraud taxonomy and SMS firewall policy above signalling |
-| **Identity / app layer** | CAMARA NV/NV2, TS.43 (adjacent, not FASG) | Strategy A — Digicom SAS |
+| **Identity / app layer** | CAMARA NV/NV2, TS.43 (adjacent, not FASG) | Strategy A — Restlink SAS |
 
 FS.19 explicitly cross-references FS.07 and FS.11 because Diameter↔MAP interworking creates attack paths that span both stacks. FS.21 requires **consistent policy** across all generations — an attacker will exploit the weakest path (typically unprotected 2G MT-SMS even when 5G SEPP is deployed).
 
@@ -43,9 +43,9 @@ FS.19 explicitly cross-references FS.07 and FS.11 because Diameter↔MAP interwo
 
 ## 8.3 FS.11 MAP packet categorisation — full table
 
-FS.11 categorises MAP traffic at the interconnect border. The Digicom SAS Verifier **must** comply with these categories because it originates MAP/Diameter queries from inside the operator network.
+FS.11 categorises MAP traffic at the interconnect border. The Restlink SAS Verifier **must** comply with these categories because it originates MAP/Diameter queries from inside the operator network.
 
-| Category | Sub-cat | Meaning | Example opcodes / messages | Interconnect handling | Digicom-ET rule |
+| Category | Sub-cat | Meaning | Example opcodes / messages | Interconnect handling | Restlink rule |
 |----------|---------|---------|---------------------------|----------------------|-----------------|
 | **1** | — | Unauthorised on interconnect | **ATI** (AnyTimeInterrogation), SendIMSI, unknown opcode | **BLOCK** | ATI permitted **only to own HLR intra-network**; SAS Verifier deployed inside operator; never cross-PLMN ATI |
 | **2** | 2.1 | Operator-only; needs answer; check IMSI vs SCCP | **PSI** (ProvideSubscriberInfo), PRN, PSL | Filter on identity match | **Primary 2G/3G verifier** — subscriber state + location |
@@ -54,7 +54,7 @@ FS.11 categorises MAP traffic at the interconnect border. The Digicom SAS Verifi
 | **3** | 3.2 | Inter-operator; time/location correlation | UL, **SAI** (SendAuthenticationInfo) | Time/location correlation | **SAI for SIM-swap freshness** — auth vector age |
 | **3** | 3.3 | IPSM-GW / SMS-specific | SMS gateway checks | SMS-specific rules | Governs **fallback OTP** MT-SMS path |
 
-**Critical deployment invariant:** Category 1 ATI on interconnect is the most commonly abused opcode for subscriber tracking and SMS interception precursors. Digicom SAS therefore runs as an **in-operator VAS component** with direct HLR/HSS connectivity — not as an interconnect-facing application.
+**Critical deployment invariant:** Category 1 ATI on interconnect is the most commonly abused opcode for subscriber tracking and SMS interception precursors. Restlink SAS therefore runs as an **in-operator VAS component** with direct HLR/HSS connectivity — not as an interconnect-facing application.
 
 ---
 
@@ -68,7 +68,7 @@ The unified identity architecture defines two non-alternative strategies protect
 | **Mechanism** | Silent Auth (CAMARA NV / NV2 / TS.43 EAP-AKA / IP-match) | SMS Home Routing + SS7/Diameter/5G signalling firewall |
 | **Layer** | Application / identity | Signalling / interconnect |
 | **Defeats** | Phishing, premium-number AIT, delivery failure, user friction | SS7 SRI-SM intercept, MT-spoofing, Diameter/5G SMS redirect |
-| **Primary owner** | Digicom-ET SAS | Ethio Telecom (SMS Router, SS7 FW, DEA, SEPP) + Digicom fallback policy |
+| **Primary owner** | Restlink SAS | Ethio Telecom (SMS Router, SS7 FW, DEA, SEPP) + Restlink fallback policy |
 | **Primary standards** | CAMARA NV, TS.43; FS.11/FS.19 (intra-network queries) | FS.11, FS.19, FS.36, SG.22, FF.09 |
 | **OTP volume impact** | Reduces OTP to fallback-only | Protects the OTP that must still be sent |
 
@@ -81,16 +81,16 @@ flowchart TB
     B -->|"SMS delivered via home network only"| PASS
 ```
 
-**Principle:** Every OTP Digicom cannot eliminate must still be protected. Strategy A closes threats SMS firewalls cannot address (phishing, real-time OTP relay); Strategy B closes threats silent auth cannot address (protecting the OTP that still has to traverse the signalling network).
+**Principle:** Every OTP Restlink cannot eliminate must still be protected. Strategy A closes threats SMS firewalls cannot address (phishing, real-time OTP relay); Strategy B closes threats silent auth cannot address (protecting the OTP that still has to traverse the signalling network).
 
 ### 8.4.1 Standards mapping by strategy
 
 | Strategy | Mechanism | Primary GSMA / 3GPP standards | Owner |
 |----------|-----------|------------------------------|-------|
-| A — Replace OTP | Silent Auth (NV / TS.43) | CAMARA NV, TS.43; FS.11 Cat 2.1/3.2 (intra); FS.19 (S6a intra) | Digicom SAS |
-| B — Protect OTP | Home Routing + signalling FW | FS.11 (SRI-SM, MT-spoof, Double MAP); FS.19 (DEA); FS.36 (SEPP/N32); SG.22; FF.09 | Ethio Telecom + Digicom policy |
+| A — Replace OTP | Silent Auth (NV / TS.43) | CAMARA NV, TS.43; FS.11 Cat 2.1/3.2 (intra); FS.19 (S6a intra) | Restlink SAS |
+| B — Protect OTP | Home Routing + signalling FW | FS.11 (SRI-SM, MT-spoof, Double MAP); FS.19 (DEA); FS.36 (SEPP/N32); SG.22; FF.09 | Ethio Telecom + Restlink policy |
 | Umbrella | Categorise → monitor → filter | FS.21 + FS.31 baseline | Operator border |
-| 5G path | SEPP / N32 / SMSF | FS.36; 3GPP TS 33.501 | Operator + Digicom NV2 |
+| 5G path | SEPP / N32 / SMSF | FS.36; 3GPP TS 33.501 | Operator + Restlink NV2 |
 
 ### 8.4.2 Rollout sequencing (recommended)
 
@@ -98,7 +98,7 @@ flowchart TB
 |-------|--------|-----------|
 | 1 | Confirm/deploy SMS Home Routing + SS7 FW | Biggest immediate risk reduction — OTP sent today is exposed today |
 | 2 | Add Diameter DEA (FS.19) and SEPP/N32 (FS.36) | As 4G/5G SMS traffic grows |
-| 3 | Introduce Digicom SAS silent auth (NV) | Begin OTP elimination on supported sessions |
+| 3 | Introduce Restlink SAS silent auth (NV) | Begin OTP elimination on supported sessions |
 | 4 | Shift traffic to silent path; shrink OTP fallback | Residual OTP rides protected Strategy B path |
 
 ---
@@ -185,7 +185,7 @@ MT-spoofing occurs when the SMSC address embedded in `MT-ForwardSM` does not ref
 | Pair SS7 FW with IDS | Automated GT blocking on detection |
 | FS.11 reference | CVD-2018-0015 CR |
 
-Digicom-ET recommends Ethio Telecom verify Double MAP rules on the SS7 interconnect firewall **before** Silent Auth pilot go-live, because fallback OTP delivery depends on the same MAP SMS path.
+Restlink recommends Ethio Telecom verify Double MAP rules on the SS7 interconnect firewall **before** Silent Auth pilot go-live, because fallback OTP delivery depends on the same MAP SMS path.
 
 ---
 
@@ -216,7 +216,7 @@ As subscribers migrate to LTE, SMS interception attacks migrate from SS7 MAP to 
 | Multi-layer filtering | Mandatory | Transport, application/command, SMS layer |
 | Roamer integrity | Note | FW alone cannot protect inbound roamers — combine with authentication where available |
 
-Digicom SAS Verifier uses **intra-network S6a** (IDR/AIR) only — mirroring the FS.11 ATI rule: subscriber queries originate inside the PLMN, not from interconnect peers.
+Restlink SAS Verifier uses **intra-network S6a** (IDR/AIR) only — mirroring the FS.11 ATI rule: subscriber queries originate inside the PLMN, not from interconnect peers.
 
 ---
 
@@ -257,7 +257,7 @@ Digicom SAS Verifier uses **intra-network S6a** (IDR/AIR) only — mirroring the
 
 ### 8.10.2 SG.22 and FF.09 — content and fraud layer
 
-| Document | Scope | Digicom relevance |
+| Document | Scope | Restlink relevance |
 |----------|-------|-------------------|
 | **SG.22** | SMS firewall best practices; spam; AIT; premium route abuse | Governs fallback OTP SMS content/rate policy |
 | **FF.09** | SMS fraud taxonomy; SIM swap in fraud context | Informs SIM Swap assurance thresholds and step-up rules |
@@ -270,7 +270,7 @@ SG.22 sits **above** the signalling firewall — handling SMS content, destinati
 
 ```mermaid
 flowchart LR
-    subgraph app [Identity layer — Digicom]
+    subgraph app [Identity layer — Restlink]
         SAS[Silent Auth Service]
     end
     subgraph border [Signalling border — Ethio Telecom]
@@ -293,14 +293,14 @@ flowchart LR
 
 | Component | Strategy | Owner |
 |-----------|----------|-------|
-| SAS (Resolver + Verifier + Policy) | A | Digicom-ET |
+| SAS (Resolver + Verifier + Policy) | A | Restlink |
 | SMS Router (Home Routing) | B | Ethio Telecom |
 | SS7 Firewall (FS.11, Double MAP) | B | Ethio Telecom |
 | DEA (FS.19) | B | Ethio Telecom |
 | SEPP/N32 (FS.36) | B | Ethio Telecom |
-| SMS FW policy (SG.22) | B | Ethio Telecom + Digicom OTP policy |
+| SMS FW policy (SG.22) | B | Ethio Telecom + Restlink OTP policy |
 
-Both SAS and the signalling border consume the same subscriber source of truth (HLR/HSS/UDM). Digicom recommends a **shared identity-policy and rate-limit store** so an attacker cannot abuse the legacy OTP path when the silent path is blocked (and vice versa).
+Both SAS and the signalling border consume the same subscriber source of truth (HLR/HSS/UDM). Restlink recommends a **shared identity-policy and rate-limit store** so an attacker cannot abuse the legacy OTP path when the silent path is blocked (and vice versa).
 
 ---
 
@@ -312,7 +312,7 @@ FS.31 provides the baseline interconnect control catalogue. The following subset
 |--------------------|-------------|----------|
 | Interconnect access control | Restrict signalling peers to authorised GT/realm list | B |
 | Monitoring and alerting | SIEM integration for signalling anomalies | B |
-| Segregation | VAS (Digicom SAS) in operator DMZ; no direct interconnect exposure | A + B |
+| Segregation | VAS (Restlink SAS) in operator DMZ; no direct interconnect exposure | A + B |
 | Roaming security | Consistent FS.11/19/36 policy per partner | B |
 | Incident response | Documented GT blocking and partner notification | B |
 
@@ -339,7 +339,7 @@ Authoritative rule tables for production implementation must be obtained from th
 
 ## 8.14 Summary
 
-GSMA FASG documents define the signalling-layer contract that makes Silent Authentication trustworthy in production. **FS.11** governs where Digicom SAS may query (intra-network PSI/SAI, never interconnect ATI) and how residual OTP SMS must be protected (Home Routing, MT-spoofing, Double MAP). **FS.19** and **FS.36** extend that protection to Diameter and 5G. **FS.21** and **FS.31** provide the umbrella policy framework. **SG.22** and **FF.09** cover the SMS fraud layer for fallback OTP. Strategy A and Strategy B are jointly necessary: Digicom replaces OTP where the cellular identity path is available; Ethio Telecom protects every OTP that remains.
+GSMA FASG documents define the signalling-layer contract that makes Silent Authentication trustworthy in production. **FS.11** governs where Restlink SAS may query (intra-network PSI/SAI, never interconnect ATI) and how residual OTP SMS must be protected (Home Routing, MT-spoofing, Double MAP). **FS.19** and **FS.36** extend that protection to Diameter and 5G. **FS.21** and **FS.31** provide the umbrella policy framework. **SG.22** and **FF.09** cover the SMS fraud layer for fallback OTP. Strategy A and Strategy B are jointly necessary: Restlink replaces OTP where the cellular identity path is available; Ethio Telecom protects every OTP that remains.
 
 ---
 

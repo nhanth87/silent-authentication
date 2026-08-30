@@ -1,4 +1,4 @@
-# CAMARA SimSwap — Flow Analysis cho SAS (Digicom-ET)
+# CAMARA SimSwap — Flow Analysis cho SAS (Restlink)
 
 Date: 2026-08-24 · Spec snapshots cùng thư mục: `sim-swap-r3.3.yaml` (release r3.3),
 `sim-swap-main.yaml` (wip), `CHANGELOG.md`, `README.md`.

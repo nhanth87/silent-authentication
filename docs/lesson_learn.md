@@ -57,7 +57,7 @@ EAP-AKA = cơ chế chứng minh SIM ở access edge (SWm/AAA); SAS tiêu thụ 
 **Path A (IP-match):** Không cần SDK "xác thực" nặng, nhưng cần **1 SDK thu thập session
 tuple nhỏ**. Vì CGNAT, app phải gửi chính xác `IP + source port + timestamp` (5-tuple + time)
 thì Resolver mới phân biệt được thuê bao. App tự đọc IP thì dễ, nhưng **source-port của
-bearer cellular + timestamp đồng bộ** thường cần SDK/helper của operator hoặc của Digicom.
+bearer cellular + timestamp đồng bộ** thường cần SDK/helper của operator hoặc của Restlink.
 
 **Path B (EAP-AKA):** Cần EAP-AKA client phía UE.
 
@@ -113,6 +113,6 @@ POST /verify {phoneNumber}                     ← CAMARA contract (VerifyResour
 - **Deploy Quarkus fast-jar = rsync `quarkus/` + `lib/` CÙNG LÚC với app jar — không bao giờ chỉ jar.** Quarkus load class app từ `quarkus/transformed-bytecode.jar` + `generated-bytecode.jar`; `quarkus/` stale → code cũ vẫn chạy (dù jar mới, mtime mới) hoặc augment H2-era đè URL PG → crash-loop `Driver does not support jdbc:postgresql`. Prove boot bằng **log line**, không phải mtime. (Sự cố GMLC 2026-08-23.)
 - **ServiceLoader không thấy `META-INF/services` trong ROOT app jar** lúc boot (fast-jar layering) — chỉ thấy pack trong `lib/main`. SPI tự viết (vd `RaAdminDashboardContributor`) phải đăng ký tường minh: merge nhiều ClassLoader, dedupe theo tên. Tham khảo: gmlc `AdminHttpHandler.buildHub()`.
 - **Monitor Hub routing law**: route đủ các path hub (`isMonitorHubPath`: `/telemetry/*`, `/api/telemetry/*`, `/api/admin/dashboards`, `/admin/ra/**`, `/api/ra/**`, `/api/autonomous/*`); **`/metrics` KHÔNG phải hub path** — serve `port.scrape()` trong app; anonymous chỉ được static extension trơ; Overview poll `/admin/monitor-feed` mỗi 1s.
-- **Branding hub**: truyền tên sản phẩm qua ctor mới `MonitorHandler(…, appName)` (token `@@APP_NAME@@`) — nếu không, shell hiện chữ "Digicom-ET USSDGW" cho mọi product.
+- **Branding hub**: truyền tên sản phẩm qua ctor mới `MonitorHandler(…, appName)` (token `@@APP_NAME@@`) — nếu không, shell hiện chữ "Restlink USSDGW" cho mọi product.
 - **KPI pattern cho SAS** (tham khảo gmlc `GmlcKpi`): LongAdder map + mirror Micrometer (`*_kpi_*` trên `/metrics`) + tab hub riêng. Áp dụng trực tiếp: counter per-op MAP SAI/PSI/ATI và S6a ULR/AIR/IDR/PUR — request/response success/fail, verify pass/fail, SIM-swap freshness age — đúng hình dạng bảng "operation | requests | success | failed".
 - Readiness probe: endpoint status có auth-gate — **401 anonymous = HTTP up thôi**; ready = 200 CÓ admin key header.

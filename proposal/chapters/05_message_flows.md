@@ -1,13 +1,13 @@
 # Chapter 5 — Message Flows
 
-**Digicom-ET Silent Authentication for Government & Banking**  
+**Restlink Silent Authentication for Government & Banking**  
 *MAP, Diameter, and end-to-end signalling sequences*
 
 ---
 
 ## 5.1 Scope
 
-This chapter documents the message-level behaviour of Digicom Silent Auth from the bank application through Digicom SAS to Ethio Telecom core network elements. It covers:
+This chapter documents the message-level behaviour of Restlink Silent Auth from the bank application through Restlink SAS to Ethio Telecom core network elements. It covers:
 
 1. End-to-end happy-path sequence (application to HLR/HSS and return)
 2. Deep dive on MAP **AnyTimeInterrogation (ATI)** and FS.11 Category 1 constraints
@@ -30,7 +30,7 @@ sequenceDiagram
     participant U as User
     participant App as Bank App (cellular)
     participant BE as Bank Backend
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
     participant RES as IP Resolver (PGW/PCRF)
     participant VER as MAP/Diameter Verifier
     participant HSS as HLR/HSS
@@ -68,8 +68,8 @@ sequenceDiagram
 | Step | From | To | Message | Payload (key fields) |
 |------|------|----|---------|---------------------|
 | 1 | App | Bank BE | `POST /login` | `deviceCred`, `srcIP`, `srcPort`, `ts`, `claimedMSISDN?` |
-| 2 | Bank BE | Digicom SAS | `POST /verify` | `{srcIP, srcPort, ts, claimedMSISDN?, reqId}` over mTLS |
-| 3 | Digicom SAS | Bank BE | `/verify` response | `{match, assurance, msisdn?, reqId, fallbackReason?}` |
+| 2 | Bank BE | Restlink SAS | `POST /verify` | `{srcIP, srcPort, ts, claimedMSISDN?, reqId}` over mTLS |
+| 3 | Restlink SAS | Bank BE | `/verify` response | `{match, assurance, msisdn?, reqId, fallbackReason?}` |
 | 4 | Bank BE | App | Login result | Session token or FALLBACK instruction |
 
 **Privacy rule:** MSISDN and IMSI are returned to the bank backend only. The mobile app receives a boolean login outcome or a fallback prompt — never the resolved subscriber identifiers.
@@ -104,14 +104,14 @@ ATI interrogates the home HLR for comprehensive subscriber information at any ti
 ### 5.3.2 Protocol stack
 
 ```
-Bank BE ──HTTPS──► Digicom SAS ──SIGTRAN──► STP/HLR
+Bank BE ──HTTPS──► Restlink SAS ──SIGTRAN──► STP/HLR
                          │
                          └── TCAP Begin (Dialog)
                                └── MAP AnyTimeInterrogation (Invoke)
                                      └── AnyTimeInterrogationRes (ReturnResult)
 ```
 
-Digicom SAS opens a **TCAP dialog** via jSS7 `MAPProviderImpl` → `MAPServiceMobility`, sends `AnyTimeInterrogationRequestImpl`, and awaits `AnyTimeInterrogationResponse` before releasing the dialog.
+Restlink SAS opens a **TCAP dialog** via jSS7 `MAPProviderImpl` → `MAPServiceMobility`, sends `AnyTimeInterrogationRequestImpl`, and awaits `AnyTimeInterrogationResponse` before releasing the dialog.
 
 ### 5.3.3 ATI request structure (jSS7)
 
@@ -131,14 +131,14 @@ GSMA FS.11 classifies ATI as **Category 1: Unauthorised on interconnect — BLOC
 | FS.11 category | Meaning | ATI implication |
 |----------------|---------|-----------------|
 | **Cat 1** | Must not traverse SS7 interconnect | ATI blocked at international/national peer borders |
-| Deployment rule | Verifier inside operator network | Digicom SAS queries **Ethio Telecom HLR only** |
+| Deployment rule | Verifier inside operator network | Restlink SAS queries **Ethio Telecom HLR only** |
 | Attack prevented | External ATI to harvest location/IMSI | No cross-operator subscriber interrogation |
 
-**This is a deployment invariant, not an optional optimisation.** An interconnect-facing ATI would violate FS.11, expose the operator to location-tracking attacks, and fail compliance review. Digicom SAS is co-located with or directly connected to the home HLR via intra-network SIGTRAN.
+**This is a deployment invariant, not an optional optimisation.** An interconnect-facing ATI would violate FS.11, expose the operator to location-tracking attacks, and fail compliance review. Restlink SAS is co-located with or directly connected to the home HLR via intra-network SIGTRAN.
 
 ```mermaid
 sequenceDiagram
-    participant SAS as Digicom SAS (intra-net)
+    participant SAS as Restlink SAS (intra-net)
     participant STP as Ethio Telecom STP
     participant HLR as Home HLR
 
@@ -179,7 +179,7 @@ PSI requests subscriber state and location information from the HLR/VLR. It is c
 
 ```mermaid
 sequenceDiagram
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
     participant HLR as Home HLR
     participant VLR as Serving VLR
 
@@ -213,13 +213,13 @@ SAI requests authentication vectors from the HLR/AuC. For Silent Auth, SAI is **
 | IMSI-change indicators | HLR data after re-provisioning | Fresh swap → downgrade assurance |
 | Auth vector re-sync | Recent `SendAuthenticationInfo` activity | Correlates with new SIM insertion |
 
-FS.11 classifies SAI as **Category 3.2** — inter-operator traffic requiring **time/location correlation** at the firewall. Intra-network SAI from Digicom SAS to the home HLR is permitted.
+FS.11 classifies SAI as **Category 3.2** — inter-operator traffic requiring **time/location correlation** at the firewall. Intra-network SAI from Restlink SAS to the home HLR is permitted.
 
 ### 5.5.2 SIM-swap detection flow
 
 ```mermaid
 sequenceDiagram
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
     participant HLR as Home HLR / AuC
 
     Note over SAS: Policy flags high-value or all logins
@@ -276,7 +276,7 @@ Reference: GSMA FS.19 (Diameter interconnect security). Intra-operator S6a queri
 
 ```mermaid
 sequenceDiagram
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
     participant DEA as Diameter Edge (intra)
     participant HSS as HSS / UDM
 
@@ -305,7 +305,7 @@ When any stage fails, SAS returns FALLBACK and the bank triggers conventional MF
 sequenceDiagram
     participant App as Bank App
     participant BE as Bank Backend
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
     participant SMSC as Ethio Telecom SMSC
 
     App->>BE: POST /login (session tuple)
@@ -399,7 +399,7 @@ All MAP messages traverse: `MAPProviderImpl` → `MAPServiceMobilityImpl` → `M
 | MAP ATI/PSI/SAI | SIGTRAN | SCCP/TCAP | TCAP dialog ID | Cat 1/2.1/3.2 rules |
 | Diameter IDR/AIR | IPsec/TLS (DEA) | Diameter security | Hop-by-hop + session | FS.19 |
 
-Digicom SAS acts as the **dialog anchor** for all MAP and Diameter transactions: it opens the dialog, correlates the response to the `/verify` request, and aborts on timeout. Chapter 6 details the finite-state machine and timeout budgets.
+Restlink SAS acts as the **dialog anchor** for all MAP and Diameter transactions: it opens the dialog, correlates the response to the `/verify` request, and aborts on timeout. Chapter 6 details the finite-state machine and timeout budgets.
 
 ---
 
@@ -416,7 +416,7 @@ All MAP messages in Sections 5.3–5.5 traverse the SS7 protocol stack below the
 | L2 | MAP | Application operations (ATI, PSI, SAI) |
 | L1 | M3UA / SCTP / IP | SIGTRAN transport over operator IP network |
 
-Digicom SAS presents a **local Global Title (GT)** to the Ethio Telecom STP. Outbound MAP requests carry the resolved IMSI/MSISDN as `SubscriberIdentity` and the SAS GT as the `gsmSCF-Address` (for ATI) or originating SCCP address (for PSI/SAI).
+Restlink SAS presents a **local Global Title (GT)** to the Ethio Telecom STP. Outbound MAP requests carry the resolved IMSI/MSISDN as `SubscriberIdentity` and the SAS GT as the `gsmSCF-Address` (for ATI) or originating SCCP address (for PSI/SAI).
 
 ### 5.11.2 TCAP dialogue lifecycle per `/verify`
 
@@ -435,7 +435,7 @@ One TCAP dialogue maps 1:1 to one FSM VERIFYING phase. The 2 s verify timer cove
 
 The following table consolidates FS.11 categories from the v3 proposal deck and maps each to the Silent Auth Verifier behaviour. This is the compliance basis for message selection and deployment placement.
 
-| Cat | FS.11 meaning | MAP examples | Interconnect rule | Digicom SAS rule |
+| Cat | FS.11 meaning | MAP examples | Interconnect rule | Restlink SAS rule |
 |-----|---------------|--------------|-------------------|------------------|
 | **1** | Unauthorised — BLOCK | ATI, SendIMSI, unknown opcode | Must not traverse peer border | ATI only to **own** HLR (intra-net) |
 | **2.1** | Operator traffic — needs answer | PSI, PRN, PSL | IMSI↔SCCP filter | **Primary** verifier (state + location) |
@@ -450,7 +450,7 @@ Silent Auth Verifier messages (ATI, PSI, SAI) are all executed **inside** the op
 
 ## 5.13 Number Verification vs claimed-MSISDN modes
 
-Digicom SAS supports two application semantics aligned with CAMARA Number Verification:
+Restlink SAS supports two application semantics aligned with CAMARA Number Verification:
 
 ### 5.13.1 Mode A — claimed MSISDN (match)
 
@@ -459,7 +459,7 @@ The bank backend supplies `claimedMSISDN` (the number the user registered with).
 ```mermaid
 sequenceDiagram
     participant BE as Bank Backend
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
 
     BE->>SAS: POST /verify {srcIP, srcPort, ts, claimedMSISDN="+251911…", reqId}
     SAS->>SAS: Resolver → MSISDN A
@@ -477,7 +477,7 @@ The bank omits `claimedMSISDN`. SAS returns the verified MSISDN for the backend 
 ```mermaid
 sequenceDiagram
     participant BE as Bank Backend
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
 
     BE->>SAS: POST /verify {srcIP, srcPort, ts, reqId}
     SAS->>SAS: Resolver → MSISDN A; Verifier → assurance HIGH

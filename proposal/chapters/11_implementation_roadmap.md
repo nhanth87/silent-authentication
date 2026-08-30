@@ -1,6 +1,6 @@
 # Chapter 11 — Implementation Roadmap
 
-**Digicom-ET Silent Authentication for Government & Banks (Ethiopia)**  
+**Restlink Silent Authentication for Government & Banks (Ethiopia)**  
 **Document:** Proposal §11  
 **Classification:** Commercial-in-Confidence  
 **Version:** 1.0 (Draft)  
@@ -16,7 +16,7 @@ Phases align with the unified identity architecture principle — **protect resi
 
 ```mermaid
 gantt
-    title Digicom-ET Silent Auth — Indicative Timeline
+    title Restlink Silent Auth — Indicative Timeline
     dateFormat  YYYY-MM
     section Phase 1
     Partnership & design gate           :p1a, 2026-08, 2M
@@ -40,18 +40,18 @@ gantt
 
 | In scope | Out of scope |
 |----------|--------------|
-| Digicom SAS deployment in operator DMZ / VAS zone | TS.43 Wi-Fi path |
+| Restlink SAS deployment in operator DMZ / VAS zone | TS.43 Wi-Fi path |
 | PGW/GGSN or CGNAT Resolver integration (one binding source) | Multi-operator / MVNO |
 | MAP **PSI** (primary) + **ATI** (intra-network only) + **SAI** for SIM-swap freshness | CAMARA SIM Swap API (Phase 2) |
 | CAMARA Number Verification adapter (`POST /verify`) | Production Diameter S6a (Phase 2) |
 | One commercial bank + one e-Gov portal (UAT cohort ≤ 10,000 users) | National marketing launch |
-| mTLS bank↔Digicom; audit logging; FALLBACK policy to operator SMS OTP | Custom HSS vendor changes |
+| mTLS bank↔Restlink; audit logging; FALLBACK policy to operator SMS OTP | Custom HSS vendor changes |
 
 ### 11.2.2 Deliverables
 
 | # | Deliverable | Acceptance criterion |
 |---|-------------|---------------------|
-| D1.1 | Signed Network Attachment Agreement (Ethio Telecom ↔ Digicom) | Resolver + MAP GT routing approved |
+| D1.1 | Signed Network Attachment Agreement (Ethio Telecom ↔ Restlink) | Resolver + MAP GT routing approved |
 | D1.2 | SAS HA pair (active/passive) in operator DC | Failover ≤ 30s |
 | D1.3 | Resolver interface (IP + port + timestamp → MSISDN) | P95 ≤ 300ms; CGNAT disambiguation tested |
 | D1.4 | MAP Verifier (PSI/ATI/SAI via jSS7) | Dialog timeout 2s; zero dialog leak in 72h soak |
@@ -63,11 +63,11 @@ gantt
 
 | WP | Title | Owner | Duration | Dependencies |
 |----|-------|-------|----------|--------------|
-| WP1.1 | Governance & security architecture sign-off | Digicom + Ethio Telecom + NBE observer | 4 weeks | MSA draft |
-| WP1.2 | Resolver source selection (PGW RADIUS vs PCRF Sd vs CGNAT log) | Ethio Telecom core + Digicom | 3 weeks | WP1.1 |
-| WP1.3 | jSS7 MAP Verifier module (PSI/ATI/SAI) | Digicom engineering | 6 weeks | WP1.2 |
-| WP1.4 | SAS policy engine + `/verify` API | Digicom engineering | 4 weeks | WP1.3 (parallel start week 3) |
-| WP1.5 | Bank + e-Gov integration (1+1) | Digicom PS + tenant IT | 8 weeks | WP1.4 |
+| WP1.1 | Governance & security architecture sign-off | Restlink + Ethio Telecom + NBE observer | 4 weeks | MSA draft |
+| WP1.2 | Resolver source selection (PGW RADIUS vs PCRF Sd vs CGNAT log) | Ethio Telecom core + Restlink | 3 weeks | WP1.1 |
+| WP1.3 | jSS7 MAP Verifier module (PSI/ATI/SAI) | Restlink engineering | 6 weeks | WP1.2 |
+| WP1.4 | SAS policy engine + `/verify` API | Restlink engineering | 4 weeks | WP1.3 (parallel start week 3) |
+| WP1.5 | Bank + e-Gov integration (1+1) | Restlink PS + tenant IT | 8 weeks | WP1.4 |
 | WP1.6 | Pilot UAT, penetration test, go-live | Joint | 4 weeks | WP1.5 |
 | WP1.7 | Operator SMS Home Routing / SS7 FW confirmation | Ethio Telecom | Parallel | WP1.1 |
 
@@ -103,12 +103,12 @@ gantt
 
 | WP | Title | Owner | Duration | Dependencies |
 |----|-------|-------|----------|--------------|
-| WP2.1 | jDiameter S6a module | Digicom engineering | 8 weeks | Phase 1 complete |
-| WP2.2 | Verifier routing logic (MAP ↔ Diameter) | Digicom engineering | 3 weeks | WP2.1 |
-| WP2.3 | CAMARA SIM Swap adapter | Digicom engineering | 6 weeks | WP2.2 |
-| WP2.4 | Bank rollout wave (5 institutions) | Digicom PS | 12 weeks | WP2.3 |
+| WP2.1 | jDiameter S6a module | Restlink engineering | 8 weeks | Phase 1 complete |
+| WP2.2 | Verifier routing logic (MAP ↔ Diameter) | Restlink engineering | 3 weeks | WP2.1 |
+| WP2.3 | CAMARA SIM Swap adapter | Restlink engineering | 6 weeks | WP2.2 |
+| WP2.4 | Bank rollout wave (5 institutions) | Restlink PS | 12 weeks | WP2.3 |
 | WP2.5 | DEA / Diameter edge validation (operator) | Ethio Telecom | Parallel | FS.19 checklist |
-| WP2.6 | Assurance calibration & fraud analytics v1 | Digicom + bank risk | 4 weeks | WP2.4 mid-point |
+| WP2.6 | Assurance calibration & fraud analytics v1 | Restlink + bank risk | 4 weeks | WP2.4 mid-point |
 
 ---
 
@@ -134,17 +134,17 @@ gantt
 | D3.2 | NV2 adapter unified with SAS `/verify` | Single policy engine; method negotiation |
 | D3.3 | Fallback surface ≤ 15% of auth events (steady state) | Measured over 90 days post-launch |
 | D3.4 | National e-Gov production cutover | Ministry sign-off; DR tested |
-| D3.5 | FS.36 / 5G SMSF path readiness assessment | Operator report; Digicom SAS unchanged at app layer |
+| D3.5 | FS.36 / 5G SMSF path readiness assessment | Operator report; Restlink SAS unchanged at app layer |
 
 ### 11.4.3 Work packages — Phase 3
 
 | WP | Title | Owner | Duration | Dependencies |
 |----|-------|-------|----------|--------------|
-| WP3.1 | TS.43 feasibility & entitlement server | Ethio Telecom + Digicom | 10 weeks | Phase 2 complete |
-| WP3.2 | NV2 / CAMARA adapter | Digicom engineering | 8 weeks | WP3.1 |
-| WP3.3 | SDK v2 (Wi-Fi + cellular unified) | Digicom engineering | 6 weeks | WP3.2 |
-| WP3.4 | National e-Gov integration | Digicom PS + government SI | 10 weeks | WP3.3 |
-| WP3.5 | Hypercare & optimisation (90 days) | Digicom ops | 12 weeks | WP3.4 go-live |
+| WP3.1 | TS.43 feasibility & entitlement server | Ethio Telecom + Restlink | 10 weeks | Phase 2 complete |
+| WP3.2 | NV2 / CAMARA adapter | Restlink engineering | 8 weeks | WP3.1 |
+| WP3.3 | SDK v2 (Wi-Fi + cellular unified) | Restlink engineering | 6 weeks | WP3.2 |
+| WP3.4 | National e-Gov integration | Restlink PS + government SI | 10 weeks | WP3.3 |
+| WP3.5 | Hypercare & optimisation (90 days) | Restlink ops | 12 weeks | WP3.4 go-live |
 
 ---
 
@@ -164,10 +164,10 @@ gantt
 
 | Role | Phase 1 FTE | Phase 2 FTE | Phase 3 FTE |
 |------|---------------|-------------|-------------|
-| Digicom solution architect | 0.5 | 0.5 | 0.25 |
-| Digicom MAP/Diameter engineers | 2.0 | 2.5 | 1.5 |
-| Digicom backend / API | 1.5 | 1.0 | 1.0 |
-| Digicom PS / integration | 1.0 | 2.0 | 2.5 |
+| Restlink solution architect | 0.5 | 0.5 | 0.25 |
+| Restlink MAP/Diameter engineers | 2.0 | 2.5 | 1.5 |
+| Restlink backend / API | 1.5 | 1.0 | 1.0 |
+| Restlink PS / integration | 1.0 | 2.0 | 2.5 |
 | Ethio Telecom core liaison | 0.5 | 0.5 | 0.25 |
 | Ethio Telecom PGW/HSS engineer | 0.25 | 0.25 | 0.25 |
 | Bank tenant IT (per pilot) | 0.5 | 0.25 × 5 | 0.1 × N |
@@ -178,15 +178,15 @@ gantt
 
 | ID | Risk | Likelihood | Impact | Mitigation | Owner |
 |----|------|------------|--------|------------|-------|
-| R1 | Resolver binding source delayed or ambiguous under CGNAT | Medium | High | Early WP1.2 proof; require IP+port+timestamp; reject multi-MSISDN | Ethio Telecom + Digicom |
-| R2 | FS.11 Category 1 ATI misuse perception | Low | High | Document intra-network-only deployment; PSI as primary | Digicom |
-| R3 | MAP dialog leak / timeout under HSS load | Medium | Medium | Bounded TC timers; soak test; abort on 2s budget | Digicom |
+| R1 | Resolver binding source delayed or ambiguous under CGNAT | Medium | High | Early WP1.2 proof; require IP+port+timestamp; reject multi-MSISDN | Ethio Telecom + Restlink |
+| R2 | FS.11 Category 1 ATI misuse perception | Low | High | Document intra-network-only deployment; PSI as primary | Restlink |
+| R3 | MAP dialog leak / timeout under HSS load | Medium | Medium | Bounded TC timers; soak test; abort on 2s budget | Restlink |
 | R4 | Low cellular-data adoption in rural cohort | Medium | Medium | Phase 3 TS.43; Passkey fallback; measure bearer mix | Joint |
-| R5 | Bank IT integration backlog | High | Medium | CAMARA mock server; reference SDK; fixed-scope pilot SOW | Digicom PS |
-| R6 | SMS revenue concern blocks operator sign-off | Medium | High | Commercial model §10: no SMS margin to Digicom; optional API share | Commercial |
-| R7 | SIM-swap signal false positive / negative | Medium | High | SAI + last-update age; tunable cooldown; CAMARA SIM Swap Phase 2 | Digicom |
-| R8 | Regulatory delay (NBE / MoIT approval) | Medium | Medium | Early observer engagement; FS.11/19 mapping pack | Digicom |
-| R9 | jDiameter S6a interoperability gaps | Medium | Medium | Lab HSS; vendor test harness; MAP fallback for 4G attach | Digicom |
+| R5 | Bank IT integration backlog | High | Medium | CAMARA mock server; reference SDK; fixed-scope pilot SOW | Restlink PS |
+| R6 | SMS revenue concern blocks operator sign-off | Medium | High | Commercial model §10: no SMS margin to Restlink; optional API share | Commercial |
+| R7 | SIM-swap signal false positive / negative | Medium | High | SAI + last-update age; tunable cooldown; CAMARA SIM Swap Phase 2 | Restlink |
+| R8 | Regulatory delay (NBE / MoIT approval) | Medium | Medium | Early observer engagement; FS.11/19 mapping pack | Restlink |
+| R9 | jDiameter S6a interoperability gaps | Medium | Medium | Lab HSS; vendor test harness; MAP fallback for 4G attach | Restlink |
 | R10 | TS.43 entitlement complexity | High | Medium | Phase 3 gate; Wi-Fi remains OTP+Home Routing until proven | Ethio Telecom |
 
 ---
@@ -234,9 +234,9 @@ gantt
 
 | Gate | Timing | Decision body | Go criteria |
 |------|--------|---------------|-------------|
-| G0 | Contract signature | Ethio Telecom + Digicom exec | Commercial model agreed |
+| G0 | Contract signature | Ethio Telecom + Restlink exec | Commercial model agreed |
 | G1 | End Phase 1 | Technical steering committee | D1.* accepted; pen-test remediated |
-| G2 | Phase 2 funding release | Digicom + bank sponsors | ≥ 60% pilot success; 2 LOIs for rollout |
+| G2 | Phase 2 funding release | Restlink + bank sponsors | ≥ 60% pilot success; 2 LOIs for rollout |
 | G3 | Phase 3 TS.43 commit | Operator product board | TS.43 lab success; entitlement host ready |
 | G4 | National e-Gov | Ministry + NBE | Security audit; DR drill passed |
 
@@ -244,7 +244,7 @@ gantt
 
 ## 11.10 Summary
 
-The roadmap de-risks delivery by proving **MAP ATI/PSI** on a constrained pilot, then layering **Diameter + CAMARA SIM Swap** for modern attach, and finally **TS.43 / NV2** for Wi-Fi completeness. Operator SMS revenue remains on existing rails throughout; Digicom monetises the authentication API layer only. Success is measured in **security outcomes**, **user experience**, and **enterprise economics** — not SMS displacement.
+The roadmap de-risks delivery by proving **MAP ATI/PSI** on a constrained pilot, then layering **Diameter + CAMARA SIM Swap** for modern attach, and finally **TS.43 / NV2** for Wi-Fi completeness. Operator SMS revenue remains on existing rails throughout; Restlink monetises the authentication API layer only. Success is measured in **security outcomes**, **user experience**, and **enterprise economics** — not SMS displacement.
 
 ---
 

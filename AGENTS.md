@@ -3,7 +3,7 @@
 **JDK: N/A (docs / Python).** No Java build in this tree today — **ask** before introducing or running any Java toolchain. Workspace rule: [`../../../AGENTS.md`](../../../AGENTS.md).
 
 Agent notes for `worktrees/silent-authentication/main`. Research / design / pitch workspace
-for Digicom-ET Silent Auth (Ethiopia). Not USSD GW source; not micro-jainslee Quarkus examples.
+for Restlink Silent Auth (Ethiopia). Not USSD GW source; not micro-jainslee Quarkus examples.
 
 Seeded from Supermemory (2026-07-18) + design/pitch work (2026-07-20).
 
@@ -37,12 +37,12 @@ main/
 
 ---
 
-## 1. Product / commercial (Digicom-ET)
+## 1. Product / commercial (Restlink)
 
-- Digicom-ET sells **silent authentication VAS** to Ethiopian banks.
-- Digicom is an **adapter layer ABOVE Ethio Telecom** — does **not** take SMS/interconnect
+- Restlink sells **silent authentication VAS** to Ethiopian banks.
+- Restlink is an **adapter layer ABOVE Ethio Telecom** — does **not** take SMS/interconnect
   revenue from the operator.
-- Digicom bills banks for **`/verify` API**; fallback SMS still rides operator SMSC.
+- Restlink bills banks for **`/verify` API**; fallback SMS still rides operator SMSC.
 - Persona: bank login without SMS OTP (“Chú Phỉnh”).
 - Pitch theme: Ethiopian flag green/yellow/red.
 
@@ -264,7 +264,7 @@ container (checker `slee_boundary`, mutation-checked via
 
 ### Proposal DOCX
 
-`proposal/DigicomET_Silent_Auth_Proposal_v3.docx` — chapters in `proposal/chapters/`.
+`proposal/Restlink_Silent_Auth_Proposal_v3.docx` — chapters in `proposal/chapters/`.
 
 ```bash
 python3 proposal/scripts/build_proposal_docx.py
@@ -274,9 +274,9 @@ python3 proposal/scripts/build_proposal_docx.py
 
 | Deck | File | Rebuild |
 |------|------|---------|
-| **Mix v3 (recommended)** | `slides/DigicomET_Silent_Auth_Mix_v3.pptx` | `generate_svgs.py` + `generate_svgs_v2.py` + `build_pptx_v3.py` |
-| Technical v2 | `slides/DigicomET_Silent_Auth_Technical_v2.pptx` | `generate_svgs_v2.py` + `build_pptx_v2.py` |
-| Marketing v1 | `slides/DigicomET_Silent_Auth_Ethiopia.pptx` | `generate_svgs.py` + `build_pptx.py` |
+| **Mix v3 (recommended)** | `slides/Restlink_Silent_Auth_Mix_v3.pptx` | `generate_svgs.py` + `generate_svgs_v2.py` + `build_pptx_v3.py` |
+| Technical v2 | `slides/Restlink_Silent_Auth_Technical_v2.pptx` | `generate_svgs_v2.py` + `build_pptx_v2.py` |
+| Marketing v1 | `slides/Restlink_Silent_Auth_Ethiopia.pptx` | `generate_svgs.py` + `build_pptx.py` |
 
 Scripts live under `slides/scripts/`.
 
@@ -364,7 +364,7 @@ Open items (do not silently invent answers):
       Play Integrity / DeviceCheck attestation) so `accessTech` stops being a claim.
 - [ ] TS.43 entitlement server feasibility (Wi‑Fi path)
 - [ ] Strategy B product choice (SMS Router / SS7 FW vs jSS7-based)
-- [ ] Digicom-ET pilot API contract for Ethiopian banks
+- [ ] Restlink pilot API contract for Ethiopian banks
 - [ ] **SAS admin dashboard** (clone gmlc admin) — dashboard, SS7, HTTP endpoint, Diameter
   (JSON, multi-realm/multi-app + on-the-fly reload), CDR, tenant→networkId, user→networkId+
   bearer/API key. In progress in `sas-host/` (see `sas-host/TODO.md` for production hardening backlog).
@@ -383,7 +383,7 @@ Open items (do not silently invent answers):
 
 Store/recall project facts via Supermemory MCP. Key tags already on file:
 
-- Digicom-ET Silent Auth Ethiopia pitch (2026-07-20)
+- Restlink Silent Auth Ethiopia pitch (2026-07-20)
 - Unified Silent Auth + SMS Security Architecture (Strategy A/B, TS.43 Wi‑Fi correction)
 - Banking redesign: IP+port+ts → Resolver → Verifier → Policy; privacy rules
 
@@ -394,7 +394,7 @@ Commits in this repo are **nhanth87 / Tran Nhan** only — message, author **and
 Composer / Copilot / ChatGPT / OpenAI, `noreply@anthropic.com`, `cursoragent`, `Generated with`,
 `AI-assisted` or a `bot@` address appear in a commit.
 
-Enforced by two per-repo hooks (`DIGICOM-ET-AGENT-ATTRIBUTION-GUARD v1`):
+Enforced by two per-repo hooks (`RESTLINK-AGENT-ATTRIBUTION-GUARD v1`):
 `commit-msg` rejects the commit, `pre-push` re-scans the whole pushed range and blocks the push.
 **`--no-verify` is forbidden** — it only defers the rejection to `pre-push`.
 Workspace rule: [`AGENTS.md` at the root of `ethiopia-working-dir`](../AGENTS.md).

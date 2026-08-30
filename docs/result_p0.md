@@ -59,7 +59,7 @@ This is the **P0 R&D scaffold**, per `AGENTS.md`:
   Every file header carries the `"R&D only — never production"` notice.
 - **Open items (AGENTS.md §10) still open:** jDiameter S6a client, Resolver
   source (PGW RADIUS vs PCRF Sd vs CGNAT log), assurance weights per-risk
-  (hardcoded defaults), TS.43 Wi‑Fi entitlement, Digicom-ET pilot API contract.
+  (hardcoded defaults), TS.43 Wi‑Fi entitlement, Restlink pilot API contract.
 
 ### Concrete production gaps
 

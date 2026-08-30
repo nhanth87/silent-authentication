@@ -1,13 +1,13 @@
 # Chapter 4 — Solution Overview
 
-**Digicom-ET Silent Authentication for Government & Banking**  
+**Restlink Silent Authentication for Government & Banking**  
 *Technical proposal — Ethio Telecom VAS adapter*
 
 ---
 
 ## 4.1 Purpose and design principle
 
-Silent Authentication (Silent Auth) replaces SMS one-time passwords for mobile login by proving that the device currently attached to the cellular network owns the claimed MSISDN. The proof is derived from **live network state**, not from a code the user types or receives. Digicom-ET delivers this capability as a **Value-Added Service (VAS) adapter** between bank and government application backends and Ethio Telecom's core network assets. The operator remains the source of truth for subscriber identity; Digicom orchestrates resolution, verification, and policy without cannibalising SMS wholesale revenue.
+Silent Authentication (Silent Auth) replaces SMS one-time passwords for mobile login by proving that the device currently attached to the cellular network owns the claimed MSISDN. The proof is derived from **live network state**, not from a code the user types or receives. Restlink delivers this capability as a **Value-Added Service (VAS) adapter** between bank and government application backends and Ethio Telecom's core network assets. The operator remains the source of truth for subscriber identity; Restlink orchestrates resolution, verification, and policy without cannibalising SMS wholesale revenue.
 
 The central architectural constraint that governs every design decision is this:
 
@@ -30,13 +30,13 @@ This chapter describes the two stages, the CGNAT disambiguation requirement, the
 | Actor | Role | Trust boundary |
 |-------|------|----------------|
 | **Bank / e-Gov App** (mobile) | Runs on cellular data; collects `{srcIP, srcPort, ts, claimedMSISDN?, deviceCred}` | Untrusted client; never receives MSISDN/IMSI from SAS |
-| **Bank / Agency Backend** | Owns login decision; calls Digicom SAS server-to-server over mTLS | Trusted integration partner |
-| **Digicom SAS** (Silent Auth Service) | Resolver + Verifier + Policy engine | Operator-hosted or co-located; dialog anchor |
+| **Bank / Agency Backend** | Owns login decision; calls Restlink SAS server-to-server over mTLS | Trusted integration partner |
+| **Restlink SAS** (Silent Auth Service) | Resolver + Verifier + Policy engine | Operator-hosted or co-located; dialog anchor |
 | **IP Resolver** | Reads PGW/GGSN session store, PCRF Gx/Sd, or CGNAT log | Operator-internal data plane |
 | **MAP / Diameter Verifier** | jSS7 (2G/3G) + jDiameter S6a (4G/5G) | Operator signalling plane |
 | **HLR / HSS / UDM** | Subscriber database | Operator core; intra-network queries only |
 
-Digicom-ET occupies the **identity layer** (Strategy A in the unified architecture). Residual SMS OTP traffic on the fallback path is protected separately by SMS Home Routing and SS7/Diameter/5G firewalls (Strategy B). The two strategies are complementary, not alternatives.
+Restlink occupies the **identity layer** (Strategy A in the unified architecture). Residual SMS OTP traffic on the fallback path is protected separately by SMS Home Routing and SS7/Diameter/5G firewalls (Strategy B). The two strategies are complementary, not alternatives.
 
 ---
 
@@ -198,7 +198,7 @@ Thresholds are tunable per transaction risk class (e-Gov portal login vs. high-v
 
 ## 4.8 Deployment model on Ethio Telecom
 
-Digicom-ET deploys as a **thin VAS adapter** co-located with or reachable from the operator core:
+Restlink deploys as a **thin VAS adapter** co-located with or reachable from the operator core:
 
 | Component | Placement | Rationale |
 |-----------|-----------|-----------|
@@ -207,7 +207,7 @@ Digicom-ET deploys as a **thin VAS adapter** co-located with or reachable from t
 | MAP Verifier (jSS7) | SS7 SIGTRAN edge | Intra-network HLR queries; FS.11 Cat.1 compliance |
 | Diameter Verifier (jDiameter S6a) | Diameter edge | 4G/5G HSS queries per FS.19 |
 
-The Verifier **never** sends ATI over SS7 interconnect. FS.11 classifies ATI as **Category 1** (unauthorised on interconnect). This is a deployment invariant: Digicom SAS runs inside the operator network and queries Ethio Telecom's own HLR/HSS.
+The Verifier **never** sends ATI over SS7 interconnect. FS.11 classifies ATI as **Category 1** (unauthorised on interconnect). This is a deployment invariant: Restlink SAS runs inside the operator network and queries Ethio Telecom's own HLR/HSS.
 
 ---
 
@@ -220,7 +220,7 @@ The external contract is CAMARA-aligned HTTPS:
 | `POST /verify` | Number Verification — match or discover MSISDN | Resolver → Verifier → Policy |
 | Response `{match, assurance, reqId}` | HIGH / MEDIUM / LOW / FALLBACK | Derived from score and stage outcomes |
 
-Signalling remains operator-internal. Banks integrate via the Digicom SDK (device credential + session tuple) and a server-to-server `/verify` call. Phase 3 extends coverage to Wi-Fi via GSMA TS.43 EAP-AKA (SIM credential method), which shares the same SIM root of trust but does not depend on bearer IP.
+Signalling remains operator-internal. Banks integrate via the Restlink SDK (device credential + session tuple) and a server-to-server `/verify` call. Phase 3 extends coverage to Wi-Fi via GSMA TS.43 EAP-AKA (SIM credential method), which shares the same SIM root of trust but does not depend on bearer IP.
 
 ---
 

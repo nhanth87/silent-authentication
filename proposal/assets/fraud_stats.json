@@ -101,35 +101,35 @@
     "label": "Pilot target OTP SMS reduction",
     "value": 50,
     "unit": "percent minimum",
-    "source": "Digicom-ET proposal KPI (estimated target)",
+    "source": "Restlink proposal KPI (estimated target)",
     "year": 2026
   },
   {
     "label": "Pilot target login completion uplift",
     "value": 20,
     "unit": "percentage points",
-    "source": "Digicom-ET proposal KPI (estimated target)",
+    "source": "Restlink proposal KPI (estimated target)",
     "year": 2026
   },
   {
     "label": "Pilot target ATO reduction (SMS/SIM-swap attributed)",
     "value": 40,
     "unit": "percent",
-    "source": "Digicom-ET proposal KPI (estimated target)",
+    "source": "Restlink proposal KPI (estimated target)",
     "year": 2026
   },
   {
     "label": "Silent auth SAS p95 latency budget",
     "value": 3,
     "unit": "seconds",
-    "source": "Digicom-ET technical design",
+    "source": "Restlink technical design",
     "year": 2026
   },
   {
     "label": "Urban 4G silent auth session eligibility",
     "value": 60,
     "unit": "percent",
-    "source": "Digicom-ET coverage estimate (Addis Ababa)",
+    "source": "Restlink coverage estimate (Addis Ababa)",
     "year": 2026
   },
   {
@@ -157,14 +157,14 @@
     "label": "MAP resolver stage timeout budget",
     "value": 300,
     "unit": "milliseconds",
-    "source": "Digicom-ET silent-auth-flow.md",
+    "source": "Restlink silent-auth-flow.md",
     "year": 2026
   },
   {
     "label": "MAP/Diameter verifier dialog timeout",
     "value": 2,
     "unit": "seconds",
-    "source": "Digicom-ET silent-auth-flow.md",
+    "source": "Restlink silent-auth-flow.md",
     "year": 2026
   }
 ]

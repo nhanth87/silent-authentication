@@ -1,9 +1,9 @@
 # Document Introduction — How to Read This Proposal
 
 **Proposal title:** Network-Side Silent Authentication for Ethiopian Government, Banking, and Digital Public Services  
-**Submitted by:** Digicom-ET (Value-Added Services Partner)  
+**Submitted by:** Restlink (Value-Added Services Partner)  
 **Network operator context:** Ethio Telecom  
-**Companion presentation:** `DigicomET_Silent_AuthProposal_v3.pptx` (28 slides; generated as *Silent Auth Mix v3*)  
+**Companion presentation:** `Restlink_Silent_AuthProposal_v3.pptx` (28 slides; generated as *Silent Auth Mix v3*)  
 **Document classification:** Confidential — Government & Financial Sector  
 **Version:** 1.0 — July 2026  
 **Target length:** ~50 Word pages (assembled via `scripts/build_proposal_docx.py`)
@@ -12,7 +12,7 @@
 
 ## 0.1 Purpose of This Proposal
 
-This document is a **formal technical and commercial proposal** to the Government of Ethiopia, Ethio Telecom, the National Bank of Ethiopia (NBE), and participating commercial banks. It recommends deployment of a **Silent Authentication Service (SAS)** as a **Value-Added Service (VAS) adapter** on Ethio Telecom infrastructure, operated and integrated by **Digicom-ET** for government portals and financial institution backends.
+This document is a **formal technical and commercial proposal** to the Government of Ethiopia, Ethio Telecom, the National Bank of Ethiopia (NBE), and participating commercial banks. It recommends deployment of a **Silent Authentication Service (SAS)** as a **Value-Added Service (VAS) adapter** on Ethio Telecom infrastructure, operated and integrated by **Restlink** for government portals and financial institution backends.
 
 The proposal addresses a structural weakness in Ethiopia's accelerating digitisation: **proof of possession of a mobile phone number is overwhelmingly implemented as SMS one-time password (OTP) delivery**. SMS OTP is familiar, interoperable across handsets, and inexpensive to integrate. It is also **exposed to signalling-layer interception**, **SIM-swap account takeover**, **artificial inflation of traffic (AIT)**, and **real-time OTP relay phishing**—threats documented in independent security research and operator fraud programmes worldwide.
 
@@ -42,7 +42,7 @@ Different stakeholders enter the material with different obligations. The table 
 1. **Chapter 0** — document map and definitions (this chapter).  
 2. **Chapter 1** — problem, solution, dual-strategy architecture, KPIs.  
 3. **Chapter 2b** — case studies and international statistics (skim tables).  
-4. **Chapter 3** — Ethiopia market and Digicom-ET positioning.  
+4. **Chapter 3** — Ethiopia market and Restlink positioning.  
 5. **Chapter 11** — implementation roadmap and pilot structure.
 
 ### 0.2.2 Technical path (half-day workshop)
@@ -62,7 +62,7 @@ Different stakeholders enter the material with different obligations. The table 
 
 ## 0.3 Relationship to the Presentation Deck
 
-The companion deck **`DigicomET_Silent_AuthProposal_v3.pptx`** contains **28 slides** synthesising the **business narrative** (citizen and e-Gov persona, commercial model, value proposition) with **technical depth** (two-stage Resolver/Verifier, ATI/PSI/SAI, Diameter S6a, FSM timeouts, CAMARA and GSMA tables). The written proposal **expands** every slide into narrative chapters with citations, sequence diagrams, and procurement-ready detail. The deck is suitable for **steering committees and bilateral meetings**; this document is suitable for **due diligence, security review, and contract annexes**.
+The companion deck **`Restlink_Silent_AuthProposal_v3.pptx`** contains **28 slides** synthesising the **business narrative** (citizen and e-Gov persona, commercial model, value proposition) with **technical depth** (two-stage Resolver/Verifier, ATI/PSI/SAI, Diameter S6a, FSM timeouts, CAMARA and GSMA tables). The written proposal **expands** every slide into narrative chapters with citations, sequence diagrams, and procurement-ready detail. The deck is suitable for **steering committees and bilateral meetings**; this document is suitable for **due diligence, security review, and contract annexes**.
 
 ### 0.3.1 Slide-to-chapter mapping (28 slides)
 
@@ -86,7 +86,7 @@ The companion deck **`DigicomET_Silent_AuthProposal_v3.pptx`** contains **28 sli
 | 16 | Bank integration + jSS7 | 5, 11, 12 | SDK steps; coral-valley MAP classes |
 | 17 | **Section:** Standards & APIs | 7, 8 | CAMARA + GSMA block |
 | 18 | CAMARA APIs table | 7 | NV, SIM Swap, OTP SMS, KYC Match |
-| 19 | CAMARA ↔ Digicom SAS | 7 | API equivalence to /verify pipeline |
+| 19 | CAMARA ↔ Restlink SAS | 7 | API equivalence to /verify pipeline |
 | 20 | GSMA FASG index | 8 | FS.07–FS.36, SG.22, FF.09 |
 | 21 | FS.11 MAP categories | 8 | Cat 1 block; PSI/SAI deployment rules |
 | 22 | Strategy A vs B + standards | 8, 9 | Replace OTP vs protect OTP |
@@ -112,7 +112,7 @@ Readers who attended a deck presentation should use the slide number in the tabl
 
 ## 0.4 Document Structure Map
 
-The assembled Word document (`DigicomET_Silent_Auth_Proposal_v3.docx`) concatenates chapters in the order below. Page counts are **approximate** at standard A4 formatting (~500 words/page); actual pagination depends on table and diagram rendering.
+The assembled Word document (`Restlink_Silent_Auth_Proposal_v3.docx`) concatenates chapters in the order below. Page counts are **approximate** at standard A4 formatting (~500 words/page); actual pagination depends on table and diagram rendering.
 
 | Order | File | Chapter title | Approx. pages | Primary content |
 |------:|------|---------------|---------------:|-----------------|
@@ -120,7 +120,7 @@ The assembled Word document (`DigicomET_Silent_Auth_Proposal_v3.docx`) concatena
 | 1 | `01_executive_summary.md` | Executive Summary | 4–5 | Decision summary; dual strategy; KPIs |
 | 2 | `02_fraud_landscape.md` | Global Fraud Landscape | 6–8 | SS7, SIM swap, AIT, Ethiopia motivation |
 | 3 | `02b_case_studies_and_un_data.md` | Case Studies & UN/ITU Data | 8–10 | Narratives; international stats; e-Gov comparison |
-| 4 | `03_ethiopia_market.md` | Ethiopia Market Context | 6–8 | Ethio Telecom; Fayda; banks; Digicom role |
+| 4 | `03_ethiopia_market.md` | Ethiopia Market Context | 6–8 | Ethio Telecom; Fayda; banks; Restlink role |
 | 5 | `04_solution_overview.md` | Solution Overview | 5–6 | SAS architecture; Resolver/Verifier; fallback |
 | 6 | `05_message_flows.md` | Message Flows | 6–8 | ATI, PSI, SAI, S6a IDR/AIR; sequence diagrams |
 | 7 | `06_sas_fsm_timeouts.md` | FSM, Timeouts & Dialog Anchor | 4–5 | 300 ms / 2 s / 3 s budgets; fail-closed |
@@ -140,7 +140,7 @@ The assembled Word document (`DigicomET_Silent_Auth_Proposal_v3.docx`) concatena
 | *cited* | Figure or claim traceable to a named public source (year in text or footnote) |
 | *estimated* | Reasoned projection from partial public data or sector interviews |
 | *ILLUSTRATIVE* | Modelling scenario for discussion; not audited operator or government statistics |
-| **Strategy A** | Replace OTP with silent network verification (CAMARA NV / Digicom `/verify`) |
+| **Strategy A** | Replace OTP with silent network verification (CAMARA NV / Restlink `/verify`) |
 | **Strategy B** | Protect residual SMS OTP (Home Routing, SS7/Diameter/5G firewall per FS.11/19/36) |
 | **FALLBACK** | SAS outcome when evidence insufficient; integrator must step up (OTP, passkey, branch) |
 | **APPROVED** | SAS outcome when Resolver + Verifier evidence meets policy threshold |
@@ -153,16 +153,16 @@ The assembled Word document (`DigicomET_Silent_Auth_Proposal_v3.docx`) concatena
 | `docs/design/unified-identity-sms-security-architecture.md` | Strategy A + B unified architecture |
 | `docs/research/gsma-fs-index.md` | GSMA FASG document index |
 | `docs/research/sms-channel-protection.md` | SMS Home Routing and firewall research |
-| `slides/DigicomET_Silent_AuthProposal_v3.pptx` | 28-slide executive + technical deck |
+| `slides/Restlink_Silent_AuthProposal_v3.pptx` | 28-slide executive + technical deck |
 | `proposal/assets/fraud_stats.json` | Chart data; mix of *cited* and *estimated* |
 
 ---
 
 ## 0.5 Definitions and Roles
 
-### 0.5.1 Digicom-ET — VAS adapter (not an operator)
+### 0.5.1 Restlink — VAS adapter (not an operator)
 
-**Digicom-ET** is the **Value-Added Services integrator** proposing to deploy and operate the Silent Authentication Service **above** Ethio Telecom core network functions. Digicom:
+**Restlink** is the **Value-Added Services integrator** proposing to deploy and operate the Silent Authentication Service **above** Ethio Telecom core network functions. Restlink:
 
 | Attribute | Definition |
 |-----------|------------|
@@ -185,9 +185,9 @@ The **adapter pattern** preserves operator ownership of subscriber truth (HLR/HS
 | PGW/GGSN/PCRF/CGNAT | Resolver input: IP + port + timestamp → MSISDN |
 | SMSC | Fallback OTP only; unchanged commercial relationship with banks |
 | SS7/Diameter/5G border | FS.11/FS.19/FS.36 firewall; SMS Home Routing |
-| Partnership | Hosts or private-interconnects Digicom SAS; approves MAP/Diameter allow lists |
+| Partnership | Hosts or private-interconnects Restlink SAS; approves MAP/Diameter allow lists |
 
-Ethio Telecom is **not** asked to become an application security vendor. Digicom absorbs integrator onboarding, SLAs, and CAMARA contract normalisation.
+Ethio Telecom is **not** asked to become an application security vendor. Restlink absorbs integrator onboarding, SLAs, and CAMARA contract normalisation.
 
 ### 0.5.3 Government audience — digital public services and policy
 
@@ -223,7 +223,7 @@ NBE electronic payment rules and fraud reporting expectations align with **docum
 |------|------------|
 | **MSISDN** | Mobile station international subscriber directory number (E.164 phone number) |
 | **IMSI** | International mobile subscriber identity (SIM subscription identifier) |
-| **SAS** | Silent Authentication Service operated by Digicom-ET on operator infrastructure |
+| **SAS** | Silent Authentication Service operated by Restlink on operator infrastructure |
 | **Resolver** | Stage 1: map cellular IP:port:timestamp to MSISDN via PGW/PCRF/CGNAT |
 | **Verifier** | Stage 2: confirm subscriber live/reachable via PSI/SAI or Diameter S6a |
 | **CAMARA NV** | GSMA Open Gateway Number Verification API family |
@@ -264,7 +264,7 @@ Full glossary: Chapter 12.
 | # | Assumption | If false |
 |---|------------|----------|
 | A1 | Ethio Telecom provides Resolver feed (PGW, PCRF, or CGNAT) with ≤60 s freshness | Resolver coverage reduced; more FALLBACK |
-| A2 | Digicom SAS deployed inside operator trust domain | FS.11 Cat.1 compliance at risk |
+| A2 | Restlink SAS deployed inside operator trust domain | FS.11 Cat.1 compliance at risk |
 | A3 | Integrators implement fail-closed FALLBACK handling | Soft-pass would reintroduce fraud |
 | A4 | Strategy B progresses in parallel for residual OTP | OTP path remains interceptable |
 | A5 | Pilot integrators include ≥1 bank and ≥1 e-Gov portal | Cross-sector evidence for scale decision |
@@ -281,13 +281,13 @@ This proposal mixes **peer and industry research**, **regulator and development-
 | **estimated** | Directionally correct; validate against Ethiopian operator data before budgeting |
 | **ILLUSTRATIVE** | Scenario modelling (ROI, pilot KPIs, Ethiopian incident rates where public aggregation absent) |
 
-Digicom-ET does **not** represent *ILLUSTRATIVE* figures as Ethio Telecom management accounts or NBE supervised entity returns. Pilot contracts should replace illustrations with **measured baseline OTP volume, fraud tickets, and SMS unit cost** from each integrator.
+Restlink does **not** represent *ILLUSTRATIVE* figures as Ethio Telecom management accounts or NBE supervised entity returns. Pilot contracts should replace illustrations with **measured baseline OTP volume, fraud tickets, and SMS unit cost** from each integrator.
 
 ---
 
 ## 0.8 Confidentiality, Versioning, and Feedback
 
-This document is classified **Confidential — Government & Financial Sector**. Distribution is limited to named stakeholders in Ethio Telecom, MInT, NBE, pilot banks, and authorised Digicom-ET personnel. Technical annexes describing MAP global title allow lists or Resolver IP schemas may be **RESTRICTED** in separate operator-only supplements.
+This document is classified **Confidential — Government & Financial Sector**. Distribution is limited to named stakeholders in Ethio Telecom, MInT, NBE, pilot banks, and authorised Restlink personnel. Technical annexes describing MAP global title allow lists or Resolver IP schemas may be **RESTRICTED** in separate operator-only supplements.
 
 | Version | Date | Change summary |
 |---------|------|----------------|
@@ -299,7 +299,7 @@ Comments and red-line review should reference **chapter and section numbers** (e
 
 ## 0.9 Summary
 
-This proposal recommends **network-side silent authentication** as digital public infrastructure for Ethiopia: a **Digicom-ET VAS adapter** on **Ethio Telecom** truth sources, **CAMARA-aligned** toward integrators, **GSMA FS.11/19-compliant** toward the core, and **commercially neutral** toward operator SMS revenue. Read **Chapter 1** for the decision summary, **Chapter 2b** for international case evidence, **Chapters 4–6** for engineering truth, and **Chapters 10–11** for partnership and pilot terms. Use the **28-slide deck** for executive sessions and this document for **due diligence and implementation**.
+This proposal recommends **network-side silent authentication** as digital public infrastructure for Ethiopia: a **Restlink VAS adapter** on **Ethio Telecom** truth sources, **CAMARA-aligned** toward integrators, **GSMA FS.11/19-compliant** toward the core, and **commercially neutral** toward operator SMS revenue. Read **Chapter 1** for the decision summary, **Chapter 2b** for international case evidence, **Chapters 4–6** for engineering truth, and **Chapters 10–11** for partnership and pilot terms. Use the **28-slide deck** for executive sessions and this document for **due diligence and implementation**.
 
 ---
 

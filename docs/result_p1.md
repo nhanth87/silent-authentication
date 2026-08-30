@@ -2,7 +2,7 @@
 
 > Date: 2026-08-19
 > Scope: close the `result_p0.md` §2 production gaps to reach **P1**.
-> Package renamed `et.digicomet` → **`et.restlink`** (all sources + `pom.xml`).
+> Package renamed `et.restlink` → **`et.restlink`** (all sources + `pom.xml`).
 > Per instruction: Sa/STa/SWm/SWx Diameter are **not** wired into
 > `corsac-diameter`; the TS.43 path is implemented as an **SWx verifier RA
 > override under `src/.../restlink/sas/ras/swxverifier`**.
@@ -69,7 +69,7 @@ failing `WIFI_NOT_READY`.
     plus the 19 pre-existing FSM/policy/S6a tests.
 - ✅ `mvn clean package`: jar built (`silent-auth-sas-0.1.0-SNAPSHOT.jar`).
 - ✅ `python3 harness/run_hardness.py`: **24/24 gates pass** (H1–H14).
-- ✅ No `digicomet`/`Digicom` references remain (`grep` clean).
+- ✅ No `restlink`/`Restlink` references remain (`grep` clean).
 
 ---
 

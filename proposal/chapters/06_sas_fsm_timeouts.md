@@ -1,13 +1,13 @@
 # Chapter 6 — SAS Finite-State Machine, Timeouts, and Dialog Management
 
-**Digicom-ET Silent Authentication for Government & Banking**  
+**Restlink Silent Authentication for Government & Banking**  
 *Per-request state machine, latency budgets, and jSS7 integration*
 
 ---
 
 ## 6.1 Scope
 
-Every `POST /verify` request is processed by Digicom SAS as an independent, short-lived transaction governed by a **per-request finite-state machine (FSM)**. This chapter defines:
+Every `POST /verify` request is processed by Restlink SAS as an independent, short-lived transaction governed by a **per-request finite-state machine (FSM)**. This chapter defines:
 
 1. FSM states and transitions
 2. Timeout budgets and expiry behaviour
@@ -98,7 +98,7 @@ The 2 s MAP/Diameter budget aligns with the TCAP dialog timer convention and FS.
 ```mermaid
 sequenceDiagram
     participant BE as Bank Backend
-    participant SAS as Digicom SAS
+    participant SAS as Restlink SAS
     participant HLR as HLR/HSS
 
     BE->>SAS: POST /verify (t=0)
@@ -142,7 +142,7 @@ Each `/verify` request opens **at most one MAP dialog** in the VERIFYING state. 
 | SAS process shutdown | Abort all in-flight dialogs | Clean SIGTRAN teardown |
 | Duplicate response after terminal state | Ignore | Idempotent callback handling |
 
-**Dialog leak** is a production-critical failure mode: each leaked dialog consumes a TCAP dialogue ID and STP resources until the remote timer clears it. Digicom SAS binds every dialog to the FSM instance and the verify timer; timeout **always** invokes `abort()`.
+**Dialog leak** is a production-critical failure mode: each leaked dialog consumes a TCAP dialogue ID and STP resources until the remote timer clears it. Restlink SAS binds every dialog to the FSM instance and the verify timer; timeout **always** invokes `abort()`.
 
 ### 6.5.3 Dialog-to-FSM binding
 

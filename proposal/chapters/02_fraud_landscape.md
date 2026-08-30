@@ -1,6 +1,6 @@
 # Chapter 2 — Global and Regional Fraud Landscape
 
-**Proposal:** Digicom-ET Silent Authentication — Ethiopia  
+**Proposal:** Restlink Silent Authentication — Ethiopia  
 **Audience:** Ministry of Innovation and Technology, National Bank of Ethiopia, Ethio Telecom Security, Commercial Banks  
 **Version:** 1.0 — July 2026
 
@@ -100,11 +100,11 @@ sequenceDiagram
 | Diameter DEA on S6a/S6c | FS.19 | Block external ULR/SRR abuse |
 | 5G SEPP / N32 | FS.36; 3GPP TS 33.501 | Inter-PLMN control-plane protection |
 
-**Mitigation (Strategy A — replace OTP):** Silent auth **does not send SMS**; SS7 SMS intercept path is **out of scope** for sessions that receive network-side APPROVED verdict. This is the primary Digicom-ET value proposition.
+**Mitigation (Strategy A — replace OTP):** Silent auth **does not send SMS**; SS7 SMS intercept path is **out of scope** for sessions that receive network-side APPROVED verdict. This is the primary Restlink value proposition.
 
 ### 2.3.4 Regional relevance
 
-Ethiopia's international signalling footprint grows with roaming, international remittance SMS, and hub interconnections. **INSA** and operator security teams face the same FS.11 categorisation discipline as global peers: Category 1 operations such as **`AnyTimeInterrogation` on interconnect must be blocked**; Digicom SAS Verifier uses **intra-network PSI/SAI/IDR only**, consistent with FS.11 deployment invariants.
+Ethiopia's international signalling footprint grows with roaming, international remittance SMS, and hub interconnections. **INSA** and operator security teams face the same FS.11 categorisation discipline as global peers: Category 1 operations such as **`AnyTimeInterrogation` on interconnect must be blocked**; Restlink SAS Verifier uses **intra-network PSI/SAI/IDR only**, consistent with FS.11 deployment invariants.
 
 ---
 
@@ -138,7 +138,7 @@ After swap, the network **correctly** delivers SMS to the attacker's handset. Th
 | IMSI change timestamp | HLR/HSS profile | `< swapCooldown` → FALLBACK |
 | Auth vector freshness | SAI (Cat 3.2), AIR | Detect re-provisioning |
 
-CAMARA **SIM Swap** API exposes similar signals for integrators; Digicom SAS normalises them inside the operator trust domain.
+CAMARA **SIM Swap** API exposes similar signals for integrators; Restlink SAS normalises them inside the operator trust domain.
 
 ---
 
@@ -238,7 +238,7 @@ Botnet hits registration endpoint, sends 500k OTP SMS overnight. **Silent auth:*
 
 The global evidence base is unambiguous: **SMS OTP is necessary but insufficient** as a primary authentication control for high-value government and banking services. Published SS7 research (nine-in-ten interceptability), GSMA signalling security catalogues (**FS.11**, **FS.19**, **FS.36**, **SG.22**, **FF.09**), and mobile-money growth statistics (GSMA 1.75B accounts) define the risk envelope within which Ethiopia's digitisation proceeds.
 
-Digicom-ET Silent Authentication does not solve every row of the threat matrix alone; it eliminates the **SMS delivery dependency** for the majority of urban cellular-data sessions and pairs with operator-led **SMS Home Routing and firewall** programmes for the remainder. For Ethiopian policymakers, the question is not whether SMS OTP will be targeted—it already is globally—but whether **national digital identity and public finance** will rely on it exclusively as citizen volumes scale into the hundreds of millions of monthly authentications.
+Restlink Silent Authentication does not solve every row of the threat matrix alone; it eliminates the **SMS delivery dependency** for the majority of urban cellular-data sessions and pairs with operator-led **SMS Home Routing and firewall** programmes for the remainder. For Ethiopian policymakers, the question is not whether SMS OTP will be targeted—it already is globally—but whether **national digital identity and public finance** will rely on it exclusively as citizen volumes scale into the hundreds of millions of monthly authentications.
 
 ---
 
