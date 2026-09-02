@@ -122,7 +122,7 @@ The assembled Word document (`Restlink_Silent_Auth_Proposal_v3.docx`) concatenat
 | 3 | `02b_case_studies_and_un_data.md` | Case Studies & UN/ITU Data | 8–10 | Narratives; international stats; e-Gov comparison |
 | 4 | `03_ethiopia_market.md` | Ethiopia Market Context | 6–8 | Ethio Telecom; Fayda; banks; Restlink role |
 | 5 | `04_solution_overview.md` | Solution Overview | 5–6 | SAS architecture; Resolver/Verifier; fallback |
-| 6 | `05_message_flows.md` | Message Flows | 6–8 | ATI, PSI, SAI, S6a IDR/AIR; sequence diagrams |
+| 6 | `05_message_flows.md` | Message Flows | 6–8 | ATI, PSI, SAI, S6a ULR/ULA + Sh UDR; sequence diagrams |
 | 7 | `06_sas_fsm_timeouts.md` | FSM, Timeouts & Dialog Anchor | 4–5 | 300 ms / 2 s / 3 s budgets; fail-closed |
 | 8 | `07_camara_open_gateway.md` | CAMARA & Open Gateway | 5–6 | NV, SIM Swap, TS.43; API mapping |
 | 9 | `08_gsma_fasg_security.md` | GSMA FASG Security | 6–7 | FS.11 categories; Strategy B controls |
@@ -181,7 +181,7 @@ The **adapter pattern** preserves operator ownership of subscriber truth (HLR/HS
 
 | Function | Operator responsibility |
 |----------|-------------------------|
-| HLR/HSS/UDM | Subscriber profile; PSI/SAI/IDR/AIR responses |
+| HLR/HSS/UDM | Subscriber profile; PSI/SAI/ULR/Sh UDR responses |
 | PGW/GGSN/PCRF/CGNAT | Resolver input: IP + port + timestamp → MSISDN |
 | SMSC | Fallback OTP only; unchanged commercial relationship with banks |
 | SS7/Diameter/5G border | FS.11/FS.19/FS.36 firewall; SMS Home Routing |
@@ -243,7 +243,7 @@ Full glossary: Chapter 12.
 |------|-------------|
 | Silent authentication via **IP-matching** (cellular data bearer) | Phase 1 pilot core |
 | MAP verifier messages (PSI, SAI; ATI intra-network where policy permits) | 2G/3G footprint |
-| Diameter S6a verifier (IDR, AIR) | 4G/5G subscribers |
+| Diameter S6a verifier (ULR/ULA) + Sh UDR | 4G/5G subscribers |
 | CAMARA-aligned HTTPS API to integrators | NV primary; SIM Swap signal Phase 2 |
 | Fallback orchestration to operator SMS OTP | No alternate SMSC |
 | Dual-strategy documentation (Strategy A + B) | Complementary, not either/or |

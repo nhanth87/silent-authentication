@@ -26,8 +26,8 @@
 | **TS.43** | — | GSMA Technical Specification — Service Entitlement Configuration. Defines SIM-based silent auth via **EAP-AKA** (works on Wi-Fi). Phase 3. |
 | **MAP** | Mobile Application Part | SS7 application layer for 2G/3G network signalling (mobility, SMS, supplementary services). |
 | **Diameter** | — | AAA protocol used in LTE/5G core (e.g. S6a between MME/AMF and HSS/UDM). |
-| **S6a** | — | Diameter interface between MME and HSS; carries IDR/AIR for subscriber data and authentication info. |
-| **IDR / AIR** | Insert Subscriber Data Request / Authentication Information Request | Diameter operations used by Phase 2 Verifier (4G/5G attach path). |
+| **S6a** | — | Diameter interface between MME and HSS; carries ULR for location updates (Sh carries UDR for read-only data). |
+| **Sh UDR / SNR** | User Data Request / Subscribe-Notifications Request | Read-only subscriber-data read used for 4G/5G SIM-swap freshness. |
 | **MSISDN** | Mobile Station International Subscriber Directory Number | Public telephone number (E.164) associated with SIM subscription. |
 | **IMSI** | International Mobile Subscriber Identity | Private SIM identifier; never returned to mobile app — bank backend only. |
 | **OTP** | One-Time Password | SMS-delivered code; **fallback** when silent path unavailable. Billed via Ethio Telecom SMSC. |
@@ -89,7 +89,7 @@ Path: `service/sms/`
 
 | Module | Status | S6a messages |
 |--------|--------|--------------|
-| jDiameter client | **Open item** | IDR/IDA, AIR/AIA |
+| jDiameter client | **Open item** | ULR/ULA (S6a) + UDR/SNR (Sh) |
 | Parity requirement | Match MAP assurance outputs | subscriberReachable, authInfoAge |
 
 ---

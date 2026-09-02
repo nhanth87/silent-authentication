@@ -21,7 +21,7 @@ POST /verify { phoneNumber }            (CAMARA NV v2.1.0)
     → VerifyRequestEvent → VerifySbb    (SLEE event router)
       RESOLVING → Resolver RA    (ip:port:ts → MSISDN/IMSI, 300 ms)
       VERIFYING → MAP Verifier RA (PSI + SAI, never ATI, 2 s, abort on timeout)  — 2G/3G
-      VERIFYING → S6a Verifier RA (ULR/ULA + AIR/AIA, own HSS, 2 s)              — LTE/NR
+      VERIFYING → S6a Verifier RA (ULR/ULA, own HSS, 2 s; SIM-swap = read-only Sh UDR) — LTE/NR
       SCORING  → VerificationFsm (weighted assurance, fail-closed)
   ← { devicePhoneNumberVerified: boolean }
 ```
@@ -80,7 +80,7 @@ mints it from the CIBA/network-auth token).
 
 - `{"phoneNumber": "+251922222222"}` → `{"devicePhoneNumberVerified": false}` (MSISDN_MISMATCH)
 - `X-Sas-Amr: sms-otp` → 403 `NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`
-- `X-Sas-Access-Tech: LTE` → `true` (S6a ULR/ULA + AIR/AIA) when the resolver tuple matches the seed
+- `X-Sas-Access-Tech: LTE` → `true` (S6a ULR/ULA + Sh UDR) when the resolver tuple matches the seed
 - `X-Sas-Access-Tech: WIFI` → `false` (`WIFI_NOT_READY`, fail closed — TS.43/EAP-AKA is P1)
 
 ## Harness mapping

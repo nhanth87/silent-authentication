@@ -113,7 +113,7 @@ class VerificationFsmTest {
 
     /** Score 85: fresh bearer + reachable + non-swapped, location implausible. */
     private static VerificationEvidence noLocationEvidence() {
-        return VerificationEvidence.ok(true, true, false, "S6a-IDR+AIR");
+        return VerificationEvidence.ok(true, true, false, "S6A-ULR+Sh-UDR");
     }
 
     @Test

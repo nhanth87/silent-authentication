@@ -12,7 +12,7 @@ package et.restlink.sas.model;
  *
  * <ul>
  *   <li>{@link #GS_2G3G} — 2G/3G: MAP PSI/ATI/SAI (TS 29.002).</li>
- *   <li>{@link #LTE} / {@link #NR} — 4G/5G: Diameter S6a IDR/AIR (TS 29.272).</li>
+ *   <li>{@link #LTE} / {@link #NR} — 4G/5G: Diameter S6a ULR/ULA + read-only Sh UDR (TS 29.272 / 29.328/29.329).</li>
  *   <li>{@link #WIFI} — Wi-Fi: SIM/TS.43 EAP-AKA via SWm/SWx (TS 33.402), no cellular bearer.</li>
  * </ul>
  */

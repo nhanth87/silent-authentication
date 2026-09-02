@@ -14,7 +14,7 @@ import java.util.List;
 
 /**
  * Multi-realm + multi-application Diameter configuration (JSON) used by the
- * S6a (AIR/AIA) and SWx (MAR/MAA) verifiers.
+ * S6a (ULR/ULA + Sh UDR) and SWx (MAR/MAA) verifiers.
  *
  * <p>Keep this POJO Jackson-friendly: plain public fields are the source of
  * truth for {@code diameter.json} round-trips. {@link #validate()} is
@@ -45,7 +45,7 @@ public class DiameterConfig {
     /** Visited-PLMN digits (5–6 numeric, MCC+MNC) sent as Visited-PLMN-Id AVP. */
     public String visitedPlmn;
 
-    /** TS 29.272 IDR/IDA probe stage (HSS-initiated per spec — lab only). Default off. */
+    /** Legacy TS 29.272 IDR/IDA probe stage (removed from the verify path; kept for config back-compat only). */
     public Boolean s6aIdrProbeEnabled;
 
     /** TS 29.273 SAR/SAA server-name registration after MAR. Default on. */

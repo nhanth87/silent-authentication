@@ -281,6 +281,7 @@ public class VerifyResource {
         String srcIp = notBlank(srcIpHeader) ? srcIpHeader : "10.20.30.40";
         int srcPort = parseInt(srcPortHeader, 55555);
         AccessTech accessTech;
+        String claimedImsi = null;
 
         boolean validationEnabled = securityConfig.tokenValidationEnabled();
         String tokenKey = null;
@@ -296,6 +297,7 @@ public class VerifyResource {
             }
             hashed = null;
             accessTech = AccessTech.WIFI;
+            claimedImsi = operatorBinding.imsi();
             LOG.info("[SAS] /verify operator-token anchor applied (eap={})",
                     operatorBinding.eapMethod());
         } else {
@@ -407,7 +409,7 @@ public class VerifyResource {
         }
 
         VerifyRequestEvent event = new VerifyRequestEvent(reqId, srcIp, srcPort, ts,
-                claimed, null, accessTech,
+                claimed, claimedImsi, accessTech,
                 VerifyRequestDto.parse(riskClassHeader), tenant.tenantId());
 
         VerifyResult result = awaitResult(event, reqId);

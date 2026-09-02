@@ -33,7 +33,7 @@ Silent Authentication is a **two-stage, fail-closed** verification pipeline:
 | Stage | Question answered | Network element |
 |-------|-------------------|-----------------|
 | **Resolver** | Which MSISDN/IMSI owns cellular IP `A.B.C.D:port` at time *t*? | PGW/GGSN session binding, PCRF, or CGNAT log (operator-hosted) |
-| **Verifier** | Is that subscriber live, reachable, and not subject to a fresh SIM swap? | HLR/HSS via MAP (PSI/SAI) or Diameter S6a (IDR/AIR)—**intra-network only** |
+| **Verifier** | Is that subscriber live, reachable, and not subject to a fresh SIM swap? | HLR/HSS via MAP (PSI/SAI) or Diameter (S6a ULR/ULA + read-only Sh UDR)—**intra-network only** |
 
 The bank or e-Gov backend calls Restlink's SAS (`POST /verify` or CAMARA NV equivalent). Restlink resolves and verifies server-to-server; **MSISDN and IMSI are never exposed to the mobile application**. On success, the integrator receives `{match: true, assurance: HIGH}` and may approve login without OTP. On any missing evidence—Wi-Fi-only access, stale bearer binding, MAP timeout, recent IMSI change—the service returns **FALLBACK** and the integrator steps up to passkey, TOTP, or operator-billed SMS OTP.
 
@@ -101,7 +101,7 @@ The pilot and national rollout target measurable outcomes aligned with public-se
 | **Cost** | SMS OTP messages per 1,000 logins | −50% to −70% | Fallback remains operator-billed |
 | **Performance** | SAS p95 latency (APPROVED path) | ≤ 3 seconds | Resolver 300 ms + MAP/Diameter 2 s budget |
 | **Coverage** | Sessions eligible for silent path | ≥ 55% urban 4G (estimated) | Expands with TS.43 SIM method for Wi-Fi |
-| **Compliance** | Intra-network signalling only | 100% ATI/IDR sourced from home HLR/HSS | FS.11 Cat 1 audit |
+| **Compliance** | Intra-network signalling only | 100% PSI/Sh UDR sourced from home HLR/HSS | FS.11 Cat 1 audit |
 
 *Coverage percentages marked estimated pending Ethio Telecom bearer analytics.*
 

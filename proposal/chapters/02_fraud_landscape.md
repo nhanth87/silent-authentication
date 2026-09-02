@@ -104,7 +104,7 @@ sequenceDiagram
 
 ### 2.3.4 Regional relevance
 
-Ethiopia's international signalling footprint grows with roaming, international remittance SMS, and hub interconnections. **INSA** and operator security teams face the same FS.11 categorisation discipline as global peers: Category 1 operations such as **`AnyTimeInterrogation` on interconnect must be blocked**; Restlink SAS Verifier uses **intra-network PSI/SAI/IDR only**, consistent with FS.11 deployment invariants.
+Ethiopia's international signalling footprint grows with roaming, international remittance SMS, and hub interconnections. **INSA** and operator security teams face the same FS.11 categorisation discipline as global peers: Category 1 operations such as **`AnyTimeInterrogation` on interconnect must be blocked**; Restlink SAS Verifier uses **intra-network PSI/SAI (2G/3G) + Sh UDR (4G/5G) only**, consistent with FS.11 deployment invariants.
 
 ---
 
@@ -130,13 +130,13 @@ Once the attacker holds the active SIM, **all SMS OTP and many voice OTP flows c
 
 ### 2.4.2 Why SMS OTP fails after swap
 
-After swap, the network **correctly** delivers SMS to the attacker's handset. The authentication protocol **correctly** validates possession of the phone number. The failure is **binding identity to the legitimate citizen**, not message delivery. Silent auth addresses this by querying **IMSI change age**, authentication vector freshness (**SAI** / **AIR**), and subscriber state via **PSI/IDR**, downgrading assurance when a swap is fresh—forcing **FALLBACK** to passkey or in-branch recovery rather than silent approval.
+After swap, the network **correctly** delivers SMS to the attacker's handset. The authentication protocol **correctly** validates possession of the phone number. The failure is **binding identity to the legitimate citizen**, not message delivery. Silent auth addresses this by querying **IMSI change age**, SIM-swap freshness (**SAI**, 2G/3G) and subscriber state via **PSI** (2G/3G) / read-only **Sh UDR** (4G/5G), downgrading assurance when a swap is fresh—forcing **FALLBACK** to passkey or in-branch recovery rather than silent approval.
 
 | Signal | MAP / Diameter | Use in SAS policy |
 |--------|----------------|-------------------|
 | `lastUpdateLocation` age | PSI, ATI (intra-net) | Recent change → downgrade |
 | IMSI change timestamp | HLR/HSS profile | `< swapCooldown` → FALLBACK |
-| Auth vector freshness | SAI (Cat 3.2), AIR | Detect re-provisioning |
+| SIM-swap freshness | SAI (Cat 3.2) / read-only Sh UDR | Detect re-provisioning |
 
 CAMARA **SIM Swap** API exposes similar signals for integrators; Restlink SAS normalises them inside the operator trust domain.
 

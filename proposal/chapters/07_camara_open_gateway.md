@@ -60,10 +60,10 @@ The table below lists the CAMARA identity and fraud APIs relevant to Silent Auth
 
 | CAMARA API | Standard function | Primary use case (Ethiopia) | Restlink SAS mapping | Phase |
 |------------|-------------------|----------------------------|---------------------|-------|
-| **Number Verification (NV)** | Verify that a claimed MSISDN matches the device currently on a live cellular session | Bank app login, e-Gov citizen portal, payment step-up | **`POST /verify`** — Stage 1: IP Resolver (PGW/GGSN `IP:port:ts → MSISDN`); Stage 2: MAP/Diameter Verifier (PSI/IDR); Policy score → `{match, assurance}` | **Pilot (P1)** |
+| **Number Verification (NV)** | Verify that a claimed MSISDN matches the device currently on a live cellular session | Bank app login, e-Gov citizen portal, payment step-up | **`POST /verify`** — Stage 1: IP Resolver (PGW/GGSN `IP:port:ts → MSISDN`); Stage 2: MAP/Diameter Verifier (PSI/SAI + ULR/ULA + Sh UDR); Policy score → `{match, assurance}` | **Pilot (P1)** |
 | **Number Verification 2 (NV2)** | Extended verification including non-cellular bearers via SIM-bound credentials | Wi-Fi-only users, browser login without cellular data | **TS.43 EAP-AKA** entitlement path; SIM credential as root of trust (not bearer IP); extends SAS beyond IP-match | **Phase 3 (P3)** |
 | **GSMA TS.43** (Service Entitlement Configuration) | SIM-based silent authentication using EAP-AKA; works on Wi-Fi and cellular | Close the Wi-Fi fallback gap where IP-match fails | Entitlement server integration; same SAS Policy engine; shared SIM-swap and assurance logic with NV | **Phase 3 (P3)** |
-| **SIM Swap** | Detect recent SIM or number porting events | Downgrade assurance, force step-up MFA on high-value transactions | Verifier reads **`lastUpdateLocation` / IMSI-change age** via PSI (2G/3G) or IDR/AIR (4G/5G); SAI for auth-vector freshness (FS.11 Cat 3.2); exposed as assurance signal or standalone API | **Phase 2 (P2)** |
+| **SIM Swap** | Detect recent SIM or number porting events | Downgrade assurance, force step-up MFA on high-value transactions | Verifier reads **`lastUpdateLocation` / IMSI-change age** via PSI/SAI (2G/3G) or read-only Sh UDR (4G/5G) (FS.11 Cat 3.2); exposed as assurance signal or standalone API | **Phase 2 (P2)** |
 | **OTP SMS** | Deliver one-time password via operator SMS channel | Residual fallback when silent path unavailable (Wi-Fi-only without TS.43, stale binding, low assurance) | Restlink **orchestrates policy only** — triggers Ethio Telecom SMSC; **no SMS wholesale**; billing remains with operator; OTP traffic subject to Strategy B (Home Routing + signalling FW) | **Fallback (ongoing)** |
 | **Scam Signal** | Network-derived fraud/scam indicators associated with a number | Risk-based login denial, transaction friction | Input to SAS **Policy scoring** (`w_scam` weight); combine with assurance threshold; optional standalone CAMARA endpoint | **Phase 2 (P2)** |
 | **KYC Match** | Match application-provided identity attributes against operator KYC record | e-Gov onboarding, bank account opening, SIM-registration reconciliation | Optional SAS module querying operator KYC store; **not** on critical login path for P1; consent-gated attribute comparison | **Optional (P2+)** |
@@ -80,7 +80,7 @@ CAMARA Number Verification is the **primary app-facing surface** for Restlink Si
 | Stage | Input | Mechanism | Output |
 |-------|-------|-----------|--------|
 | **Resolver** | `{srcIP, srcPort, ts}` from bank backend (collected by mobile app on cellular data) | Query Ethio Telecom PGW/GGSN / PCRF / CGNAT session store | `{MSISDN, IMSI, bearerAge}` or `NOT_FOUND` |
-| **Verifier** | `{MSISDN, IMSI}` | Intra-network MAP (PSI, SAI) or Diameter S6a (IDR, AIR) to **own** HLR/HSS | `{reachable, notSimSwapped, locationPlausible}` |
+| **Verifier** | `{MSISDN, IMSI}` | Intra-network MAP (PSI, SAI) or Diameter (S6a ULR/ULA + Sh UDR) to **own** HLR/HSS | `{reachable, notSimSwapped, locationPlausible}` |
 | **Policy** | Resolver + Verifier evidence + optional `claimedMSISDN` | Weighted assurance score; fail-closed | `{match: true/false, assurance: HIGH/MEDIUM/LOW, reqId}` |
 
 **Deployment invariant:** MAP `AnyTimeInterrogation` (ATI) is GSMA FS.11 **Category 1** on interconnect — blocked at the operator border. Restlink SAS therefore runs **inside** Ethio Telecom and queries only the **own** HLR/HSS. No cross-operator ATI. PSI (Cat 2.1) is the preferred 2G/3G verifier message; ATI may be used intra-network where operator policy permits.
@@ -109,7 +109,7 @@ The **IP-matching** NV method requires an **active cellular data bearer**. In Et
 | Root of trust | PGW session binding (IP:port → MSISDN) | SIM EAP-AKA |
 | Bearer requirement | Cellular data | Cellular or Wi-Fi |
 | Resolver role | Mandatory | Not applicable (SIM proves MSISDN) |
-| Verifier role | PSI/IDR + SIM-swap checks | Same Verifier + entitlement server |
+| Verifier role | PSI/SAI + ULR/ULA + Sh UDR + SIM-swap checks | Same Verifier + entitlement server |
 | Fallback surface | OTP when no cellular binding | Smaller — Passkey/TOTP only when SIM method unavailable |
 
 Restlink roadmap positions TS.43 as **Phase 3**, after NV pilot stabilisation and SIM Swap signal integration. Both methods share the same SAS Policy engine and assurance thresholds.
@@ -124,7 +124,7 @@ SIM swap is the primary defeat mechanism for SMS OTP. Silent Authentication addr
 
 | Signal source | Protocol | Restlink use |
 |---------------|----------|-------------|
-| `lastUpdateLocation` age | PSI / IDR | If change within `swapCooldown` (configurable, e.g. 24–72 h) → downgrade assurance → `FALLBACK` |
+| `lastUpdateLocation` age | PSI / Sh UDR | If change within `swapCooldown` (configurable, e.g. 24–72 h) → downgrade assurance → `FALLBACK` |
 | IMSI change event | HSS subscription data | Hard block on HIGH-value flows |
 | Auth vector freshness | SAI (FS.11 Cat 3.2) | Detect recent re-authentication to new SIM |
 
@@ -153,9 +153,9 @@ Exposed to banks either embedded in `/verify` assurance or as a standalone CAMAR
 
 | CAMARA API | SAS component | Signalling (operator-internal) | App exposure |
 |------------|---------------|------------------------------|--------------|
-| Number Verification | Resolver + Verifier + Policy | PGW lookup; PSI/IDR; optional ATI intra-net | `POST /verify` |
+| Number Verification | Resolver + Verifier + Policy | PGW lookup; PSI/ULR; optional ATI intra-net | `POST /verify` |
 | NV2 / TS.43 | Entitlement adapter + Verifier + Policy | EAP-AKA; HSS | `POST /verify/v2` (planned) |
-| SIM Swap | Verifier + Policy | PSI, SAI, IDR | `/sim-swap` or embedded assurance |
+| SIM Swap | Verifier + Policy | PSI, SAI, Sh UDR | `/sim-swap` or embedded assurance |
 | OTP SMS | Policy (FALLBACK branch) | SMSC MT-SMS via Home Routing | Bank-triggered; Restlink policy token |
 | Scam Signal | Policy input | Operator fraud feed | `/scam-signal` or embedded |
 | KYC Match | KYC adapter | Operator KYC store | `/kyc-match` |

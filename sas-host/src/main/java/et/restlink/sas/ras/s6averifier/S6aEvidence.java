@@ -8,14 +8,11 @@
 package et.restlink.sas.ras.s6averifier;
 
 import com.mobius.software.telco.protocols.diameter.ResultCodes;
-import com.mobius.software.telco.protocols.diameter.primitives.s6a.AuthenticationInfo;
 import com.mobius.software.telco.protocols.diameter.primitives.s6a.SubscriberStatusEnum;
 import com.mobius.software.telco.protocols.diameter.primitives.s6a.SubscriptionData;
 
 import et.restlink.sas.model.FallbackReason;
 import et.restlink.sas.model.VerificationEvidence;
-
-import java.util.List;
 
 /**
  * Pure evidence mapping for S6a answers (TS 29.272). Static + primitive so it
@@ -32,13 +29,15 @@ import java.util.List;
  *   <li>ULA (316, TS 29.272 §5.2.2.2/§7.2.4): success ⇒ reachable +
  *       location-plausible; Subscriber-Status OPERATOR_DETERMINED_BARRING
  *       (§7.3.30) ⇒ fail-closed.</li>
- *   <li>AIA (318, §5.3.2/§7.2.6): success with ≥1 EPS vector in
- *       Authentication-Info (§7.3.6) ⇒ fresh HSS-minted credential set ⇒
- *       notSimSwapped; success with zero vectors ⇒ fail-closed (missing
- *       evidence never soft-passes).</li>
- *   <li>IDA probe (319, §5.2.2.4/§7.2.5): pass-through — must succeed but
- *       contributes no boolean on its own.</li>
+ *   <li>UDR/SNR (TS 29.328/29.329 Sh, read-only): a subscriber-data read that
+ *       carries the current MSISDN↔IMSI binding age ⇒ notSimSwapped. No EPS
+ *       vectors are minted and no attach/location update is triggered.</li>
  * </ul>
+ *
+ * <p><strong>AIR/AIA and IDR/IDA are deliberately absent from the verify
+ * path.</strong> AIR consumes a real EPS vector set and advances the AuC SQN
+ * (risk of MAC-failure re-sync on the live USIM); IDR is an HSS→MME push, the
+ * wrong direction for a verifier query.</p>
  */
 public final class S6aEvidence {
 
@@ -72,33 +71,25 @@ public final class S6aEvidence {
     }
 
     /**
-     * AIA stage outcome: a non-empty Authentication-Info vector set proves the
-     * HSS minted fresh credentials now ⇒ credential live / not SIM-swapped.
+     * Read-only Sh UDR/SNR stage outcome (TS 29.328/29.329): a subscriber-data
+     * read carrying the current MSISDN↔IMSI binding age. {@code bindingStable}
+     * means the resolved IMSI matches the HSS's current binding and is older
+     * than the SIM-swap cooldown ⇒ not SIM-swapped. No EPS vectors are minted
+     * and no attach/location update is triggered — unlike AIR.
      */
-    public static VerificationEvidence fromAia(long resultCode,
+    public static VerificationEvidence fromUdr(long resultCode,
                                                Long experimentalResultCode,
-                                               int vectorCount) {
+                                               boolean bindingStable) {
         if (!isSuccess(resultCode, experimentalResultCode)) {
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A-AIA");
+            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "Sh-UDR");
         }
-        if (vectorCount <= 0) {
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A-AIA-empty");
-        }
-        return VerificationEvidence.ok(false, true, false, "S6A-AIR");
-    }
-
-    /** IDR-probe stage outcome: must succeed; carries no boolean contribution. */
-    public static VerificationEvidence fromIda(long resultCode, Long experimentalResultCode) {
-        if (!isSuccess(resultCode, experimentalResultCode)) {
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A-IDR");
-        }
-        return VerificationEvidence.ok(false, false, false, "S6A-IDR");
+        return VerificationEvidence.ok(false, bindingStable, false, "Sh-UDR");
     }
 
     /**
      * Merge two passed stages under one protocol audit tag. Each stage
      * contributes its own evidence dimension (ULR ⇒ reachable/plausible,
-     * AIR ⇒ notSimSwapped), so dimensions are OR-ed while any stage failure
+     * UDR ⇒ notSimSwapped), so dimensions are OR-ed while any stage failure
      * propagates unchanged.
      */
     public static VerificationEvidence combine(VerificationEvidence first,
@@ -115,21 +106,6 @@ public final class S6aEvidence {
                 first.notSimSwapped() || second.notSimSwapped(),
                 first.locationPlausible() || second.locationPlausible(),
                 protocol);
-    }
-
-    /** E-UTRAN + UTRAN + GERAN vector count of Authentication-Info (null-safe). */
-    public static int vectorCount(AuthenticationInfo authInfo) {
-        if (authInfo == null) {
-            return 0;
-        }
-        int count = 0;
-        List<?> eutran = authInfo.getEUTRANVector();
-        List<?> utran = authInfo.getUTRANVector();
-        List<?> geran = authInfo.getGERANVector();
-        count += eutran == null ? 0 : eutran.size();
-        count += utran == null ? 0 : utran.size();
-        count += geran == null ? 0 : geran.size();
-        return count;
     }
 
     /** True when Subscription-Data bars the subscriber (OPERATOR_DETERMINED_BARRING). */

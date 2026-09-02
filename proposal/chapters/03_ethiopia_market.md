@@ -58,7 +58,7 @@ flowchart TB
 | Network function | Silent auth usage | Owner |
 |------------------|-------------------|-------|
 | PGW/GGSN accounting, PCRF | Resolver: IP+port+ts → MSISDN | Ethio Telecom |
-| HLR/HSS | Verifier: PSI/SAI/IDR/AIR intra-network | Ethio Telecom |
+| HLR/HSS | Verifier: PSI/SAI (2G/3G) + ULR/ULA + Sh UDR (4G/5G) intra-network | Ethio Telecom |
 | SMSC | **Fallback OTP only**; unchanged billing | Ethio Telecom |
 | SS7/Diameter firewall | Protect residual SMS (FS.11/FS.19) | Ethio Telecom (+ vendors) |
 
@@ -241,8 +241,8 @@ Future optional APIs (**SIM Swap**, **KYC Match**, **Number Recycling**) share t
 
 Restlink engineering adheres to **FS.11** interconnect monitoring categories:
 
-- **ATI blocked on interconnect** — Verifier uses intra-network PSI/IDR paths.  
-- **SAI / AIR** used with Category 3.2 time/location policy for SIM-swap freshness.  
+- **ATI blocked on interconnect** — Verifier uses intra-network PSI (2G/3G) / Sh UDR (4G/5G) paths.  
+- **SAI / read-only Sh UDR** used with Category 3.2 time/location policy for SIM-swap freshness.  
 - **No dialog leaks** — MAP TC timers bounded; SAS aborts hung queries.  
 
 Strategy B controls (SMS Home Routing, SS7 firewall) remain **operator-led**; Restlink participates in joint runbooks for fallback OTP protection per **SG.22**.

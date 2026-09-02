@@ -27,7 +27,7 @@ Full narrative: [`lesson_learn.md`](lesson_learn.md).
 | 3 | **TS.43 entitlement server** | B | ⚠️ | HMAC-signed single-use tokens (TTL≤300s clamp), CIBA `operatortoken:` accepted on /verify (whitelist EAP-AKA/AKA'). **Remaining:** AAA/EAP attestation for `/entitlement/issue` (B1) — currently trusts caller assertions; mitigated by SWx re-verify |
 | 4 | **EAP-AKA UE path** (SWm termination / 3GPP AAA) | B | ⚠️ | Unchanged by design: SAS consumes SWx result; actual EAP-AKA runs UE↔AAA operator-side. Proven end-to-end against the HSS simulator (MAR/SAR) |
 | 5 | **Real SWx Diameter transport** (corsac-diameter) | B | ✅ | `CorsacSwxVerifierBackend`: MAR/MAA primary + SAR/SAA registration (+ PPR probe, config-gated), per-Session-Id correlation (no broadcast), fail-closed result-code mapping, Visited-PLMN configurable + TS 24.301 encoding. **E2E-proven vs `sas-diameter-testapp`** |
-| 6 | **Real S6a Diameter transport** (corsac-diameter) | A (LTE) | ✅ | `CorsacS6aVerifierBackend`: ULR/ULA → AIR/AIA (vector count parsed, empty ⇒ fail-closed) → IDR/IDA probe (config-gated). One session per stage, shared 2 s budget, abort on timeout. **E2E-proven vs `sas-diameter-testapp`** |
+| 6 | **Real S6a Diameter transport** (corsac-diameter) | A (LTE) | ✅ | `CorsacS6aVerifierBackend`: ULR/ULA (316) liveness + location, **no AIR/IDR on the verify path**. SIM-swap freshness = read-only Sh UDR/SNR (open item — in-memory stand-in today). One session per stage, shared 2 s budget, abort on timeout. **E2E-proven vs `sas-diameter-testapp`** |
 | 7 | **`/retrieve-phone-number`** (CAMARA NV) | — | ✅ | CAMARA-aligned: primary `GET /number-verification/v2/device-phone-number` (+ deprecated aliases), spec error contract {status,code,message}, user-bound token compare, TTL≤300s, opt-in assurance enrichment. Spec snapshot + gap analysis: `docs/research/camara/` |
 | 8 | **Assurance weights + per-risk thresholds** | A+B | ✅ | `AssurancePolicy.fromRuntime(SasAdminRuntimeConfig::read)` reads `sas.assurance.w-*` + `sas.assurance.threshold-*` from the admin KV store (hard-fail misconfig ⇒ defaults wholesale). RiskClass LOGIN/TRANSFER/HIGH_VALUE plumbed VerifyResource(header X-Sas-Risk-Class)→event→SBB→FSM (unknown ⇒ LOGIN) |
 | 9 | **jSS7 MAP transport live test** | A (2G/3G) | ✅(sim) | New module `sas-jss7-testapp/`: simulated home HLR answering PSI v3 + SAI v3 over real loopback SCTP (ATI logged+dropped, FS.11). LiveLoopTest 5 green in-process + cross-process smoke proven. Still pending: exercise against a REAL reachable STP/HLR |
@@ -48,10 +48,10 @@ Loop: curl → SAS (`s6a=corsac`, `swx=corsac`) → `sas-diameter-testapp` HSS/A
 
 | Scenario | Signalling seen | Result |
 |---|---|---|
-| LTE happy path | ULR→ULA 2001, AIR→AIA vectors=1 | `true` |
+| LTE happy path | ULR→ULA 2001 (attached, granted) | `true` |
 | Subscriber detached | ULR→ULA 5421 | `false` (fail-closed) |
-| Zero auth vectors | AIR→AIA 2001, empty set | `false` (fail-closed) |
-| Recover after reset | ULA/AIA 2001 again | `true` |
+| Barred subscriber | ULA 2001 + Subscriber-Status ODB | `false` (fail-closed) |
+| Recover after reset | ULA 2001 again | `true` |
 | Wi-Fi path w/ signed operator token | MAR→MAA 2001 items=1, SAR→SAA 2001 | `true` |
 | Entitlement token replay | second use of same token | `401` |
 
@@ -77,8 +77,7 @@ Lab caveats found during bring-up (documented, deliberate):
   command packages need an anchor-class load before `Package.getPackage`.
 - The lab HSS serves one inbound SCTP association per listen port → SWx dials its own
   port via `sas.transport.diameter.swx.peer-port`.
-- IDR/PPR probes are config-gated OFF by default (HSS-initiated directions exercised as
-  own-HSS active probes only).
+- IDR/AIR are absent from the verify path (IDR is an HSS→MME push, AIR consumes EPS vectors). SWx PPR probe stays config-gated OFF by default. The read-only Sh UDR freshness stage is an open item (in-memory stand-in today).
 - CAMARA hardening now on bearer path: jti-derived idempotency key, single-use token
   consumption, per-endpoint scopes, E.164/SHA-256 input validation, amr fail-closed.
 

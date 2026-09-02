@@ -90,7 +90,7 @@ Given a resolved `MSISDN` / `IMSI`, the Verifier answers: *is this subscriber li
 | Access technology | Primary messages | GSMA / 3GPP reference |
 |-------------------|------------------|----------------------|
 | 2G / 3G | **PSI** (ProvideSubscriberInfo), **ATI** (AnyTimeInterrogation), **SAI** (SendAuthenticationInfo) | FS.11 MAP categories |
-| 4G / 5G | **IDR/IDA**, **AIR/AIA** (Diameter S6a) | FS.19 |
+| 4G / 5G | **ULR/ULA** (S6a) + **Sh UDR/SNR** (read-only) | FS.19, TS 29.328/29.329 |
 
 | Verifier output | Meaning |
 |-----------------|---------|
@@ -180,7 +180,7 @@ After both stages succeed, the Policy engine computes a weighted assurance score
 
 ```
 score =  w1 × ipBindingFresh(bearerAge)       // PGW binding age < N seconds
-       + w2 × subscriberReachable             // PSI / IDR says attached
+       + w2 × subscriberReachable             // PSI (2G/3G) / ULR (4G/5G) says attached
        + w3 × notSimSwapped(lastImsiChange)   // age > swapCooldown
        + w4 × locationPlausible               // VLR / MME vs expected region
 ```
@@ -188,7 +188,7 @@ score =  w1 × ipBindingFresh(bearerAge)       // PGW binding age < N seconds
 | Factor | Source | Typical weight driver |
 |--------|--------|----------------------|
 | `ipBindingFresh` | Resolver `bearerAge` | High for login; critical for money transfer |
-| `subscriberReachable` | PSI / ATI / IDR response | Mandatory for APPROVED |
+| `subscriberReachable` | PSI / ULR response | Mandatory for APPROVED |
 | `notSimSwapped` | SAI / `lastUpdateLocation` age | Downgrade or FALLBACK if swap < cooldown |
 | `locationPlausible` | VLR / MME address vs policy | Optional geo-fence for e-Gov services |
 

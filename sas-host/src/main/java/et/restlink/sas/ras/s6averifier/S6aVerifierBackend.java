@@ -18,7 +18,7 @@ import java.util.concurrent.CompletableFuture;
  * <p><strong>Design invariants (AGENTS.md §3/§4):</strong></p>
  * <ul>
  *   <li>{@link #NO_INTERCONNECT_S6A} — the verifier targets the operator's OWN
- *       HSS only (AIR/IDR/ULR over S6a is intra-network; SEPP filters
+ *       HSS only (ULR over S6a + read-only Sh UDR is intra-network; SEPP filters
  *       cross-PLMN probes on N32, gate H12).</li>
  *   <li>{@link #NEVER_IP_TO_MSISDN} — S6a verifies a resolved MSISDN/IMSI; it
  *       never resolves an IP address into a subscriber identity (the Resolver's

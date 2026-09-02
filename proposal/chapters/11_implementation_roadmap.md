@@ -76,7 +76,7 @@ gantt
 ## 11.3 Phase 2 — Diameter S6a + CAMARA SIM Swap
 
 **Duration:** Months 7–11  
-**Objective:** Extend verification to **4G/5G** subscribers via Diameter S6a (IDR/AIR); expose **CAMARA SIM Swap** API for high-value and e-Gov disbursement flows.
+**Objective:** Extend verification to **4G/5G** subscribers via Diameter S6a (ULR/ULA) + read-only Sh UDR; expose **CAMARA SIM Swap** API for high-value and e-Gov disbursement flows.
 
 ### 11.3.1 Scope
 
@@ -92,7 +92,7 @@ gantt
 
 | # | Deliverable | Acceptance criterion |
 |---|-------------|---------------------|
-| D2.1 | Diameter S6a Verifier (IDR/AIR) | P95 ≤ 2s; parity with MAP assurance outputs |
+| D2.1 | Diameter S6a Verifier (ULR/ULA + Sh UDR) | P95 ≤ 2s; parity with MAP assurance outputs |
 | D2.2 | Access-technology auto-selection | Correct MAP vs Diameter path per serving node |
 | D2.3 | CAMARA SIM Swap API v0.5+ adapter | GSMA Open Gateway conformance self-test |
 | D2.4 | Shared identity-policy store (SAS + operator FW) | Rate limits coherent across silent + OTP paths |

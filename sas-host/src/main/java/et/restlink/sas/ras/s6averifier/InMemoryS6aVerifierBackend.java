@@ -17,13 +17,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Pilot S6a verifier: a seeded HSS table simulating the ULR/ULA (attachment
- * liveness, op 316) and AIR/AIA (SIM-swap freshness, op 318) behaviours of
- * TS 29.272. Never uses ATI and never maps IP → MSISDN.
+ * liveness, op 316) plus a **read-only Sh UDR/SNR read** (TS 29.328/29.329) for
+ * SIM-swap freshness — the HSS's current MSISDN↔IMSI binding age. Never uses
+ * ATI, never maps IP → MSISDN, and never mints/consumes EPS vectors (no AIR).
  *
  * <p>Fail-closed outcomes exercised by this backend:</p>
  * <ul>
  *   <li>missing / purged record → {@link FallbackReason#PURGED} (PUR/PUA, 321).</li>
- *   <li>resolved IMSI ≠ HSS IMSI → {@link FallbackReason#SIM_SWAP_SUSPECT} (AIR, 318).</li>
+ *   <li>resolved IMSI ≠ HSS IMSI → {@link FallbackReason#SIM_SWAP_SUSPECT} (read-only
+ *       UDR binding compare).</li>
  *   <li>fresh IMSI change (&lt; {@link #SWAP_COOLDOWN_MS}) → SIM-swap suspect.</li>
  *   <li>non-LTE/NR access tech → {@link FallbackReason#VERIFY_ERROR} (this backend
  *       only speaks S6a; Wi-Fi rides SWm/SWx per TS 33.402).</li>
@@ -82,17 +84,19 @@ public final class InMemoryS6aVerifierBackend implements S6aVerifierBackend {
                 return VerificationEvidence.fail(FallbackReason.PURGED, "S6A-ULR");
             }
             if (imsi != null && !imsi.equals(r.imsi())) {
-                // Resolved IMSI ≠ HSS IMSI ⇒ SIM-swap suspect (AIR/AIA, 318).
-                return VerificationEvidence.fail(FallbackReason.SIM_SWAP_SUSPECT, "S6A-AIR");
+                // Resolved IMSI ≠ HSS IMSI ⇒ SIM-swap suspect (read-only UDR binding
+                // compare, no AIR).
+                return VerificationEvidence.fail(FallbackReason.SIM_SWAP_SUSPECT, "Sh-UDR");
             }
 
-            // ULR/ULA (316): attached + registered ⇒ live.
+            // ULR/ULA (316): attached + registered ⇒ live (attachment liveness).
             boolean reachable = r.registered();
-            // AIR/AIA (318): EPS identity stable beyond the cooldown ⇒ no swap.
+            // Sh UDR/SNR (TS 29.328/29.329): binding age ≥ cooldown ⇒ no swap. This is
+            // a read-only subscriber-data read — no EPS vector is minted/consumed.
             boolean notSimSwapped = (nowMs - r.lastImsiChangeEpochMs()) >= SWAP_COOLDOWN_MS;
             boolean locationPlausible = expectedRegion.equalsIgnoreCase(r.mmeRegion());
             return VerificationEvidence.ok(reachable, notSimSwapped, locationPlausible,
-                    "S6A-ULR+AIR");
+                    "S6A-ULR+Sh-UDR");
         });
     }
 }

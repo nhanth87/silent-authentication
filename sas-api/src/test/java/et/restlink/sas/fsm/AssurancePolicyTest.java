@@ -110,7 +110,7 @@ class AssurancePolicyTest {
         // Fresh bearer + reachable only: 0.4*1.0 + 0.2 = 0.6 → 60 ≥ 60 ⇒ HIGH.
         int score = custom.score(
                 ResolverResult.bound("+251911111111", "655010000000001", 10_000L),
-                VerificationEvidence.ok(true, false, false, "S6a-IDR"));
+                VerificationEvidence.ok(true, false, false, "S6A-ULR"));
         assertEquals(60, score);
         assertEquals(AssuranceLevel.HIGH,
                 custom.assuranceFor(score, AssurancePolicy.RiskClass.LOGIN));

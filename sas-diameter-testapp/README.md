@@ -15,8 +15,8 @@ R&D lab tooling only — never production.
 | App | Command | Code | Answer | Spec |
 |-----|---------|------|--------|------|
 | S6a  | Update-Location-Request    | 316 | ULA: success + Subscription-Data (`Subscriber-Status`), or error result-code | TS 29.272 §5.2.2.2 |
-| S6a  | Authentication-Information | 318 | AIA: fabricated E-UTRAN vectors (RAND/XRES/AUTN/K_ASME), or empty on zero-vector state | TS 29.272 §5.3.2 |
-| S6a  | Insert-Subscriber-Data     | 319 | IDA ack | TS 29.272 §5.2.2.4 |
+| S6a  | Authentication-Information | 318 | AIA: fabricated E-UTRAN vectors — **legacy, SAS no longer sends AIR** (read-only Sh UDR is the freshness path) | TS 29.272 §5.3.2 |
+| S6a  | Insert-Subscriber-Data     | 319 | IDA ack — **legacy, HSS-initiated push, not on the verify path** | TS 29.272 §5.2.2.4 |
 | SWx  | Multimedia-Auth            | —   | MAA: EAP-AKA SIP-Auth-Data-Item(s) honouring the same vector-count state; stamps `lastEapAuthSuccess` | TS 29.273 §6.2.2 |
 | SWx  | Server-Assignment          | —   | SAA ack + Non-3GPP-User-Data + 3GPP-AAAServerName | TS 29.273 §6.3.2 |
 | SWx  | Push-Profile               | —   | PPA ack | TS 29.273 §6.6.2 |
@@ -32,7 +32,7 @@ Result-Code:
 | unknown user                  | `5001` DIAMETER_ERROR_USER_UNKNOWN (TS 29.272 §7.2.6) |
 | detached UE                   | `5421` DIAMETER_ERROR_UNKNOWN_EPS_SUBSCRIPTION / USER_NO_NON_3GPP_SUBSCRIPTION |
 | barred                        | `2001` with `Subscriber-Status = OPERATOR_DETERMINED_BARRING` → SAS fails closed |
-| `authVectorsAvailable = 0`    | `2001` but empty vector set → SAS fails closed (AIA-empty / MAR-empty) |
+| `authVectorsAvailable = 0`    | `2001` but empty EAP-AKA vector set → SAS fails closed (MAR-empty; S6a freshness is Sh UDR, not AIR) |
 | Gx framed IP without binding  | `5030` DIAMETER_USER_UNKNOWN (RFC 4006 §8.4, referenced by TS 29.212) |
 | handler exception             | `3002` DIAMETER_UNABLE_TO_DELIVER (fail-safe, never crashes) |
 
@@ -155,15 +155,42 @@ src/main/java/et/restlink/testapp/
 ├── diameter/
 │   ├── HssDiameterServer.java# corsac stack, listening link, provider wiring
 │   ├── Answers.java          # result codes, random material, logging helpers
-│   ├── S6aHandler.java       # ULR/AIR/IDR server listener (TS 29.272)
+│   ├── S6aHandler.java       # ULR server listener (TS 29.272)
 │   ├── SwxHandler.java       # MAR/SAR/PPR server listener (TS 29.273)
 │   └── GxHandler.java        # CCR binding lookups → CCA + Subscription-Id
-└── web/
-    ├── ControlWebServer.java # JDK HttpServer endpoints (+ /api/binding)
-    ├── Pages.java            # single-page UI (vanilla JS, ET-flag accents)
-    └── Json.java             # minimal JSON escape/parse (no dependency)
+├── web/
+│   ├── ControlWebServer.java # JDK HttpServer endpoints (+ /api/binding)
+│   ├── Pages.java            # single-page UI (vanilla JS, ET-flag accents)
+│   └── Json.java             # minimal JSON escape/parse (no dependency)
+└── eap/
+    └── EapAkaDemoPeer.java   # EAP-AKA peer: simulated EAP -> /entitlement/issue -> /verify
 ```
 
+## EAP-AKA demo peer (POC leg)
+
+`EapAkaDemoPeer` emulates the operator 3GPP AAA on the entitlement leg so the whole
+EAP-AKA → SWx → token → verify loop can be driven end-to-end in the lab. It does **not**
+speak Diameter — the SWx leg is exercised by the SAS's own corsac SWx client against this
+simulator. The peer covers the *shape* of EAP-AKA plus the SAS entitlement + redeem calls:
+
+1. prints a simulated EAP-AKA success (fabricated RAND/AUTN/RES — no SIM crypto);
+2. `POST /entitlement/issue` on the SAS (optionally with the AAA attestation HMAC);
+3. `POST /verify` with `Authorization: Bearer operatortoken:<tk>` to prove single-use.
+
+Run it against a live SAS (build the jar first, then):
+
+```bash
+java -cp target/sas-diameter-testapp.jar et.restlink.testapp.eap.EapAkaDemoPeer \
+     --sas-url http://127.0.0.1:8085 --api-key lab \
+     --msisdn +251911111111 --imsi 655010000000001 \
+     --eap-method EAP-AKA [--attestation-secret shared-secret] [--no-redeem]
+```
+
+The redeem step returns `devicePhoneNumberVerified:true` only when the SAS Wi-Fi SWx
+verifier passes — i.e. it has a seeded Wi-Fi subscriber (`InMemorySwxVerifierBackend`), or
+`--sas.transport.swx=corsac` is pointed at this simulator's SWx service. Wire protocol:
+`docs/design/ts43-eapaka-wire-protocol.md`; operator contract:
+`docs/design/ts43-entitlement-integration-contract.md`.
 ## License
 
 Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).

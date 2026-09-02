@@ -75,7 +75,7 @@ class VerificationFsmEnrichmentTest {
     void lowAssuranceFallbackCarriesScoreBelowThreshold() {
         ResolverResult stale = ResolverResult.bound("+251911111111", "655010000000001",
                 AssurancePolicy.STALE_BEARER_MS + 1L);
-        VerificationEvidence evidence = VerificationEvidence.ok(true, true, false, "S6a-IDR+AIR");
+        VerificationEvidence evidence = VerificationEvidence.ok(true, true, false, "S6A-ULR+Sh-UDR");
         VerifyResult r = fsm.decide("enr-3", stale, evidence, null);
         assertFalse(r.match());
         assertEquals(FallbackReason.LOW_ASSURANCE, r.fallbackReason());

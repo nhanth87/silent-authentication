@@ -1,6 +1,6 @@
 # Silent Auth SAS — E2E Test Flow
 
-Date: 2026-08-23 · Updated: 2026-08-23 (CAMARA-aligned endpoints + PCRF Sd scenario)
+Date: 2026-08-23 · Updated: 2026-09-01 (TS.43 = operator REST CAMARA NV + Sh UDR; SWx leg = operator AAA↔HSS)
 Scope: web → `POST /verify` → SAS → `sas-diameter-testapp`
 
 > CAMARA alignment: primary endpoints are now under `/number-verification/v2`
@@ -9,12 +9,19 @@ Scope: web → `POST /verify` → SAS → `sas-diameter-testapp`
 > (score/factors) is OPT-IN via header `X-Sas-Assurance-Detail: true`.
 > Spec snapshot + gap analysis: `docs/research/camara/`.
 
+> **Hai track khác nhau (đừng nhập nhằng):** **S6a + Gx** là track *cellular*
+> (4G/5G): SAS mở ULR/ULA tới HSS, resolver Gx tra binding; SIM-swap freshness =
+> **Sh UDR/SNR** read-only. **SWx** là chân **operator** của track *TS.43 Wi-Fi*
+> (3GPP AAA ↔ HSS, EAP-AKA) — SAS **không tự mở SWx trong production**; nó verify
+> qua **operator REST (CAMARA NV / SIM Swap)**. Lab `swxverifier` RA + instance SWx
+> :3869 chỉ đóng thế chân operator để chạy loop local.
+
 ```
-curl/browser          SAS (Quarkus :8085)         sas-diameter-testapp (HSS/AAA giả lập)
-     │                        │                        ├── instance 1: SCTP :3868 = S6a (ULR/AIR/IDR)
-     │  POST /verify          │   Diameter (SCTP)      ├── instance 2: SCTP :3869 = SWx (MAR/SAR/PPR)
-     ├───────────────────────►│───────────────────────►├── instance 3: SCTP :3870 = Gx  (CCR-I binding)
-     │  {verified, assurance?}│◄── ULA/AIA/SAA/MAA/CCA─┤
+curl/browser          SAS (Quarkus :8085)         sas-diameter-testapp (operator simulator)
+     │                        │                        ├── instance 1: SCTP :3868 = S6a (ULR/ULA) — cellular
+     │  POST /verify          │   Diameter (SCTP)      ├── instance 2: SCTP :3869 = SWx (MAR/MAA, SAR/SAA) — operator AAA↔HSS (TS.43 Wi-Fi)
+     ├───────────────────────►│───────────────────────►├── instance 3: SCTP :3870 = Gx  (CCR-I binding) — resolver
+     │  {verified, assurance?}│◄── ULA · MAA/SAA · CCA─┤
      │◄───────────────────────┤                        │  Control UI: /api/messages,
      │                        │                        │  /api/subscriber, /api/binding
 ```
@@ -22,30 +29,37 @@ curl/browser          SAS (Quarkus :8085)         sas-diameter-testapp (HSS/AAA 
 ## 0. Yêu cầu môi trường
 
 - JDK zulu-25: `$HOME/.local/share/mise/installs/java/zulu-25`
-- Build luôn dùng: `JAVA_HOME=$HOME/.local/share/mise/installs/java/zulu-25 /usr/bin/mvn`
-  (PATH `mvn` là mise shim zulu-8 — KHÔNG dùng trực tiếp)
-- Chạy jar: `$HOME/.local/share/mise/installs/java/zulu-25/bin/java -jar …`
+- Build luôn dùng `/usr/bin/mvn` (PATH `mvn` là mise shim zulu-8 — KHÔNG dùng trực tiếp)
+- Thiết lập một lần rồi `java`/`javac` đều là zulu-25:
+  ```bash
+  export JAVA_HOME="$HOME/.local/share/mise/installs/java/zulu-25"
+  export PATH="$JAVA_HOME/bin:$PATH"
+  /usr/bin/mvn -version   # phải in "Java version: 25.0.3"
+  ```
+- Không chạy **hai `mvn` cùng lúc** (race `~/.m2` gây lỗi compile giả) — build **tuần tự**.
 
 ## 1. Build
 
 ```bash
-cd sas-diameter-testapp && mvn -q package
-cd ..                   && mvn -q package -DskipTests   # root aggregator: sas-api + sas-entitlement + sas-host
+(cd sas-diameter-testapp && /usr/bin/mvn -B clean package)      # testapp jar ~26 MB
+/usr/bin/mvn -B clean package -DskipTests                        # root: sas-api + sas-entitlement + sas-host → quarkus-app
 ```
 
-## 2. Chạy 2 instance HSS simulator
+## 2. Chạy 2 instance operator simulator (S6a + SWx)
 
 ```bash
-# Instance 1: S6a HSS (Diameter SCTP :3868) + control UI :8086
+# Instance 1: S6a HSS (Diameter SCTP :3868) + control UI :8086 — cellular (ULR/ULA)
 java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar &
 
-# Instance 2: SWx AAA (SCTP :3869) + control UI :18086
+# Instance 2: SWx = operator 3GPP AAA ↔ HSS (SCTP :3869) + control UI :18086 — TS.43 Wi-Fi leg
 java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar \
      --diameter-port 3869 --web-port 18086 &
 ```
 
 > Lab HSS chỉ nhận **1 inbound SCTP association mỗi listen port** → SWx buộc phải
 > tách port riêng; SAS trỏ qua `-Dsas.transport.diameter.swx.peer-port=3869`.
+> (Lab chỉ: `swxverifier` RA đóng thế chân operator. Production: SAS verify TS.43
+> qua operator REST CAMARA NV / SIM Swap + Sh UDR/SNR, không mở SWx.)
 
 ## 3. Chạy SAS với corsac transports
 
@@ -81,7 +95,7 @@ curl -s -X POST http://localhost:8085/number-verification/v2/verify \
   -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
   -H 'X-Sas-Access-Tech: LTE' \
   -d '{"phoneNumber":"+251911111111"}'
-# → {"devicePhoneNumberVerified":true}   (CCR→CCA, ULR→ULA 2001, AIR→AIA vectors=1)
+# → {"devicePhoneNumberVerified":true}   (CCR→CCA, ULR→ULA 2001, Sh UDR binding fresh)
 ```
 
 Opt-in assurance detail (score/factors cho bank tự đánh giá rủi ro) + risk class:
@@ -116,17 +130,21 @@ curl -s -X POST http://127.0.0.1:8086/api/subscriber -H 'Content-Type: applicati
 # verify lại như ① → ULA trả 5421 → {"devicePhoneNumberVerified":false}
 ```
 
-### ③ Fail-closed — rút auth vectors
+### ③ Fail-closed — thuê bao bị barring (ULR/ULA)
 
 ```bash
 curl -s -X POST http://127.0.0.1:8086/api/subscriber -H 'Content-Type: application/json' \
-     -d '{"identity":"655010000000001","attached":true,"authVectorsAvailable":0}'
-# verify lại → AIA rỗng → false
+     -d '{"identity":"655010000000001","attached":true,"barred":true}'
+# verify lại → ULA 2001 + Subscriber-Status=ODB → {"devicePhoneNumberVerified":false}
 ```
 
 Reset về mặc định: `curl -X POST http://127.0.0.1:8086/api/reset`
 
-### ④ SWx Wi-Fi path (token ký HMAC)
+### ④ TS.43 Wi-Fi path (token ký HMAC) — SWx là chân operator (lab)
+
+> Lab: `swxverifier` RA mở MAR/SAR tới SWx :3869 để đóng thế chân 3GPP AAA↔HSS.
+> Production: SAS **không** mở SWx — verify qua **operator REST (CAMARA NV / SIM
+> Swap)** và freshness qua **Sh UDR/SNR** read-only.
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8085/entitlement/issue \
@@ -186,7 +204,7 @@ Wi-Fi track: thay X-Sas-Src-Ip/Port bằng `login_hint=operatortoken:<tk>`
 
 ```bash
 curl -s http://127.0.0.1:8086/api/messages    # S6a messages
-curl -s http://127.0.0.1:18086/api/messages   # SWx messages
+curl -s http://127.0.0.1:18086/api/messages   # SWx (operator AAA↔HSS) messages — TS.43 leg
 ```
 
 Hoặc mở browser `http://127.0.0.1:8086/` — bảng tin tự refresh 2 s: thời điểm,
@@ -196,11 +214,11 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 
 | Scenario | Signalling | Kết quả |
 |---|---|---|
-| LTE happy (resolver=sd) | CCA 2001 + ULA 2001 + AIA vectors≥1 | `true` |
+| LTE happy (resolver=sd) | CCA 2001 + ULA 2001 | `true` |
 | Detached | ULA **5421** | `false` |
-| Zero vectors | AIA rỗng | `false` |
+| Barred | ULA 2001 + Subscriber-Status ODB | `false` |
 | Gx unknown IP | CCA 5030 | `false` (NO_BINDING) |
-| SWx + token hợp lệ | MAA items≥1 + SAA 2001 | `true` |
+| TS.43 token hợp lệ (lab: SWx MAR/SAR) | MAA items≥1 + SAA 2001 (lab) | `true` (production: CAMARA NV REST) |
 | Token replay | — (chặn trước Diameter) | `401` |
 | amr sai/thiếu | — | `403` |
 | Body thiếu phoneNumber/hashed | — | `400 INVALID_ARGUMENT` |
@@ -209,8 +227,8 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 ## 7. Kiểm thử khác trong tree
 
 ```bash
-mvn clean test                           # từ repo root: 337 tests trên 3 module (JUnit 5, không cần mạng)
-python3 harness/run_hardness.py          # 31/31 gates (H1–H14 contract + H15–H21 deployment)
+/usr/bin/mvn -B clean test                           # từ repo root: 363 tests trên 3 module (JUnit 5, không cần mạng)
+python3 harness/run_hardness.py          # 34/34 gates (H1–H24)
 python3 harness/preflight_prod.py        # verdict for THIS env (exit = số check fail)
 python3 harness/preflight_prod.py --selftest   # 22/22 kịch bản cấu hình sai bị bắt
 ```

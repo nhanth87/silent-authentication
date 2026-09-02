@@ -223,7 +223,7 @@ public class SasBootstrap implements SasVerifyEngine {
         ra.setBackend(backend);
         s6aVerifierEndpoint = new S6aVerifierRaEndpoint(ra);
         container.registerRa(s6aVerifierEndpoint, s6aVerifierEndpoint);
-        LOG.info("S6a verifier RA wired (ULR/ULA+AIR/AIA, own HSS only)");
+        LOG.info("S6a verifier RA wired (ULR/ULA+Sh UDR, own HSS only)");
     }
 
     private void wireSwxVerifierRa() {
@@ -360,7 +360,7 @@ public class SasBootstrap implements SasVerifyEngine {
 
     private InMemoryS6aVerifierBackend s6aBackend() {
         InMemoryS6aVerifierBackend b = new InMemoryS6aVerifierBackend();
-        // registered (ULR/ULA), last IMSI change 10 days ago (AIR/AIA), region "AA".
+        // registered (ULR/ULA), last IMSI change 10 days ago (read-only Sh UDR), region "AA".
         b.seed("+251911111111", "655010000000001", true, daysAgo(10), "AA");
         return b;
     }

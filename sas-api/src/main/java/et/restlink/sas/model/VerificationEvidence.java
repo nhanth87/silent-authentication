@@ -11,8 +11,8 @@ package et.restlink.sas.model;
  * Evidence returned by the Verifier (identity-plane) stage.
  *
  * <pre>
- *   reachable        — PSI/IDR says attached+reachable (2G/3G) or registered (S6a).
- *   notSimSwapped    — SAI/AIR vector-set or lastUpdate/IMSI-change age >= cooldown.
+ *   reachable        — PSI says attached (2G/3G) or ULR/ULA registered (4G/5G).
+ *   notSimSwapped    — MAP SAI (2G/3G) or read-only Sh UDR binding age (4G/5G).
  *   locationPlausible— VLR/MME region agrees with the resolver's IP geo window.
  *   protocol         — which signalling probe(s) produced the evidence (audit).
  * </pre>

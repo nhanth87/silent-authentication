@@ -13,7 +13,7 @@ This chapter documents the message-level behaviour of Restlink Silent Auth from 
 2. Deep dive on MAP **AnyTimeInterrogation (ATI)** and FS.11 Category 1 constraints
 3. **ProvideSubscriberInfo (PSI)** — FS.11 Category 2.1
 4. **SendAuthenticationInfo (SAI)** — FS.11 Category 3.2 (SIM-swap detection)
-5. Diameter S6a **IDR/IDA** and **AIR/AIA** for 4G/5G
+5. Diameter **S6a ULR/ULA** + read-only **Sh UDR** for 4G/5G
 6. Consolidated message reference tables
 
 All MAP queries are intra-network. No Category 1 message crosses SS7 interconnect.
@@ -48,11 +48,11 @@ sequenceDiagram
         VER->>HSS: MAP PSI or ATI (TCAP dialog)
         HSS-->>VER: subscriberState, locationInfo, VLR
     else 4G/5G subscriber
-        VER->>HSS: Diameter S6a IDR or AIR
-        HSS-->>VER: subscriber data / auth vectors
+        VER->>HSS: Diameter S6a ULR/ULA
+        HSS-->>VER: subscriber status + location
     end
     opt High SIM-swap risk policy
-        VER->>HSS: MAP SAI (2G/3G) or IDR with IMSI-change data (4G/5G)
+        VER->>HSS: MAP SAI (2G/3G) or Sh UDR with IMSI-change age (4G/5G)
         HSS-->>VER: lastUpdateLocation / IMSI-change age
     end
     VER-->>SAS: {reachable, notSimSwapped, locationPlausible}
@@ -249,28 +249,32 @@ sequenceDiagram
 
 ---
 
-## 5.6 Diameter S6a — IDR/IDA and AIR/AIA (4G/5G)
+## 5.6 Diameter S6a / Sh — ULR/ULA + Sh UDR (4G/5G)
 
-For LTE and 5G NSA/SA subscribers, the Verifier uses Diameter S6a toward the HSS instead of MAP.
+For LTE and 5G NSA/SA subscribers, the Verifier uses **ULR/ULA** (S6a, TS 29.272) toward the
+HSS for attachment liveness, then a **read-only Sh UDR/SNR** (TS 29.328/29.329) for SIM-swap
+freshness. AIR/AIA and IDR/IDA are **not** on the verify path: AIR consumes real EPS vectors and
+advances the AuC SQN (MAC-failure re-sync risk on the live USIM); IDR is an HSS→MME push, the
+wrong direction for a read query.
 
-### 5.6.1 Insert-Subscriber-Data Request/Answer (IDR/IDA)
-
-| AVP / data | Silent Auth use |
-|------------|-----------------|
-| `Subscription-Data` | Subscriber profile |
-| `Location-Information` | Current MME/AMF registration |
-| `Subscriber-Status` | SERVICE_GRANTED, OPERATOR_DETERMINED_BARRING |
-| IMSI-change timestamps | SIM-swap freshness (4G equivalent of SAI signal) |
-
-### 5.6.2 Authentication-Information Request/Answer (AIR/AIA)
+### 5.6.1 Update-Location-Request/Answer (ULR/ULA)
 
 | AVP / data | Silent Auth use |
 |------------|-----------------|
-| `Requested-EUTRAN-Authentication-Info` | Auth vector request |
-| `Re-synchronization-Info` | Recent USIM re-sync indicator |
-| Vector freshness | Correlates with SIM change events |
+| `RAT-Type` | Current access (EUTRAN / NR) |
+| `Visited-PLMN-Id` | Serving PLMN — location-plausibility |
+| `Subscription-Data` / `Subscriber-Status` | SERVICE_GRANTED, OPERATOR_DETERMINED_BARRING |
 
-Reference: GSMA FS.19 (Diameter interconnect security). Intra-operator S6a queries follow the same fail-closed and timeout rules as MAP.
+### 5.6.2 User-Data-Request/Answer (Sh UDR/UDA — read-only)
+
+| AVP / data | Silent Auth use |
+|------------|-----------------|
+| `Data-Reference` | Repository / identity reference |
+| `MSISDN` / `IMSI` | Current binding identity |
+| IMSI-change timestamp | SIM-swap freshness (4G/5G equivalent of SAI signal) |
+
+Reference: GSMA FS.19 (Diameter interconnect security). Intra-operator S6a/Sh queries follow the
+same fail-closed and timeout rules as MAP.
 
 ### 5.6.3 Diameter sequence
 
@@ -280,20 +284,22 @@ sequenceDiagram
     participant DEA as Diameter Edge (intra)
     participant HSS as HSS / UDM
 
-    SAS->>DEA: S6a IDR (User-Name=IMSI, requested data)
-    DEA->>HSS: IDR
-    HSS-->>DEA: IDA (Location-Info, Subscriber-Status)
-    DEA-->>SAS: IDA
+    SAS->>DEA: S6a ULR (User-Name=IMSI, RAT-Type, Visited-PLMN-Id)
+    DEA->>HSS: ULR
+    HSS-->>DEA: ULA (Subscriber-Status, Subscription-Data)
+    DEA-->>SAS: ULA
     opt SIM-swap check
-        SAS->>DEA: S6a AIR
-        DEA->>HSS: AIR
-        HSS-->>DEA: AIA
-        DEA-->>SAS: AIA
+        SAS->>DEA: Sh UDR (Data-Reference, read-only)
+        DEA->>HSS: UDR
+        HSS-->>DEA: UDA (binding age)
+        DEA-->>SAS: UDA
     end
     Note over SAS: Map to {reachable, notSimSwapped, locationPlausible}
 ```
 
-**Note:** jDiameter S6a client module is a Phase 2 deliverable; it mirrors the jSS7 MAP Verifier pattern (one dialog/request per stage, 2 s timeout, abort on expiry).
+**Note:** the read-only Sh UDR/SNR client module is a Phase 2 deliverable; it mirrors the S6a ULR
+pattern (one dialog/request per stage, 2 s timeout, abort on expiry). Until wired, the pilot S6a
+path serves SIM-swap freshness from the in-memory Sh UDR stand-in (binding age) — never AIR.
 
 ---
 
@@ -330,7 +336,7 @@ sequenceDiagram
 | `RESOLVER_TIMEOUT` | PGW lookup > 300 ms | Retry once, then OTP |
 | `VERIFY_TIMEOUT` | MAP/Diameter > 2 s | OTP |
 | `LOW_ASSURANCE` | Score below threshold | OTP or step-up Passkey |
-| `SIM_SWAP_SUSPECT` | SAI/IDR freshness fail | Block + manual review |
+| `SIM_SWAP_SUSPECT` | SAI/Sh UDR freshness fail | Block + manual review |
 
 ---
 
@@ -362,10 +368,10 @@ All MAP messages traverse: `MAPProviderImpl` → `MAPServiceMobilityImpl` → `M
 
 | # | Command | Code | Application | Role |
 |---|---------|------|-------------|------|
-| D1 | Insert-Subscriber-Data-Request (IDR) | 319 | S6a | Subscriber data + location |
-| D2 | Insert-Subscriber-Data-Answer (IDA) | 319 | S6a | Response |
-| D3 | Authentication-Information-Request (AIR) | 318 | S6a | Auth vectors / SIM-change signal |
-| D4 | Authentication-Information-Answer (AIA) | 318 | S6a | Response |
+| D1 | Update-Location-Request (ULR) | 316 | S6a | Attachment liveness + location |
+| D2 | Update-Location-Answer (ULA) | 316 | S6a | Subscriber-Status, Subscription-Data |
+| D3 | User-Data-Request (UDR) | — | Sh | Read-only identity/binding read |
+| D4 | User-Data-Answer (UDA) | — | Sh | Binding age — SIM-swap freshness |
 
 ### 5.8.4 Resolver backends (operator-specific)
 
@@ -384,8 +390,8 @@ All MAP messages traverse: `MAPProviderImpl` → `MAPServiceMobilityImpl` → `M
 | 2G GPRS/EDGE | PGW/GGSN | MAP PSI | MAP SAI (if policy) | FS.11 Cat 2.1 / 3.2 |
 | 3G HSPA | PGW/GGSN | MAP PSI | MAP SAI (if policy) | FS.11 Cat 2.1 / 3.2 |
 | 3G (HLR legacy) | PGW/GGSN | MAP ATI (intra-HLR) | MAP SAI | FS.11 Cat 1 / 3.2 |
-| 4G LTE | PGW | Diameter IDR | Diameter AIR / IDR | FS.19 |
-| 5G NSA/SA | PGW/UPF | Diameter IDR | Diameter AIR / IDR | FS.19, FS.36 |
+| 4G LTE | PGW | Diameter ULR/ULA | Sh UDR (read-only) | FS.19 |
+| 5G NSA/SA | PGW/UPF | Diameter ULR/ULA | Sh UDR (read-only) | FS.19, FS.36 |
 | Wi-Fi only | — | — (no binding) | — | FALLBACK; Phase 3 TS.43 |
 
 ---
@@ -397,7 +403,7 @@ All MAP messages traverse: `MAPProviderImpl` → `MAPServiceMobilityImpl` → `M
 | `POST /verify` | mTLS | mTLS + signed payload | `reqId` + `ts` window | Application layer |
 | Resolver lookup | Operator-internal | Operator-internal | Point-in-time `ts` | Data plane |
 | MAP ATI/PSI/SAI | SIGTRAN | SCCP/TCAP | TCAP dialog ID | Cat 1/2.1/3.2 rules |
-| Diameter IDR/AIR | IPsec/TLS (DEA) | Diameter security | Hop-by-hop + session | FS.19 |
+| Diameter ULR/ULA + Sh UDR | IPsec/TLS (DEA) | Diameter security | Hop-by-hop + session | FS.19 |
 
 Restlink SAS acts as the **dialog anchor** for all MAP and Diameter transactions: it opens the dialog, correlates the response to the `/verify` request, and aborts on timeout. Chapter 6 details the finite-state machine and timeout budgets.
 
@@ -497,8 +503,8 @@ The Verifier selects MAP or Diameter messages based on subscriber access technol
 |-----------|----------------|----------------------|----------|
 | 2G/3G + PSI supported on HLR | PSI | SAI (if `simSwapCheck=true`) | MAP |
 | 2G/3G + PSI not supported | ATI (intra-HLR) | SAI (if `simSwapCheck=true`) | MAP |
-| 4G LTE | IDR | AIR (if `simSwapCheck=true`) | Diameter S6a |
-| 5G SA / NSA | IDR | AIR (if `simSwapCheck=true`) | Diameter S6a |
+| 4G LTE | ULR/ULA | Sh UDR (if `simSwapCheck=true`) | Diameter S6a / Sh |
+| 5G SA / NSA | ULR/ULA | Sh UDR (if `simSwapCheck=true`) | Diameter S6a / Sh |
 | Unknown access | PSI (fallback) → ATI | SAI | MAP |
 
 Policy flag `simSwapCheck` defaults to `true` for bank money-transfer risk class and `false` for standard e-Gov portal login (configurable per tenant).
@@ -513,8 +519,8 @@ Typical happy-path latency breakdown for an Addis Ababa urban LTE subscriber:
 |-------|-----------|---------|----------|----------|
 | HTTPS ingress | 0 | 20 | 20 ms | mTLS decode, schema validation |
 | RESOLVING | 20 | 120 | 100 ms | PGW session lookup |
-| VERIFYING (Diameter) | 120 | 620 | 500 ms | S6a IDR round-trip |
-| SAI (optional) | 620 | 920 | 300 ms | S6a AIR (high-value only) |
+| VERIFYING (Diameter) | 120 | 620 | 500 ms | S6a ULR/ULA round-trip |
+| SIM-swap check (optional) | 620 | 920 | 300 ms | Sh UDR (high-value only) |
 | SCORING + egress | 920 | 980 | 60 ms | Policy computation, HTTPS response |
 | **Total** | 0 | **980** | **< 1 s** | Well within 3 s budget |
 
@@ -526,10 +532,10 @@ Worst-case (HLR slow, no SAI): RESOLVING 300 ms + VERIFYING 2000 ms + overhead 2
 
 | CAMARA API | Silent Auth internal stage | Signalling messages |
 |------------|---------------------------|---------------------|
-| Number Verification (NV) | Resolver + Verifier | PGW lookup + PSI/IDR |
-| SIM Swap | Verifier (SAI/AIR) + Policy | SAI or IDR with IMSI-change data |
+| Number Verification (NV) | Resolver + Verifier | PGW lookup + PSI/ULR |
+| SIM Swap | Verifier (SAI/Sh UDR) + Policy | SAI or Sh UDR with IMSI-change data |
 | OTP SMS | FALLBACK branch | SS7 MT-FSM (operator SMSC; not SAS) |
 | Number Verification 2 (TS.43) | Phase 3: EAP-AKA | USIM credential; no MAP IP-match |
 | Scam Signal | Policy input (future) | External fraud feed; no MAP |
 
-The `/verify` endpoint implements NV semantics today. SIM Swap detection is embedded in the Verifier SAI/AIR path rather than exposed as a separate API call, reducing bank integration surface.
+The `/verify` endpoint implements NV semantics today. SIM Swap detection is embedded in the Verifier SAI/Sh UDR path rather than exposed as a separate API call, reducing bank integration surface.

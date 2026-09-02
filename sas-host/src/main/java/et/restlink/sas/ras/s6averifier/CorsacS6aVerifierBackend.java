@@ -17,10 +17,6 @@ import com.mobius.software.telco.protocols.diameter.app.s6a.ClientListener;
 import com.mobius.software.telco.protocols.diameter.app.s6a.S6aClientSession;
 import com.mobius.software.telco.protocols.diameter.commands.DiameterMessage;
 import com.mobius.software.telco.protocols.diameter.commands.DiameterRequest;
-import com.mobius.software.telco.protocols.diameter.commands.s6a.AuthenticationInformationAnswer;
-import com.mobius.software.telco.protocols.diameter.commands.s6a.AuthenticationInformationRequest;
-import com.mobius.software.telco.protocols.diameter.commands.s6a.InsertSubscriberDataAnswer;
-import com.mobius.software.telco.protocols.diameter.commands.s6a.InsertSubscriberDataRequest;
 import com.mobius.software.telco.protocols.diameter.commands.s6a.S6aAnswer;
 import com.mobius.software.telco.protocols.diameter.commands.s6a.S6aRequest;
 import com.mobius.software.telco.protocols.diameter.commands.s6a.UpdateLocationAnswer;
@@ -29,7 +25,6 @@ import com.mobius.software.telco.protocols.diameter.exceptions.AvpNotSupportedEx
 import com.mobius.software.telco.protocols.diameter.impl.DiameterStackImpl;
 import com.mobius.software.telco.protocols.diameter.impl.app.s6a.S6aProviderImpl;
 import com.mobius.software.telco.protocols.diameter.impl.primitives.common.VendorSpecificApplicationIdImpl;
-import com.mobius.software.telco.protocols.diameter.impl.primitives.s6a.SubscriptionDataImpl;
 import com.mobius.software.telco.protocols.diameter.primitives.common.ExperimentalResult;
 import com.mobius.software.telco.protocols.diameter.primitives.common.VendorSpecificApplicationId;
 import com.mobius.software.telco.protocols.diameter.primitives.gx.RATTypeEnum;
@@ -60,13 +55,12 @@ import java.util.concurrent.TimeoutException;
  * Real S6a Diameter transport (P2 missing item #6), own HSS only.
  *
  * <p>Evidence pipeline (TS 29.272), one Diameter dialog/session per stage,
- * 2 s total budget ({@link SasTimeouts#DIAMETER_MS}) shared across stages:</p>
+ * 2 s budget ({@link SasTimeouts#DIAMETER_MS}):</p>
  * <ol>
  *   <li>ULR/ULA (316, §5.2.2.2) — attachment liveness + subscriber status.</li>
- *   <li>AIR/AIA (318, §5.3.2) — EPS vector set ⇒ SIM-swap freshness.</li>
- *   <li>IDR/IDA probe (319, §5.2.2.4) — optional ({@code s6aIdrProbeEnabled}).
- *       Spec deviation: IDR is HSS-initiated per TS 29.272; corsac exposes a
- *       client-side factory so the lab HSS is probed actively. Default off.</li>
+ *   <li>Sh UDR/SNR (TS 29.328/29.329, read-only) — SIM-swap freshness (open item,
+ *       not wired here). AIR/AIA and IDR/IDA are deliberately absent: AIR consumes
+ *       EPS vectors + advances SQN, IDR is HSS→MME push.</li>
  * </ol>
  *
  * <p>Fail-closed everywhere: any timeout, send error, unmatched answer or
@@ -250,7 +244,7 @@ public final class CorsacS6aVerifierBackend implements S6aVerifierBackend {
         }
         long deadline = System.currentTimeMillis() + SasTimeouts.DIAMETER_MS;
         try {
-            runUlrStage(out, deadline, msisdn, imsi, accessTech, config.idrProbeOrDefault());
+            runUlrStage(out, deadline, msisdn, imsi, accessTech);
         } catch (Exception e) {
             LOG.warn("S6a ULR send failed msisdn={}", msisdn, e);
             out.complete(VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A-ULR"));
@@ -260,7 +254,7 @@ public final class CorsacS6aVerifierBackend implements S6aVerifierBackend {
 
     /** Stage 1 — ULR/ULA (316): attachment liveness + subscriber status. */
     private void runUlrStage(CompletableFuture<VerificationEvidence> out, long deadline,
-                             String msisdn, String imsi, AccessTech accessTech, boolean idrProbe)
+                             String msisdn, String imsi, AccessTech accessTech)
             throws Exception {
         DiameterLink link = stack.getNetworkManager().getLink(LINK_ID);
         UpdateLocationRequest ulr = provider.getMessageFactory().createUpdateLocationRequest(
@@ -272,7 +266,7 @@ public final class CorsacS6aVerifierBackend implements S6aVerifierBackend {
         S6aClientSession session =
                 (S6aClientSession) provider.getSessionFactory().createClientSession(ulr);
         dispatch(session, ulr, deadline)
-                .thenAccept(answer -> onUla(out, deadline, msisdn, imsi, idrProbe, answer))
+                .thenAccept(answer -> onUla(out, deadline, msisdn, imsi, answer))
                 .exceptionally(ex -> {
                     failStage(out, ex, "S6A-ULR");
                     return null;
@@ -280,7 +274,7 @@ public final class CorsacS6aVerifierBackend implements S6aVerifierBackend {
     }
 
     private void onUla(CompletableFuture<VerificationEvidence> out, long deadline,
-                       String msisdn, String imsi, boolean idrProbe, S6aAnswer answer) {
+                       String msisdn, String imsi, S6aAnswer answer) {
         UpdateLocationAnswer ula = as(answer, UpdateLocationAnswer.class);
         VerificationEvidence evidence = S6aEvidence.fromUla(resultCode(answer),
                 experimentalCode(answer),
@@ -289,97 +283,13 @@ public final class CorsacS6aVerifierBackend implements S6aVerifierBackend {
             out.complete(evidence);
             return;
         }
-        try {
-            runAirStage(out, deadline, msisdn, imsi, idrProbe, evidence);
-        } catch (Exception e) {
-            LOG.warn("S6a AIR send failed msisdn={}", msisdn, e);
-            out.complete(VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A-AIR"));
-        }
-    }
-
-    /** Stage 2 — AIR/AIA (318): fresh EPS vector set ⇒ not SIM-swapped. */
-    private void runAirStage(CompletableFuture<VerificationEvidence> out, long deadline,
-                             String msisdn, String imsi, boolean idrProbe,
-                             VerificationEvidence ulaEvidence) throws Exception {
-        DiameterLink link = stack.getNetworkManager().getLink(LINK_ID);
-        AuthenticationInformationRequest air = provider.getMessageFactory()
-                .createAuthenticationInformationRequest(
-                        link.getLocalHost(), link.getLocalRealm(),
-                        link.getDestinationHost(), link.getDestinationRealm(),
-                        Unpooled.wrappedBuffer(S6aEvidence.visitedPlmnTbcd(config.effectiveVisitedPlmn())));
-        air.setUsername(identity(msisdn, imsi));
-        S6aClientSession session =
-                (S6aClientSession) provider.getSessionFactory().createClientSession(air);
-        dispatch(session, air, deadline)
-                .thenAccept(answer -> onAia(out, deadline, msisdn, idrProbe, ulaEvidence, answer))
-                .exceptionally(ex -> {
-                    failStage(out, ex, "S6A-AIR");
-                    return null;
-                });
-    }
-
-    private void onAia(CompletableFuture<VerificationEvidence> out, long deadline,
-                       String msisdn, boolean idrProbe, VerificationEvidence ulaEvidence,
-                       S6aAnswer answer) {
-        AuthenticationInformationAnswer aia = as(answer, AuthenticationInformationAnswer.class);
-        VerificationEvidence evidence = S6aEvidence.fromAia(resultCode(answer),
-                experimentalCode(answer),
-                S6aEvidence.vectorCount(aia == null ? null : aia.getAuthenticationInfo()));
-        if (evidence.failed()) {
-            out.complete(evidence);
-            return;
-        }
-        if (!idrProbe) {
-            out.complete(S6aEvidence.combine(ulaEvidence, evidence, "S6A-ULR+AIR"));
-            return;
-        }
-        try {
-            runIdrStage(out, deadline, msisdn, ulaEvidence, evidence);
-        } catch (Exception e) {
-            LOG.warn("S6a IDR probe send failed msisdn={}", msisdn, e);
-            out.complete(VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A-IDR"));
-        }
-    }
-
-    /**
-     * Optional stage 3 — IDR probe (319). Lab-only deviation from TS 29.272
-     * §5.2.2.4 (HSS-initiated): the SAS actively confirms the subscription
-     * write path of its own HSS; IDA must succeed or the whole verify fails.
-     */
-    private void runIdrStage(CompletableFuture<VerificationEvidence> out, long deadline,
-                             String msisdn, VerificationEvidence ulaEvidence,
-                             VerificationEvidence aiaEvidence) throws Exception {
-        DiameterLink link = stack.getNetworkManager().getLink(LINK_ID);
-        SubscriptionDataImpl probeData = new SubscriptionDataImpl();
-        probeData.setMSISDN(msisdn);
-        InsertSubscriberDataRequest idr = provider.getMessageFactory()
-                .createInsertSubscriberDataRequest(
-                        link.getLocalHost(), link.getLocalRealm(),
-                        link.getDestinationHost(), link.getDestinationRealm(),
-                        probeData);
-        idr.setUsername(identity(msisdn, null));
-        S6aClientSession session =
-                (S6aClientSession) provider.getSessionFactory().createClientSession(idr);
-        dispatch(session, idr, deadline)
-                .thenAccept(answer -> onIda(out, ulaEvidence, aiaEvidence, answer))
-                .exceptionally(ex -> {
-                    failStage(out, ex, "S6A-IDR");
-                    return null;
-                });
-    }
-
-    private void onIda(CompletableFuture<VerificationEvidence> out,
-                       VerificationEvidence ulaEvidence, VerificationEvidence aiaEvidence,
-                       S6aAnswer answer) {
-        InsertSubscriberDataAnswer ida = as(answer, InsertSubscriberDataAnswer.class);
-        VerificationEvidence evidence = S6aEvidence.fromIda(resultCode(answer),
-                experimentalCode(answer));
-        if (evidence.failed()) {
-            out.complete(evidence);
-            return;
-        }
-        out.complete(S6aEvidence.combine(S6aEvidence.combine(
-                ulaEvidence, aiaEvidence, "S6A-ULR+AIR"), evidence, "S6A-ULR+AIR+IDR"));
+        // SIM-swap freshness on 4G/5G is NOT sourced from S6a AIR: AIR consumes a
+        // real EPS vector set and advances the AuC SQN (MAC-failure re-sync risk),
+        // and IDR is an HSS→MME push (wrong direction for a read query). Freshness
+        // requires a read-only Sh UDR/SNR backend (TS 29.328/29.329, open item) or
+        // the operator's CAMARA SIM Swap. Until then the S6a leg contributes
+        // reachable+location only and the FSM fail-closes the swap dimension.
+        out.complete(evidence);
     }
 
     /**

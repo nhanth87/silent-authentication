@@ -29,7 +29,7 @@ public enum FallbackReason {
     VERIFY_ERROR,
     /** Subscriber purged / not reachable (TS 29.272 PUR). */
     PURGED,
-    /** SAI/AIR detected a fresh IMSI change (SIM-swap suspect). */
+    /** SAI / read-only Sh UDR detected a fresh IMSI change (SIM-swap suspect). */
     SIM_SWAP_SUSPECT,
     /** Assurance score below threshold. */
     LOW_ASSURANCE,

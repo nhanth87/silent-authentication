@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import et.restlink.sas.api.dto.VerifyRequestDto;
 import et.restlink.sas.events.VerifyRequestEvent;
+import et.restlink.sas.model.AccessTech;
 import et.restlink.sas.model.AssuranceLevel;
 import et.restlink.sas.model.FallbackReason;
 import et.restlink.sas.model.VerifyResult;
@@ -257,6 +258,35 @@ class VerifyResourceTest {
                         "corr", "Bearer operatortoken:broken-token",
                         null, null, null, null, null, null, null),
                 401, "UNAUTHENTICATED");
+    }
+
+    @Test
+    void operatorTokenSuccess_threadsEntitlementImsiIntoEvent() {
+        // B2 regression: the TS.43 entitlement-token IMSI must reach the SWx
+        // verifier so an identity mismatch is detected fail-closed instead of
+        // silently downgrading to the MSISDN-only anchor.
+        resource.identityAnchor = new IdentityAnchor() {
+            @Override
+            public OperatorBinding resolveOperatorToken(String candidate) {
+                return new OperatorBinding(MSISDN_A, "655010000000001", "EAP-AKA");
+            }
+
+            @Override
+            public String extractCandidate(String authorization, String loginHint,
+                                           String operatorTokenHeader) {
+                return "entitlement-token";
+            }
+        };
+        stub.result = resolved(MSISDN_A);
+
+        Response r = resource.verifyV2(new VerifyRequestDto(MSISDN_A, null),
+                "corr", "Bearer operatortoken:entitlement-token",
+                null, null, null, null, null, null, null);
+
+        assertEquals(200, r.getStatus());
+        assertNotNull(stub.lastEvent);
+        assertEquals(AccessTech.WIFI, stub.lastEvent.accessTech());
+        assertEquals("655010000000001", stub.lastEvent.claimedImsi());
     }
 
     // ---- F4 — user-bound token compare matrix ----

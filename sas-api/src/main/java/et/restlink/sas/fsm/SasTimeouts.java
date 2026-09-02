@@ -21,7 +21,7 @@ public final class SasTimeouts {
     /** MAP PSI/ATI/SAI dialog budget (TC dialog timer). */
     public static final long MAP_MS = 2000L;
 
-    /** Diameter S6a IDR/AIR budget. */
+    /** Diameter S6a ULR/ULA + read-only Sh UDR budget. */
     public static final long DIAMETER_MS = 2000L;
 
     /** Total SAS budget — after this the bank shows normal login. */

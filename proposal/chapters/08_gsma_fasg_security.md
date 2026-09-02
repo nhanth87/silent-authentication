@@ -216,7 +216,7 @@ As subscribers migrate to LTE, SMS interception attacks migrate from SS7 MAP to 
 | Multi-layer filtering | Mandatory | Transport, application/command, SMS layer |
 | Roamer integrity | Note | FW alone cannot protect inbound roamers — combine with authentication where available |
 
-Restlink SAS Verifier uses **intra-network S6a** (IDR/AIR) only — mirroring the FS.11 ATI rule: subscriber queries originate inside the PLMN, not from interconnect peers.
+Restlink SAS Verifier uses **intra-network S6a** (ULR/ULA) + read-only Sh UDR only — mirroring the FS.11 ATI rule: subscriber queries originate inside the PLMN, not from interconnect peers.
 
 ---
 

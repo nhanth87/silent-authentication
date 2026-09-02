@@ -10,6 +10,19 @@
     test app. Serves S6a (ULR/AIR/IDR, TS 29.272), SWx (MAR/SAR/PPR, TS 29.273)
     and Gx CCR binding lookups (TS 29.212) over corsac-diameter, plus a control
     web UI.</description>
+  <licenses>
+    <license>
+      <name>GNU Affero General Public License v3.0 or later (Community edition)</name>
+      <url>https://www.gnu.org/licenses/agpl-3.0.html</url>
+      <distribution>manual</distribution>
+      <comments>Dual licensed work; SPDX expression:
+        AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0. This entry is
+        the AGPL Community grant only: copyleft, and AGPL section 13 also covers
+        serving the software over a network. Production rights without copyleft,
+        private builds, a permissive client option and L1/L2 SLA come from the
+        proprietary Operator license held by the copyright owner; see LICENSE.md.</comments>
+    </license>
+  </licenses>
   <build>
     <finalName>sas-diameter-testapp</finalName>
     <plugins>

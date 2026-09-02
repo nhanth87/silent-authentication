@@ -39,7 +39,7 @@ stateDiagram-v2
 | State | Entry condition | Active work | Exit conditions |
 |-------|----------------|-------------|-----------------|
 | **RESOLVING** | `/verify` accepted; `reqId` registered | IP Resolver lookup `{srcIP, srcPort, ts}` | Single MSISDN → VERIFYING; else → FALLBACK |
-| **VERIFYING** | Resolver returned `{msisdn, imsi, bearerAge}` | MAP PSI/ATI/SAI or Diameter IDR/AIR | HSS response → SCORING; timeout/error → FALLBACK |
+| **VERIFYING** | Resolver returned `{msisdn, imsi, bearerAge}` | MAP PSI/ATI/SAI or Diameter ULR/ULA + Sh UDR | HSS response → SCORING; timeout/error → FALLBACK |
 | **SCORING** | Verifier evidence complete | Weighted assurance computation | score ≥ threshold → APPROVED; else → FALLBACK |
 | **APPROVED** | Policy pass | Build success response | Terminal |
 | **FALLBACK** | Any stage failure | Build fallback response; abort open dialogs | Terminal |
@@ -79,7 +79,7 @@ SAS is the **dialog anchor**: it never allows a hung HLR/HSS query to stall the 
 |---------------|--------|-------|-----------|
 | **Resolver lookup** | **300 ms** | PGW/PCRF/CGNAT query | → FALLBACK (`RESOLVER_TIMEOUT`) |
 | **MAP dialog** (PSI/ATI/SAI) | **2 s** | TCAP dialog timer (TC-BEGIN to response or abort) | `abort()` dialog → FALLBACK (`VERIFY_TIMEOUT`) |
-| **Diameter S6a** (IDR/AIR) | **2 s** | Request–answer round-trip | Cancel request → FALLBACK (`VERIFY_TIMEOUT`) |
+| **Diameter S6a/Sh** (ULR/ULA + Sh UDR) | **2 s** | Request–answer round-trip | Cancel request → FALLBACK (`VERIFY_TIMEOUT`) |
 | **Total SAS** | **≤ 3 s** | Wall-clock from `/verify` received to response sent | Hard ceiling; bank shows normal login |
 
 ### 6.4.2 Budget allocation rationale
@@ -272,7 +272,7 @@ In every case, the bank application receives a definitive response within 3 seco
 | Phase | FSM change | Timeout impact |
 |-------|-----------|----------------|
 | Phase 1 (pilot) | MAP PSI primary; ATI fallback; Resolver via PGW | As defined above |
-| Phase 2 | Add Diameter S6a IDR/AIR branch in VERIFYING | Same 2 s verify budget |
+| Phase 2 | Add Diameter S6a ULR/ULA + read-only Sh UDR branch in VERIFYING | Same 2 s verify budget |
 | Phase 3 | TS.43 EAP-AKA path bypasses RESOLVING (SIM credential) | New state: `AUTHENTICATING`; 5 s budget for EAP |
 
 Phase 1 FSM and budgets defined in this chapter are the baseline for the Ethio Telecom pilot.

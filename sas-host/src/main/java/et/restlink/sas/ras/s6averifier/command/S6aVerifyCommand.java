@@ -17,10 +17,11 @@ import java.util.concurrent.CompletableFuture;
 /**
  * SBB → S6a verifier RA command: verify a resolved subscriber over Diameter
  * S6a (TS 29.272). One Diameter session per request stage —
- * ULR/ULA (316) for attachment liveness and AIR/AIA (318) for SIM-swap
- * freshness. The RA completes {@link #reply()} after the HSS answers or the
- * 2 s budget expires (session aborted). Never maps IP → MSISDN (that is the
- * Resolver's data-plane job, gate H13).
+ * ULR/ULA (316) for attachment liveness; SIM-swap freshness comes from a
+ * read-only Sh UDR/SNR read (TS 29.328/29.329), never AIR/AIA or IDR/IDA. The
+ * RA completes {@link #reply()} after the HSS answers or the 2 s budget expires
+ * (session aborted). Never maps IP → MSISDN (the Resolver's data-plane job,
+ * gate H13).
  */
 public record S6aVerifyCommand(
         String reqId,

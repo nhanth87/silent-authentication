@@ -101,7 +101,7 @@ public class SasCdrEntity extends PanacheEntityBase {
     @Column(name = "resolver_status", length = 32)
     public String resolverStatus;
 
-    /** Verifier evidence source protocol tag (MAP-PSI+SAI / S6a-IDR+AIR / ...). */
+    /** Verifier evidence source protocol tag (MAP-PSI+SAI / S6A-ULR+Sh-UDR / ...). */
     @Column(name = "evidence_source", length = 32)
     public String evidenceSource;
 

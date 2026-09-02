@@ -20,7 +20,7 @@ The objective is to give security reviewers, regulators, and integration partner
 |-----------|------------|----------------|
 | **Fail-closed** | Missing or ambiguous evidence never approves authentication | SAS FSM: any stage failure → `FALLBACK`, never soft-pass |
 | **Defence in depth** | Application-layer silent auth plus signalling-layer OTP protection | Strategy A + Strategy B (Chapter 8) |
-| **Least privilege** | Each component accesses only the subscriber signals required for its function | Verifier: PSI/IDR only; no broad HSS export |
+| **Least privilege** | Each component accesses only the subscriber signals required for its function | Verifier: PSI/ULR + Sh UDR only; no broad HSS export |
 | **Operator-internal signalling** | MAP/Diameter queries never originate from or traverse untrusted interconnect | SAS deployed inside Ethio Telecom network |
 | **Privacy by design** | MSISDN/IMSI minimisation; backend-only exposure | No subscriber identifiers to mobile app |
 | **Auditability** | Every `/verify` decision traceable via `reqId` | Structured logs; no PII in app-facing errors |
@@ -37,7 +37,7 @@ The following checklist is **mandatory** for pilot go-live. Items marked *(opera
 |---|---------|--------|-------|----------|
 | S-01 | **No interconnect ATI** | `AnyTimeInterrogation` is FS.11 Category 1 — blocked on interconnect. SAS Verifier queries **own HLR/HSS intra-network only** | *(joint)* | FS.11 Cat 1 |
 | S-02 | PSI preferred over ATI | Use ProvideSubscriberInfo (Cat 2.1) as primary 2G/3G verifier; ATI only if operator policy permits intra-net | *(Restlink)* | FS.11 Cat 2.1 |
-| S-03 | Intra-network Diameter only | S6a IDR/AIR from SAS to own HSS; no interconnect-originated subscriber queries | *(Restlink)* | FS.19 |
+| S-03 | Intra-network Diameter only | S6a ULR/ULA + Sh UDR from SAS to own HSS; no interconnect-originated subscriber queries | *(Restlink)* | FS.19 |
 | S-04 | SAS inside operator trust zone | Restlink SAS hosts in operator DMZ / trusted VAS segment; no public SS7/Diameter exposure | *(joint)* | FS.31 |
 | S-05 | SMS Home Routing confirmed | Residual OTP traverses Home Routing before pilot | *(operator)* | FS.11, TS 23.040 |
 | S-06 | SS7 FW Double MAP rule | Block TCAP Begin with multiple MAP components (except documented pair) | *(operator)* | FS.11 CVD-2018-0015 |

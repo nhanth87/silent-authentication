@@ -39,7 +39,7 @@ class InMemoryS6aVerifierBackendTest {
         assertTrue(ev.reachable());
         assertTrue(ev.notSimSwapped());
         assertTrue(ev.locationPlausible());
-        assertEquals("S6A-ULR+AIR", ev.protocol());
+        assertEquals("S6A-ULR+Sh-UDR", ev.protocol());
     }
 
     @Test
