@@ -149,7 +149,7 @@ The assembled Word document (`Restlink_Silent_Auth_Proposal_v3.docx`) concatenat
 
 | Path | Role |
 |------|------|
-| `docs/design/silent-auth-flow.md` | Authoritative SAS flow and timeout design |
+| `docs/design/silent-auth-standard-flow.md` | Authoritative SAS flow and timeout design |
 | `docs/design/unified-identity-sms-security-architecture.md` | Strategy A + B unified architecture |
 | `docs/research/gsma-fs-index.md` | GSMA FASG document index |
 | `docs/research/sms-channel-protection.md` | SMS Home Routing and firewall research |

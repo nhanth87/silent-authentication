@@ -147,4 +147,4 @@ Ethiopia has an opportunity to **leapfrog OTP-only authentication** by deploying
 
 ---
 
-*References: GSMA FS.11 v4.0 (SS7 interconnect security); GSMA FS.19 (Diameter); CAMARA Number Verification API; Positive Technologies SS7/SMS research (2017–2018); Restlink technical design `silent-auth-flow.md` (2026).*
+*References: GSMA FS.11 v4.0 (SS7 interconnect security); GSMA FS.19 (Diameter); CAMARA Number Verification API; Positive Technologies SS7/SMS research (2017–2018); Restlink technical design `silent-auth-standard-flow.md` (2026).*

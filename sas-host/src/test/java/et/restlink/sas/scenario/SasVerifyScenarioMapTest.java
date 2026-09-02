@@ -29,7 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * The {@code docs/design/silent-auth-flow.md} scenario written as sequential
+ * The {@code docs/design/silent-auth-standard-flow.md} scenario written as sequential
  * test steps, MAP verify first:
  *
  * <pre>

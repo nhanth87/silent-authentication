@@ -319,4 +319,4 @@ For government, the programme accelerates **Fayda-linked e-services** with lower
 
 ---
 
-*References: Ethio Telecom public disclosures; GSMA Mobile Money Report 2024; World Bank Ethiopia population statistics; Digital Ethiopia 2025 strategy documents; CAMARA Number Verification API specification; GSMA FS.11 v4.0; Restlink architecture `silent-auth-flow.md`, `unified-identity-sms-security-architecture.md`.*
+*References: Ethio Telecom public disclosures; GSMA Mobile Money Report 2024; World Bank Ethiopia population statistics; Digital Ethiopia 2025 strategy documents; CAMARA Number Verification API specification; GSMA FS.11 v4.0; Restlink architecture `silent-auth-standard-flow.md`, `unified-identity-sms-security-architecture.md`.*

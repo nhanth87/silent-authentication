@@ -124,7 +124,7 @@ public final class AssurancePolicy {
         return !Double.isNaN(w) && w >= 0.0 && w <= 1.0;
     }
 
-    /** Design defaults (silent-auth-flow.md §6 sketch). */
+    /** Design defaults (silent-auth-standard-flow.md §6 sketch). */
     public static AssurancePolicy defaults() {
         return new AssurancePolicy(0.25, 0.30, 0.30, 0.15, 0.70, 0.80, 0.90);
     }

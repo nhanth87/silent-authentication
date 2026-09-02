@@ -179,7 +179,7 @@ European Union Agency for Cybersecurity (ENISA). *Signalling Security in Telecom
 
 ### D.7 Internal design artefacts (this programme)
 
-Restlink. *Silent Authentication — Banking Flow Design*. Repository: `docs/design/silent-auth-flow.md`, 2026.
+Restlink. *Silent Authentication — Banking Flow Design*. Repository: `docs/design/silent-auth-standard-flow.md`, 2026.
 
 Restlink. *Unified Identity & SMS Security Architecture*. Repository: `docs/design/unified-identity-sms-security-architecture.md`, 2026.
 

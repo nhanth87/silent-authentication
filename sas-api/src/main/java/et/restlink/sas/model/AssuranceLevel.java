@@ -9,7 +9,7 @@ package et.restlink.sas.model;
 
 /**
  * Assurance outcome. Fail-closed: a LOW score is a FALLBACK outcome, never an
- * approval. See {@code docs/design/silent-auth-flow.md} §6.
+ * approval. See {@code docs/design/silent-auth-standard-flow.md} §6.
  */
 public enum AssuranceLevel {
     FALLBACK,

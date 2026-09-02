@@ -229,4 +229,4 @@ Restlink Silent Authentication is positioned as Ethiopia's **Open Gateway VAS la
 
 ---
 
-*References: CAMARA Number Verification API; GSMA TS.43; GSMA Open Gateway; Restlink SAS design (`docs/design/silent-auth-flow.md`); Unified Identity Architecture (`docs/design/unified-identity-sms-security-architecture.md`).*
+*References: CAMARA Number Verification API; GSMA TS.43; GSMA Open Gateway; Restlink SAS design (`docs/design/silent-auth-standard-flow.md`); Unified Identity Architecture (`docs/design/unified-identity-sms-security-architecture.md`).*

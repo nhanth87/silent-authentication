@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Pluggable IP-Resolver backend (data-plane). Concrete sources per operator:
  * PGW RADIUS accounting, PCRF Gx/Sd, or CGNAT log. See
- * {@code docs/design/silent-auth-flow.md} §3 and the open item in AGENTS.md §10.
+ * {@code docs/design/silent-auth-standard-flow.md} §3 and the open item in AGENTS.md §10.
  */
 public interface ResolverBackend {
 

@@ -208,4 +208,4 @@ Restlink Silent Authentication is designed for **fail-closed, operator-internal,
 
 ---
 
-*References: `docs/design/silent-auth-flow.md` §8; `docs/design/unified-identity-sms-security-architecture.md`; Chapters 7–8 of this proposal; GSMA FS.11; CAMARA Open Gateway security profile.*
+*References: `docs/design/silent-auth-standard-flow.md` §8; `docs/design/unified-identity-sms-security-architecture.md`; Chapters 7–8 of this proposal; GSMA FS.11; CAMARA Open Gateway security profile.*
