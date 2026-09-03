@@ -4,6 +4,11 @@
 > Scope: audit of the micro-jainslee conformant silent-authentication SAS
 > (`sas/`) against the micro-jainslee design rules (skill `jainslee`) and the
 > production-readiness ("production P") bar.
+>
+> ⚠️ **Snapshot lịch sử** — giữ nguyên hiện trạng tại ngày audit. Một số "open
+> items" trong tài liệu này đã hoàn thành sau đó (S6a/SWx verifier trên
+> corsac-diameter, MAP transport jSS7, CAMARA adapter…). Trạng thái hiện hành:
+> xem `docs/result_p1_reaudit.md` và `AGENTS.md` §8.
 
 ---
 

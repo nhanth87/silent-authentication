@@ -33,7 +33,7 @@ This chapter describes the two stages, the CGNAT disambiguation requirement, the
 | **Bank / Agency Backend** | Owns login decision; calls Restlink SAS server-to-server over mTLS | Trusted integration partner |
 | **Restlink SAS** (Silent Auth Service) | Resolver + Verifier + Policy engine | Operator-hosted or co-located; dialog anchor |
 | **IP Resolver** | Reads PGW/GGSN session store, PCRF Gx/Sd, or CGNAT log | Operator-internal data plane |
-| **MAP / Diameter Verifier** | jSS7 (2G/3G) + jDiameter S6a (4G/5G) | Operator signalling plane |
+| **MAP / Diameter Verifier** | jSS7 (2G/3G) + corsac-diameter S6a (4G/5G) | Operator signalling plane |
 | **HLR / HSS / UDM** | Subscriber database | Operator core; intra-network queries only |
 
 Restlink occupies the **identity layer** (Strategy A in the unified architecture). Residual SMS OTP traffic on the fallback path is protected separately by SMS Home Routing and SS7/Diameter/5G firewalls (Strategy B). The two strategies are complementary, not alternatives.
@@ -205,7 +205,7 @@ Restlink deploys as a **thin VAS adapter** co-located with or reachable from the
 | SAS API gateway | DMZ / API edge | mTLS termination for bank backends |
 | Resolver connector | Operator data centre | Low-latency PGW/PCRF/CGNAT access |
 | MAP Verifier (jSS7) | SS7 SIGTRAN edge | Intra-network HLR queries; FS.11 Cat.1 compliance |
-| Diameter Verifier (jDiameter S6a) | Diameter edge | 4G/5G HSS queries per FS.19 |
+| Diameter Verifier (corsac-diameter S6a) | Diameter edge | 4G/5G HSS queries per FS.19 |
 
 The Verifier **never** sends ATI over SS7 interconnect. FS.11 classifies ATI as **Category 1** (unauthorised on interconnect). This is a deployment invariant: Restlink SAS runs inside the operator network and queries Ethio Telecom's own HLR/HSS.
 

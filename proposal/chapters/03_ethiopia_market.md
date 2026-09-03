@@ -195,7 +195,7 @@ Restlink is a **Value-Added Services integrator** headquartered in Addis Ababa, 
 | **CAMARA NV adapter** | Standard API surface for banks and government |
 | **Integrator SDKs** | Android/iOS helpers for bearer metadata collection |
 | **Operations** | Monitoring, SLA, incident response, audit log export |
-| **Signalling stack** | jSS7 MAP + jDiameter S6a client (operator-approved deployment) |
+| **Signalling stack** | jSS7 MAP + Diameter S6a client on corsac-diameter fork (operator-approved deployment) |
 
 ### 3.5.2 What Restlink is not
 

@@ -1,11 +1,12 @@
 # Silent Authentication — AGENTS.md
 
-**JDK: N/A (docs / Python).** No Java build in this tree today — **ask** before introducing or running any Java toolchain. Workspace rule: [`../../../AGENTS.md`](../../../AGENTS.md).
+**Toolchain:** Java **25** (mise: `zulu-25`) + Maven 3.9.9 (`mise.toml`), Quarkus 3.37.3,
+plus Python 3 scripts (harness, slides, proposal). Workspace rule:
+[`../../../AGENTS.md`](../../../AGENTS.md) — Java 25 only, never downgrade `maven.compiler.release`.
 
-Agent notes for `worktrees/silent-authentication/main`. Research / design / pitch workspace
-for Restlink Silent Auth (Ethiopia). Not USSD GW source; not micro-jainslee Quarkus examples.
-
-Seeded from Supermemory (2026-07-18) + design/pitch work (2026-07-20).
+Agent notes for `worktrees/silent-authentication/main`. Restlink Silent Auth (Ethiopia):
+research / design / pitch **and** the runnable SAS implementation. Not USSD GW source;
+not micro-jainslee Quarkus examples. Do not confuse with `ussdgateway` (WF10 + old jSS7).
 
 ---
 
@@ -13,283 +14,207 @@ Seeded from Supermemory (2026-07-18) + design/pitch work (2026-07-20).
 
 | Path | Role |
 |------|------|
-| `worktrees/silent-authentication/main` | **Only** checkout (real dir under `worktrees/`) |
-| Do **not** recreate | `ethiopia-working-dir/silent-authentication` at repo root |
+| `worktrees/silent-authentication/main` | **Only** checkout — never recreate at repo root |
 
 ```
 main/
 ├── AGENTS.md                 ← this file
 ├── README.md
-├── docs/design/              ← SAS flow, unified architecture, cellular bearer login
-├── docs/research/            ← SMS channel protection + GSMA FS index
+├── pom.xml                   ← root aggregator `et.restlink:sas-core`
+├── docs/design/              ← SAS flow, unified architecture, cellular bearer login, TS.43
+├── docs/research/            ← 3GPP/GSMA/CAMARA spec notes (SoT for harness gates)
 ├── proposal/                 ← formal DOCX chapters + build script
 ├── sas-api/                  ← CAMARA northbound library (/verify, oauth, security)
 ├── sas-entitlement/          ← TS.43/Wi-Fi entitlement track library
 ├── sas-host/                 ← runnable Quarkus app (SLEE bootstrap, RAS, CDR, admin)
+├── sas-diameter-testapp/     ← lab HSS/AAA/PCRF(Gx) Diameter simulator (corsac), :3868
+├── sas-jss7-testapp/         ← lab home-HLR simulator (jSS7 coral-valley), SCTP :2906
 ├── ue-sdk/                   ← device-side tuple SDK (Java 25, JVM) — AccessTech, Connector
 ├── ue-sdk-android/           ← Android SDK: pins its socket to the cellular Network
 ├── ue-sdk-ios/               ← Swift SDK: NWPathMonitor/CoreTelephony bearer gate
 ├── ue-sdk-web/               ← browser SDK: observes navigator.connection, fails closed
+├── scripts/                  ← package-dist.sh + run.sh (Quarkus fast-jar dist)
 ├── harness/                  ← gates.yaml + run_hardness.py + preflight_prod.py (prod gate)
-└── slides/                   ← PPTX v1/v2/v3 + SVG assets + build scripts
+└── slides/                   ← PPTX/SVG pitch assets (gitignored local artifact)
 ```
 
+Build boundaries that are easy to get wrong:
 
----
+- Root aggregator builds **only** `sas-api` + `sas-entitlement` + `sas-host`.
+  The two test apps (`sas-diameter-testapp`, `sas-jss7-testapp`) and all `ue-sdk*`
+  modules are **standalone builds** — `cd` in and build them individually.
+- `dist/`, `slides/`, `*/target/`, `sas-host/data/` are **gitignored local artifacts** —
+  never commit them (also push-blockers, see `harness/preflight_prod.py` PRO-xx).
 
-## 1. Product / commercial (Restlink)
+## 1. Commands
 
-- Restlink sells **silent authentication VAS** to Ethiopian banks.
-- Restlink is an **adapter layer ABOVE Ethio Telecom** — does **not** take SMS/interconnect
-  revenue from the operator.
-- Restlink bills banks for **`/verify` API**; fallback SMS still rides operator SMSC.
-- Persona: bank login without SMS OTP (“Chú Phỉnh”).
-- Pitch theme: Ethiopian flag green/yellow/red.
+```bash
+# Full build + tests (JDK 25 via mise; modules: sas-api, sas-entitlement, sas-host)
+mvn -o test                                  # from repo root
+mvn -o test -pl sas-host -Dtest=ClassName    # single test class
 
----
+# Lab dist: package then run (Quarkus fast-jar, NEVER a fat jar)
+./scripts/package-dist.sh                    # assembles dist/ (SAS_DIST_DIR to override)
+dist/run.sh                                  # lab profile, plain HTTP :8085, H2 under data/
+QUARKUS_PROFILE=prod dist/run.sh             # prod — env vars from application-prod.properties;
+                                             # preflight refuses a lab-shaped boot
 
-## 2. What Silent Auth is
+# UE SDKs
+(cd ue-sdk && mvn -o test) && (cd ue-sdk-android && mvn -o test)
+(cd ue-sdk-web && node --test)
+(cd ue-sdk-ios && swift test)                # macOS/Xcode only
+
+# Lab signalling simulators (standalone; run AFTER building them)
+java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar   # HSS/AAA/Gx :3868
+java -jar sas-jss7-testapp/target/sas-jss7-testapp.jar           # HLR sim SCTP :2906, ctrl :8087
+
+# Gates — run after any contract/design/deployment change (order matters: harness first)
+python3 harness/run_hardness.py              # 34/34 gates H1–H24, exit 0 = pass
+python3 harness/run_hardness.py --mutations  # H24 slee_boundary mutation self-test — 10/10
+python3 harness/preflight_prod.py            # prod-profile verdict for THIS env (exit = #fails)
+python3 harness/preflight_prod.py --selftest # 22/22 mutation scenarios detected
+
+# Artifacts
+python3 proposal/scripts/build_proposal_docx.py
+python3 slides/scripts/generate_svgs.py && python3 slides/scripts/generate_svgs_v2.py \
+  && python3 slides/scripts/build_pptx_v3.py   # Mix v3 deck; v2/v1: build_pptx_v2.py / build_pptx.py
+```
+
+There is no separate lint/typecheck step — `mvn -o test` (compile + tests) plus the
+harness gates are the verification loop. **Resource hygiene:** stop every JVM/docker you
+started when done; `sas-host/data/` and CDRs are lab artifacts, never commit them.
+
+## 2. Product / commercial (Restlink)
+
+- Restlink sells **silent authentication VAS** to Ethiopian banks; bills banks for
+  **`/verify` API**. Restlink is an **adapter layer ABOVE Ethio Telecom** — does **not**
+  take SMS/interconnect revenue from the operator.
+- Persona: bank login without SMS OTP. Pitch theme: Ethiopian flag green/yellow/red.
+
+## 3. What Silent Auth is
 
 Proof that the phone currently on the network owns the claimed MSISDN — **no password
-re-entry, no SMS OTP** on the happy path.
-
-App-facing surface: **CAMARA Number Verification** (NV2) over SAS `/verify`.
-
-### Two silent-auth methods
+re-entry, no SMS OTP** on the happy path. App-facing surface: **CAMARA Number
+Verification** (NV2) over SAS `/verify`.
 
 | Method | Root of trust | Needs cellular data? | Notes |
 |--------|---------------|----------------------|-------|
 | **IP-match** (Resolver + Verifier) | Bearer IP↔MSISDN via PGW + MAP/Diameter | **Yes** | CGNAT → require IP+port+ts |
 | **SIM / TS.43 EAP-AKA** | SIM credential | **No** (Wi‑Fi + browsers OK) | Shrinks fallback-to-OTP surface |
 
-Earlier assumption “all silent auth needs cellular” is **wrong** for TS.43.
+Constraints: IP method fails on Wi‑Fi-only / no binding / stale → **FALLBACK**;
+coverage can be limited (~50% some regions). Fallback: TOTP, Passkey, push, or
+firewalled SMS OTP.
 
-### Constraints
+## 4. Hard design invariants (never regress)
 
-- IP method fails on Wi‑Fi-only / no binding / stale → **FALLBACK**.
-- Coverage can be limited (~50% some regions for IP method).
-- Fallback: TOTP, Passkey, push, or firewalled SMS OTP.
-
----
-
-## 3. Hard design invariant
-
-**MAP / Diameter cannot map `IP → MSISDN`.**
-
-| Question | Who answers |
-|----------|-------------|
-| Which MSISDN owns cellular IP `A.B.C.D:port` now? | **PGW / GGSN / PCRF / CGNAT** (Resolver) |
-| Is that MSISDN live / not SIM-swapped? | **MAP** (ATI/PSI/SAI) or **Diameter S6a** (AIR/IDR) (Verifier) |
-
-Two stages:
+**MAP / Diameter cannot map `IP → MSISDN`.** Two stages:
 
 ```
 IP:port:ts  ──[Resolver]──►  MSISDN/IMSI  ──[Verifier]──►  assurance
+   (PGW / GGSN / PCRF / CGNAT)              (MAP PSI/SAI or Diameter S6a ULR + Sh UDR)
 ```
-
----
-
-## 4. SAS (Silent Auth Service)
-
-Actors: Bank App (cellular) → Bank Backend → **SAS** (Resolver + Verifier + Policy) →
-IP Resolver + MAP/Diameter Verifier → own HLR/HSS.
-
-### FSM (fail-closed)
-
-`RESOLVING → VERIFYING → SCORING → APPROVED`  
-Any missing evidence / timeout → **FALLBACK** (never soft-pass).
-
-### Timeouts (dialog-anchor)
-
-| Stage | Budget | On expiry |
-|-------|--------|-----------|
-| Resolver | 300 ms | FALLBACK |
-| MAP PSI/ATI | 2 s | abort dialog, FALLBACK |
-| Diameter S6a | 2 s | FALLBACK |
-| Total SAS | 3 s | bank normal login |
-
-### Assurance (sketch)
-
-```
-score = w1*ipBindingFresh + w2*reachable + w3*notSimSwapped + w4*locationPlausible
-APPROVE iff score >= threshold AND (resolved==claimed when claimed present)
-```
-
-High-value txs → raise threshold or force step-up.
-
-### Security checklist (must not regress)
 
 - **No interconnect ATI** — FS.11 Category 1; SAS queries **own** HLR/HSS only.
-- **Fail-closed** — missing evidence never approves.
-- **Idempotency** — `reqId` dedups; one MAP/Diameter dialog per stage.
+- **Fail-closed** — missing evidence / timeout never approves, always **FALLBACK**.
+- **Idempotency** — `reqId` dedups; **one** MAP/Diameter dialog per stage.
 - **Dialog leak** — bounded TC timer; timeout ⇒ `abort()`.
 - **Race** — binding read is point-in-time (`ts`), not “latest”.
 - **Replay** — bank→SAS mTLS; `ts` + `reqId` window.
 - **CGNAT** — require IP+port+ts; reject if >1 MSISDN.
-- **Bearer** — IP-match is a cellular-bearer claim only. A device-declared
-  `accessTech` is advisory (never raises assurance); a tuple declared `WIFI` /
-  `FIXED` is refused at `/session-tuple` so it cannot seed a cellular binding.
-  SDKs fail closed when the radio is not readable, and must not call
+- **Bearer** — IP-match is a cellular-bearer claim only. Device-declared `accessTech`
+  is advisory (never raises assurance); tuples declared `WIFI`/`FIXED` are refused at
+  `/session-tuple`. SDKs fail closed when the radio is not readable and must not call
   `bindProcessToNetwork()` (process-wide, leaks).
-- **Privacy** — MSISDN/IMSI **never** returned to mobile app (bank backend only).
+- **Privacy** — MSISDN/IMSI **never** returned to the mobile app (bank backend only).
 - **Spoofed GT** — trust only own HSS responses (FS.11 §3.3.4).
 
----
+### SAS FSM + timeouts
+
+`RESOLVING → VERIFYING → SCORING → APPROVED`; any missing evidence/timeout → **FALLBACK**.
+
+| Stage | Budget | On expiry |
+|-------|--------|-----------|
+| Resolver | 300 ms | FALLBACK |
+| MAP PSI/ATI · Diameter S6a | 2 s | abort dialog, FALLBACK |
+| Total SAS | 3 s | bank normal login |
+
+Assurance sketch: `score = w1*ipBindingFresh + w2*reachable + w3*notSimSwapped +
+w4*locationPlausible`; APPROVE iff `score >= threshold AND (resolved==claimed when
+claimed present)`. High-value txs → raise threshold or force step-up.
 
 ## 5. Signalling reference
 
-### 2G/3G — MAP (intra-net)
+**2G/3G — MAP (intra-net):** PSI (subscriber state+location, preferred), ATI
+(any-time interrogation — **intra-net ONLY**, Cat 1 on interconnect), SAI (auth
+vectors / SIM-swap freshness), SRI-SM (SMS routing). jSS7 (coral-valley):
+`AnyTimeInterrogation*`, `ProvideSubscriberInfo*`, `SendAuthenticationInfo*` via
+`MAPServiceMobility`.
 
-| Message | Purpose | FS.11 |
-|---------|---------|-------|
-| **PSI** | subscriber state + location (preferred) | Cat 2.1 |
-| **ATI** | any-time interrogation — **intra-net ONLY** | Cat 1 on interconnect |
-| **SAI** | auth vectors / SIM-swap freshness | Cat 3.2 |
-| SRI-SM | routing (SMS path; Home Routing protects) | — |
+**LTE/5G — Diameter S6a:** ULR/ULA, NOR/NOA, PUR/PUA (FS.19) + read-only Sh
+UDR/SNR (TS 29.328/29.329). **No AIR/AIA / IDR/IDA on the verify path**: AIR consumes
+real EPS vectors and advances the AuC SQN (MAC-failure re-sync risk); IDR is an
+HSS→MME push, the wrong direction for a read query.
 
-jSS7 (coral-valley): `AnyTimeInterrogation*`, `ProvideSubscriberInfo*`,
-`SendAuthenticationInfo*` via `MAPServiceMobility`.
+**Unified architecture (two complementary strategies):** A — replace OTP (silent
+auth, app/identity layer); B — protect OTP (SMS Home Routing + SS7/Diameter/5G FW,
+signalling layer). Rollout: protect SMS → Diameter/5G (DEA, SEPP/N32) → introduce
+silent auth → OTP shrinks to firewalled fallback. Silent Auth does **not** replace
+SS7/Diameter firewalls. Detail: `docs/design/unified-identity-sms-security-architecture.md`,
+GSMA index: `docs/research/gsma-fs-index.md`.
 
-### LTE/5G — Diameter S6a
+## 6. Doc map (read in this order)
 
-AIR/AIA, IDR/IDA, ULR/ULA, NOR/NOA, PUR/PUA — FS.19.
-
----
-
-## 6. Unified architecture (two strategies)
-
-They are **complementary**, not alternatives:
-
-| | Strategy A — Replace OTP | Strategy B — Protect OTP |
-|--|--------------------------|--------------------------|
-| Mech | Silent Auth (NV2 / TS.43 / IP-match) | SMS Home Routing + SS7/Diameter/5G FW |
-| Layer | Application / identity | Signalling / interconnect |
-
-**Rollout order (recommended):**
-
-1. Protect SMS (Home Routing + SS7 FW)
-2. Diameter/5G (DEA FS.19, SEPP/N32 FS.36)
-3. Introduce silent auth
-4. Shift traffic; OTP shrinks to firewalled fallback
-
-Details: `docs/design/unified-identity-sms-security-architecture.md`.
-
----
-
-## 7. GSMA / CAMARA cheat sheet
-
-| Doc | Use here |
-|-----|----------|
-| FS.07 | SS7/SIGTRAN threat foundation |
-| **FS.11** | SS7 FW categories; ATI Cat 1; SRI-SM / MT-spoof / Double MAP |
-| FS.19 | Diameter interconnect |
-| FS.20 | GTP (secondary) |
-| FS.21 | Umbrella categorise/monitor/filter |
-| FS.31 | Baseline controls |
-| FS.36 | 5G SEPP/N32 |
-| SG.22 / FF.09 | SMS FW policy / SMS fraud taxonomy |
-| **CAMARA** | Number Verification, SIM Swap, Scam Signal, KYC Match |
-| **TS.43** | EAP-AKA SIM silent auth (Wi‑Fi capable) |
-
-Index: `docs/research/gsma-fs-index.md`.  
-Strategy B detail: `docs/research/sms-channel-protection.md`.
-
-Silent Auth does **not** replace SS7/Diameter firewalls.
-
----
-
-## 8. Doc map (read in this order)
-
-1. `docs/design/silent-auth-flow.md` — banking E2E, SAS FSM, timeouts, checklist
+1. `docs/design/silent-auth-standard-flow.md` — banking E2E, SAS FSM, timeouts, checklist
 2. `docs/design/unified-identity-sms-security-architecture.md` — A+B umbrella
 3. `docs/design/3gpp-spec-coverage.md` — stage→spec→message coverage contract (100%)
-4. `docs/design/hardness.md` — DeepSeek-Hardness gates + how to run (`harness/run_hardness.py`)
-5. `docs/research/3gpp-spec-reference-index.md` — **index of all 3GPP specs (100% of surface)**
-6. `docs/research/3gpp-ts29-002-map.md` — SS7 MAP ops (PSI/ATI/SAI) for the Verifier
-7. `docs/research/3gpp-ts29-272-s6a.md` — Diameter S6a/S6d commands (LTE, not Wi-Fi)
-8. `docs/research/3gpp-ts29-273-s6b-swm-swx.md` — S6b (Resolver data-plane) + SWm/SWx (Wi-Fi AAA)
-9. `docs/research/3gpp-ts33-402-eap-aka.md` — EAP-AKA / TS.43 Wi-Fi silent auth (SWm/SWx)
+4. `docs/design/hardness.md` — DeepSeek-Hardness gates + how to run
+5. `docs/research/3gpp-spec-reference-index.md` — **index of all 3GPP specs**
+6. `docs/research/3gpp-ts29-002-map.md` — MAP ops (PSI/ATI/SAI) for the Verifier
+7. `docs/research/3gpp-ts29-272-s6a.md` — Diameter S6a/S6d (LTE, not Wi-Fi)
+8. `docs/research/3gpp-ts29-273-s6b-swm-swx.md` — S6b + SWm/SWx (Wi-Fi AAA)
+9. `docs/research/3gpp-ts33-402-eap-aka.md` — EAP-AKA / TS.43 Wi-Fi silent auth
 10. `docs/research/3gpp-ts29-338-sgd.md` — SGd (fallback SMS OTP over Diameter)
-11. `docs/research/3gpp-ts33-501-n32.md` — 5G Nudm/Nausf path + SEPP/N32 boundary
-12. `docs/research/3gpp-ts23-series-map-procedures.md` — TCAP dialog/timer lifecycle (TC-TIMER)
-13. `docs/research/camara-number-verification.md` — **CAMARA NumberVerification v2.1.0 `/verify` contract**
-14. `docs/research/sms-channel-protection.md` — Home Routing / DEA / SEPP
-15. `docs/research/gsma-fs-index.md` — FASG PRD index
-16. `README.md` — overview + build commands
-17. `proposal/chapters/*` — formal proposal narrative
-18. `slides/` — pitch decks
-19. `docs/result_p1_reaudit.md` — **what is production-gated today** (prod profile +
-    PRO-01…PRO-28 preflight + H15–H21) and the explicit list of what is still unproven
-20. `LICENSE.md` — **dual license** (AGPL-3.0 Community OR proprietary Operator);
-    scope table, AGPL §13 duty, "spec material not relicensed". Every module README
-    repeats both editions — keep them in sync with `LICENSE.md`.
+11. `docs/research/3gpp-ts33-501-n32.md` — 5G Nudm/Nausf + SEPP/N32 boundary
+12. `docs/research/3gpp-ts23-series-map-procedures.md` — TCAP dialog/timer (TC-TIMER)
+13. `docs/research/camara-number-verification.md` — **CAMARA NV v2.1.0 `/verify` contract**
+14. `docs/research/sms-channel-protection.md` — Home Routing / DEA / SEPP (Strategy B)
+15. `docs/result_p1_reaudit.md` — **what is production-gated today** + what is still unproven
+16. `docs/design/cellular-bearer-login.md` — UE SDK bearer pinning platform matrix
+17. `docs/design/ts43-eapaka-wire-protocol.md` + `ts43-entitlement-integration-contract.md`
+18. `LICENSE.md` — dual license scope; every module README repeats both editions
+19. `README.md` — overview + build commands · `proposal/chapters/*` · `slides/`
+
+## 7. Hardness gate (installed)
+
+Gates in `harness/gates.yaml` (H1–H24), each anchored to a 3GPP clause / CAMARA contract.
+H1–H14 assert the documented design contract; **H15–H21** assert the deployment artifact
+via `preflight_prod.verify()` (28 `PRO-xx` static checks over `application.properties` +
+`application-prod.properties` + `${ENV}`); **H22** device bearer-declaration parity
+(checker `access_tech_parity`); **H23** dual-license parity (checker `license_parity`);
+**H24** micro-jainslee boundary (checker `slee_boundary`, mutation-checked via
+`harness/mut_slee_boundary.py`). Runner: `harness/run_hardness.py`.
+Spec text SoT: `docs/research/`.
 
 ### Device SDK / transport contract
 
-`docs/design/cellular-bearer-login.md` — how the UE SDKs put a silent-auth call
-on a **2G/3G/4G/5G data bearer** instead of Wi-Fi: the `accessTech` tuple field +
-`X-Sas-Access-Tech` header, the SAS refusal of non-cellular tuples
-(`400 ACCESS_TECH_NOT_CELLULAR`), the `CellularRequirement` client policy, and the
-verified platform matrix — Android can pin per request via
+`docs/design/cellular-bearer-login.md`: `accessTech` tuple field + `X-Sas-Access-Tech`
+header; SAS refuses non-cellular tuples (`400 ACCESS_TECH_NOT_CELLULAR`);
+`CellularRequirement` client policy. Platform matrix: Android can pin per request via
 `Network.openConnection(URL)`; **iOS cannot pin a `URLSession`** (the
-`URLSessionConfiguration.requiredInterfaceType` snippet circulating in CAMARA
-write-ups does not exist — `requiredInterfaceType` is on `NWParameters` and binds
-`NWConnection`); a browser cannot pin at all.
+`URLSessionConfiguration.requiredInterfaceType` snippet circulating in CAMARA write-ups
+does not exist — `requiredInterfaceType` is on `NWParameters` and binds `NWConnection`);
+a browser cannot pin at all.
 
-### Hardness gate (installed)
-
-```bash
-python3 harness/run_hardness.py    # contract + deployment gates — 34/34, exit 0 = pass
-python3 harness/run_hardness.py --mutations   # H24 slee_boundary mutation self-test — 10/10
-python3 harness/preflight_prod.py  # prod-profile verdict for THIS environment (exit = #fails)
-python3 harness/preflight_prod.py --selftest   # 22/22 mutation scenarios detected
-```
-
-Gates in `harness/gates.yaml` (H1–H24), each anchored to a 3GPP clause / CAMARA contract.
-H1–H14 assert the documented design contract; **H15–H21 assert the deployment
-artifact** by driving `preflight_prod.verify()` (28 `PRO-xx` static checks over
-`application.properties` + `application-prod.properties` + `${ENV}`); **H22 asserts
-device bearer-declaration parity** across the SAS enum and all four UE SDKs
-(checker `access_tech_parity`, mutation-checked); **H23 asserts dual-license parity**
-across `LICENSE.md`, the root + component READMEs, Maven `<licenses>` and npm `license`
-(checker `license_parity`, mutation-checked); **H24 asserts the micro-jainslee
-boundary** — only micro-jainslee services run the SAS, nothing is coded around the
-container (checker `slee_boundary`, mutation-checked via
-`harness/mut_slee_boundary.py` / `--mutations`, see §10). Runner:
-`harness/run_hardness.py`. Spec text SoT: `docs/research/`.
-
----
-
-## 9. Artifacts & rebuild
-
-### Proposal DOCX
-
-`proposal/Restlink_Silent_Auth_Proposal_v3.docx` — chapters in `proposal/chapters/`.
-
-```bash
-python3 proposal/scripts/build_proposal_docx.py
-```
-
-### Pitch decks
-
-| Deck | File | Rebuild |
-|------|------|---------|
-| **Mix v3 (recommended)** | `slides/Restlink_Silent_Auth_Mix_v3.pptx` | `generate_svgs.py` + `generate_svgs_v2.py` + `build_pptx_v3.py` |
-| Technical v2 | `slides/Restlink_Silent_Auth_Technical_v2.pptx` | `generate_svgs_v2.py` + `build_pptx_v2.py` |
-| Marketing v1 | `slides/Restlink_Silent_Auth_Ethiopia.pptx` | `generate_svgs.py` + `build_pptx.py` |
-
-Scripts live under `slides/scripts/`.
-
----
-
-## 10. Agent rules (this tree)
+## 8. Agent rules (this tree)
 
 Always:
 
 - Keep checkout **under** `worktrees/silent-authentication/` — no root-level copy.
 - Prefer sequence diagrams + FSM + timeout tables for protocol/auth changes.
 - Preserve **fail-closed** and **no interconnect ATI**.
-- Do not confuse with `ussdgateway` (WF10 + old jSS7) or Quarkus USSD examples.
+- Scope discipline (`.clinerules`): only read/modify files directly relevant to the
+  task; no whole-tree scans or reading large unrelated files without asking.
 - When recalling prior decisions: use **Supermemory MCP** (`recall` / `memory`).
 
 License / IP (dual license — never improvise here):
@@ -305,9 +230,6 @@ License / IP (dual license — never improvise here):
   a half-finished sweep).
 - 3GPP / GSMA / CAMARA text in `docs/research/` is **not** ours to relicense:
   paraphrase, cite the doc number, never paste long spec excerpts.
-- Never commit `sas-host/data/`, `*/target/`, CDRs, real MSISDNs or keys — they
-  are build/local artifacts and are also push-blockers in history (see
-  `harness/preflight_prod.py`, `PRO-xx`).
 
 Protocol / design:
 
@@ -340,46 +262,37 @@ is coded around the container**; enforced by `harness/gates.yaml` H24 →
 Open items (do not silently invent answers):
 
 - [ ] Resolver source per operator (PGW RADIUS vs PCRF Sd vs CGNAT log)
-- [ ] jDiameter S6a client module
-- [x] CAMARA NV **Java adapter** over SAS `/verify` — **P0 scaffold implemented** in
-  [`sas-host/`](sas-host/README.md) (Quarkus + micro-jainslee; clones `ra-diameter` + `ElisaBootstrap`).
-  Contract: `docs/research/camara-number-verification.md`.
+- [x] CAMARA NV **Java adapter** over SAS `/verify` — implemented in
+      [`sas-host/`](sas-host/README.md) (Quarkus + micro-jainslee; clones `ra-diameter`
+      + `ElisaBootstrap`). Contract: `docs/research/camara-number-verification.md`.
 - [x] **P2 real MAP transport** — `Jss7MapVerifierBackend` (jSS7 coral-valley) drives
-  PSI + SAI dialogs against the own HLR/HSS, never ATI. Opt-in via `sas.transport.map=jss7`
-  (sample config `sas-host/src/main/resources/ss7-sas.json`). Fail-closed on any timeout/reject/abort.
+      PSI + SAI dialogs against the own HLR/HSS, never ATI. Opt-in via
+      `sas.transport.map=jss7` (sample config `sas-host/src/main/resources/ss7-sas.json`).
+- [x] **Diameter S6a/SWx verifier** — `ras/s6averifier` + `ras/swxverifier` over a local
+      AGPL fork of Mobius corsac-diameter; lab peer is `sas-diameter-testapp` (HSS/AAA/Gx).
 - [ ] Assurance weights + per-risk thresholds
-- [x] **Cellular (2G/3G/4G/5G) login in the UE SDKs** — silent auth is no longer
-      Wi-Fi-assumed. Every SDK declares the observed `AccessTech` on
-      `POST /session-tuple` (+ `X-Sas-Access-Tech`), the SAS refuses non-cellular
-      tuples (`400 ACCESS_TECH_NOT_CELLULAR`), and clients fail closed on an
-      unusable bearer (`CellularRequirement`). Android pins its own socket via
-      `Network.openConnection(URL)`; iOS gates on `NWPathMonitor` + CoreTelephony
-      (a `URLSession` **cannot** be pinned — `requiredInterfaceType` is
-      `NWParameters`-only); browsers cannot pin, so `ue-sdk-web` only observes.
-      Contract + platform matrix: `docs/design/cellular-bearer-login.md`; gate H22.
-- [ ] Post-CGNAT `srcPort` discovery: devices cannot observe the translated port,
-      so `/session-tuple` still receives `srcPort=0` from real handsets. Needs a
-      small echo endpoint (observed IP:port of the tuple POST) — `sas-host/TODO.md` P-H8.
+- [x] **Cellular (2G/3G/4G/5G) login in the UE SDKs** — every SDK declares the observed
+      `AccessTech` on `POST /session-tuple` (+ `X-Sas-Access-Tech`), the SAS refuses
+      non-cellular tuples, clients fail closed on an unusable bearer. Contract + platform
+      matrix: `docs/design/cellular-bearer-login.md`; gate H22.
+- [ ] Post-CGNAT `srcPort` discovery: devices cannot observe the translated port, so
+      `/session-tuple` still receives `srcPort=0` from real handsets. Needs a small echo
+      endpoint — `sas-host/TODO.md` P-H8.
 - [ ] Bind the device's bearer declaration to evidence (observed source address +
       Play Integrity / DeviceCheck attestation) so `accessTech` stops being a claim.
-- [ ] TS.43 entitlement server feasibility (Wi‑Fi path)
+- [ ] TS.43 entitlement server feasibility (Wi‑Fi path) — library + wire protocol
+      designed (`sas-entitlement`, `docs/design/ts43-*.md`); operator-side feasibility open
 - [ ] Strategy B product choice (SMS Router / SS7 FW vs jSS7-based)
 - [ ] Restlink pilot API contract for Ethiopian banks
-- [ ] **SAS admin dashboard** (clone gmlc admin) — dashboard, SS7, HTTP endpoint, Diameter
-  (JSON, multi-realm/multi-app + on-the-fly reload), CDR, tenant→networkId, user→networkId+
-  bearer/API key. In progress in `sas-host/` (see `sas-host/TODO.md` for production hardening backlog).
-- [x] Production hardening for the SAS HTTP `/verify` endpoint — **closed at the
-      configuration level** (2026-08-30): `sas-host/src/main/resources/application-prod.properties`
-      (HTTPS-only, mTLS, token + API-key enforcement, real transports, PostgreSQL)
-      is gated by `harness/preflight_prod.py` → harness gates H15–H21. Re-audit:
-      [`docs/result_p1_reaudit.md`](docs/result_p1_reaudit.md). Still open: HSTS
-      (edge proxy — Quarkus core has no such property), live mTLS/SS7/Diameter UAT,
-      key lifecycle (P-H3), metrics (P-H7). See `sas-host/TODO.md`.
-      **Lab profile still accepts plain HTTP + no auth by design — never ship it.**
+- [ ] **SAS admin dashboard** hardening — in progress in `sas-host/` (`sas-host/TODO.md`)
+- [x] Production hardening for `/verify` — **closed at the configuration level**:
+      `application-prod.properties` (HTTPS-only, mTLS, token + API-key, real transports,
+      PostgreSQL) gated by `harness/preflight_prod.py` → H15–H21. Re-audit:
+      `docs/result_p1_reaudit.md`. Still open: HSTS (edge proxy), live mTLS/SS7/Diameter
+      UAT, key lifecycle (P-H3), metrics (P-H7). **Lab profile accepts plain HTTP +
+      no auth by design — never ship it.**
 
----
-
-## 11. Supermemory
+## 9. Supermemory
 
 Store/recall project facts via Supermemory MCP. Key tags already on file:
 
@@ -397,11 +310,14 @@ Composer / Copilot / ChatGPT / OpenAI, `noreply@anthropic.com`, `cursoragent`, `
 Enforced by two per-repo hooks (`RESTLINK-AGENT-ATTRIBUTION-GUARD v1`):
 `commit-msg` rejects the commit, `pre-push` re-scans the whole pushed range and blocks the push.
 **`--no-verify` is forbidden** — it only defers the rejection to `pre-push`.
-Workspace rule: [`AGENTS.md` at the root of `ethiopia-working-dir`](../AGENTS.md).
+Workspace rule: [`AGENTS.md` at the root of `ethiopia-working-dir`](../../../AGENTS.md).
 
 ## Resource hygiene (workplace-wide rule, 2026-08-23)
 
-- When done (tests/smoke/dev): stop everything you started — `docker compose down` (keep volumes), kill dev servers/JVMs you spawned. Never leave them running "for later"; RAM is shared across ALL worktrees on this machine.
-- Before ending a session verify: `docker ps` shows nothing from this tree; no stray `java`/`node` processes left (`ps -eo pid,rss,args --sort=-rss | head`).
-- Long-lived services (EPC / FreeSWITCH / PG / app servers) run only while their session needs them. If the owner asks to keep one up, note which and why in the session handoff.
-- DB/app port binds use loopback (`127.0.0.1:`) unless explicitly public; never expose default credentials beyond lab.
+- When done (tests/smoke/dev): stop everything you started — `docker compose down` (keep
+  volumes), kill dev servers/JVMs you spawned. RAM is shared across ALL worktrees.
+- Before ending a session verify: `docker ps` shows nothing from this tree; no stray
+  `java`/`node` processes (`ps -eo pid,rss,args --sort=-rss | head`).
+- Long-lived services run only while their session needs them; note keepers in handoff.
+- DB/app port binds use loopback (`127.0.0.1:`) unless explicitly public; never expose
+  default credentials beyond lab.

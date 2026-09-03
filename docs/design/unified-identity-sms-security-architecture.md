@@ -4,7 +4,7 @@ Two strategies that protect the same asset — the customer's phone-number ident
 from opposite sides. This is the umbrella that ties them together.
 
 - Research date: 2026-07-20
-- Related: [`silent-auth-flow.md`](silent-auth-flow.md),
+- Related: [`silent-auth-standard-flow.md`](silent-auth-standard-flow.md),
   [`../research/sms-channel-protection.md`](../research/sms-channel-protection.md),
   [`../research/gsma-fs-index.md`](../research/gsma-fs-index.md)
 
@@ -64,7 +64,7 @@ flowchart TD
     score -->|"< threshold"| stepup[Step-up MFA]
 ```
 
-Key correction to the original `silent-auth-flow.md` assumption ("requires active
+Key correction to the original `silent-auth-standard-flow.md` assumption ("requires active
 cellular data"): that holds for the **network / IP-matching method** only. The **SIM
 method (TS.43 EAP-AKA)** extends silent auth across Wi-Fi and browsers because the root
 of trust is the SIM credential, not the bearer IP. Both share the same SIM root of trust.
@@ -116,7 +116,7 @@ flowchart LR
     SEPP -.guards.-> HLR
 ```
 
-- SAS (see `silent-auth-flow.md`) queries the **own** HLR/HSS intra-network (ATI is FS.11
+- SAS (see `silent-auth-standard-flow.md`) queries the **own** HLR/HSS intra-network (ATI is FS.11
   Category 1 on interconnect).
 - SMS Router + SS7 FW / DEA / SEPP guard the interconnect border so the residual OTP is
   delivered only via the home network.

@@ -72,7 +72,7 @@ flowchart TB
 
 Direct consequences used elsewhere in this repo:
 - **ATI = Cat 1** -> silent-auth Verifier must query the **own** HLR intra-network, never
-  over interconnect (see `../design/silent-auth-flow.md`).
+  over interconnect (see `../design/silent-auth-standard-flow.md`).
 - **SRI-SM / MT-FSM** handling and **SMS Home Routing** derive from FS.11 §3 + Annex B
   (see `sms-channel-protection.md`).
 

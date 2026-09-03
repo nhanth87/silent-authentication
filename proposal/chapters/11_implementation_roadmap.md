@@ -82,7 +82,7 @@ gantt
 
 | In scope | Out of scope |
 |----------|--------------|
-| jDiameter S6a client (mirror MAP verifier pattern) | TS.43 EAP-AKA (Phase 3) |
+| Diameter S6a client on corsac-diameter fork (mirror MAP verifier pattern) | TS.43 EAP-AKA (Phase 3) |
 | Dual-path verifier: MAP for 2G/3G, Diameter for 4G/5G | 5G SEPP/N32 implementation (operator-led) |
 | CAMARA SIM Swap API (check + notification webhook) | Number Recycling API |
 | Assurance tiering (login vs transfer vs benefit) | International roaming silent auth |
@@ -103,7 +103,7 @@ gantt
 
 | WP | Title | Owner | Duration | Dependencies |
 |----|-------|-------|----------|--------------|
-| WP2.1 | jDiameter S6a module | Restlink engineering | 8 weeks | Phase 1 complete |
+| WP2.1 | Diameter S6a module (corsac-diameter fork) | Restlink engineering | 8 weeks | Phase 1 complete |
 | WP2.2 | Verifier routing logic (MAP ↔ Diameter) | Restlink engineering | 3 weeks | WP2.1 |
 | WP2.3 | CAMARA SIM Swap adapter | Restlink engineering | 6 weeks | WP2.2 |
 | WP2.4 | Bank rollout wave (5 institutions) | Restlink PS | 12 weeks | WP2.3 |
@@ -186,7 +186,7 @@ gantt
 | R6 | SMS revenue concern blocks operator sign-off | Medium | High | Commercial model §10: no SMS margin to Restlink; optional API share | Commercial |
 | R7 | SIM-swap signal false positive / negative | Medium | High | SAI + last-update age; tunable cooldown; CAMARA SIM Swap Phase 2 | Restlink |
 | R8 | Regulatory delay (NBE / MoIT approval) | Medium | Medium | Early observer engagement; FS.11/19 mapping pack | Restlink |
-| R9 | jDiameter S6a interoperability gaps | Medium | Medium | Lab HSS; vendor test harness; MAP fallback for 4G attach | Restlink |
+| R9 | Diameter S6a interoperability gaps | Medium | Medium | Lab HSS (`sas-diameter-testapp`) reference run; vendor test harness; MAP fallback for 4G attach | Restlink |
 | R10 | TS.43 entitlement complexity | High | Medium | Phase 3 gate; Wi-Fi remains OTP+Home Routing until proven | Ethio Telecom |
 
 ---

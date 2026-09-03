@@ -93,7 +93,7 @@ The companion deck **`Restlink_Silent_AuthProposal_v3.pptx`** contains **28 slid
 | 23 | Open Gateway positioning | 7, 3 | Ethio Telecom as network truth source |
 | 24 | Value for government & banks | 1, 10 | Conversion, cost, fraud posture |
 | 25 | Ethio Telecom partnership + roadmap | 11, 10 | Phases 1–3; revenue share option |
-| 26 | Open items | 12 | Resolver source, jDiameter, policy store |
+| 26 | Open items | 12 | Resolver source, Diameter S6a client, policy store |
 | 27 | Call to action | 1, 11 | Pilot ask |
 | 28 | Thank you | 0 | Closing; reference list in Ch. 12 |
 

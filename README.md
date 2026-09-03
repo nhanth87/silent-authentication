@@ -206,9 +206,14 @@ python3 slides/scripts/build_pptx_v3.py
 
 ## Next steps
 
-- [ ] Resolver: PGW/PCRF/CGNAT binding source (IP+port+ts → MSISDN)
-- [ ] CAMARA Number Verification adapter (API contract + mock) over SAS `/verify`
-- [ ] MAP verifier on jSS7 (PSI/ATI/SAI) + jDiameter S6a (ULR) + read-only Sh UDR
+- [ ] Resolver: PGW/PCRF/CGNAT binding source (IP+port+ts → MSISDN) — operator-side
+      source per network (lab: PCRF Gx probe via `sas-diameter-testapp` works)
+- [x] CAMARA Number Verification adapter (Java) over SAS `/verify` — `sas-host/`
+- [x] MAP verifier on jSS7 (PSI/SAI — never ATI) — `Jss7MapVerifierBackend`
+- [x] Diameter S6a verifier (ULR/ULA) + SWx (TS.43 lab leg) — corsac-diameter fork,
+      lab peer `sas-diameter-testapp`
+- [ ] Read-only Sh UDR/SNR freshness source (lab HSS has no Sh handler — the
+      SIM-swap dimension fail-closes on the corsac S6a path: `SIM_SWAP_SUSPECT`)
 - [ ] Assurance scoring weights + per-risk thresholds
 - [ ] Fallback MFA policy when cellular path unavailable
 - [ ] Restlink pilot packaging (API contract for Ethiopian banks)

@@ -29,7 +29,7 @@ belongs to MAP/S6a/SWx. S6b is the Resolver-side evidence, not a Verifier probe.
 
 ```
 IP:port:ts ──Resolver(PGW S6b/SGi accounting)──► MSISDN/IMSI
-            ──Verifier(MAP PSI/ATI/SAI or S6a ULR/AIR or SWx EAP-AKA)──► assurance
+            ──Verifier(MAP PSI/ATI/SAI or S6a ULR/ULA + Sh UDR or SWx EAP-AKA)──► assurance
 ```
 
 ---
@@ -47,4 +47,5 @@ IP:port:ts ──Resolver(PGW S6b/SGi accounting)──► MSISDN/IMSI
 ## 4. Source artefact
 
 `https://www.3gpp.org/ftp/Specs/archive/29_series/29.273/` (DOCX; not committed). Re-fetch for
-normative ABNF before wiring a jDiameter S6b/SWx client.
+normative ABNF before changing the SWx/S6b client (SWx wired since P2 on the local
+AGPL fork of corsac-diameter — `sas-host/.../ras/swxverifier/`).

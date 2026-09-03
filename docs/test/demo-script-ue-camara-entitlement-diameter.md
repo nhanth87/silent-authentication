@@ -62,7 +62,9 @@ Mục tiêu demo:
 
 # 2) root reactor sas-api + sas-entitlement + sas-host
 #    → sas-host/target/quarkus-app/quarkus-run.jar (fast-jar)
-/usr/bin/mvn -B clean package -DskipTests
+#    BẮT BUỘC -Dquarkus.profile=lab: thiếu cờ này fast-jar im lặng không boot
+#    (dừng sau `MicroSleeContainer started`, log toàn `Failed to load config value…`)
+/usr/bin/mvn -B clean package -DskipTests -Dquarkus.profile=lab
 ```
 
 ## 2. Chạy testapp + SAS (corsac transports)
@@ -95,9 +97,11 @@ cd sas-host && java \
   -jar target/quarkus-app/quarkus-run.jar &
 ```
 
-Đợi log `Peer is up for Association [name=s6a-sas…]`, `[name=swx-sas…]` (~15–20 s).
-`resolver=sd` bật PCRF Gx binding probe (:3870); bỏ dòng này nếu muốn resolver
-memory. Lựa chọn resolver: `memory | cgnat | radius | sd`.
+Đợi log `Peer is up for Association [name=s6a-sas…]`, `[name=swx-sas…]` — thường
+~15–20 s, nhưng trên host multi-home có thể tới ~3 phút (sim chỉ nhận nguồn loopback,
+log sim: `Received connect request from non provisioned … address` cho tới khi retry
+chọn 127.0.0.1). `resolver=sd` bật PCRF Gx binding probe (:3870); bỏ dòng này nếu
+muốn resolver memory. Lựa chọn resolver: `memory | cgnat | radius | sd`.
 
 ## 3. Kịch bản A — UE SDK cellular + CAMARA verify (S6a + Gx)
 
@@ -135,6 +139,11 @@ curl -s -X POST http://localhost:8085/session-tuple \
 
 ### 3.2 CAMARA `/verify` (happy path)
 
+> ⚠️ **Kỳ vọng thực tế với `s6a=corsac`**: lab testapp **không** có Sh UDR handler ⇒
+> `CorsacS6aVerifierBackend` fail-closed chiều SIM-swap ⇒ `/verify` trả `false` +
+> `SIM_SWAP_SUSPECT` dù Gx CCA và ULA đều 2001 — đó là fail-closed hoạt động đúng.
+> Muốn demo `true`: chạy SAS không kèm `-Dsas.transport.s6a=corsac` (memory pilot).
+
 ```bash
 curl -s -X POST http://localhost:8085/number-verification/v2/verify \
   -H 'Content-Type: application/json' -H 'Authorization: Bearer demo' \
@@ -142,8 +151,9 @@ curl -s -X POST http://localhost:8085/number-verification/v2/verify \
   -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
   -H 'X-Sas-Access-Tech: LTE' \
   -d '{"phoneNumber":"+251911111111"}'
-# → {"devicePhoneNumberVerified":true}
-#   Diameter: Gx CCR→CCA 2001 (resolver), S6a ULR→ULA 2001, Sh UDR binding fresh
+# s6a=corsac → {"devicePhoneNumberVerified":false}
+#   Diameter: Gx CCR→CCA 2001 (resolver), S6a ULR→ULA 2001; Sh UDR freshness thiếu → veto
+# memory transport → {"devicePhoneNumberVerified":true}
 ```
 
 Opt-in assurance detail (mở rộng ngoài CAMARA, không phải mặc định):
@@ -156,8 +166,12 @@ curl -s -X POST http://localhost:8085/number-verification/v2/verify \
   -H 'X-Sas-Access-Tech: LTE' \
   -H 'X-Sas-Assurance-Detail: true' -H 'X-Sas-Risk-Class: TRANSFER' \
   -d '{"phoneNumber":"+251911111111"}'
-# → {"devicePhoneNumberVerified":true,"reqId":"…","decision":"APPROVE",
-#     "assurance":{...}}   — threshold theo risk class, CDR lưu full flow
+# s6a=corsac → {"devicePhoneNumberVerified":false,"reqId":"…","decision":"FALLBACK",
+#     "assurance":{"score":70,"level":"FALLBACK","threshold":80,"riskClass":"TRANSFER",
+#       "factors":{"ipBindingFresh":{"value":1.0,…},"reachable":{"value":1.0,…},
+#         "notSimSwapped":{"value":0.0,…},"locationPlausible":{"value":1.0,…}}},
+#     "fallbackReason":"SIM_SWAP_SUSPECT"}   — CDR lưu full flow
+# memory transport → decision APPROVE, score 100 — threshold theo risk class
 ```
 
 ### 3.3 Discovery `/device-phone-number`
@@ -315,7 +329,8 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 
 | Kịch bản | Signalling | Kết quả |
 |----------|-----------|---------|
-| A — LTE happy (resolver=sd) | Gx CCA 2001 + ULA 2001 | `true` |
+| A — LTE happy (resolver=sd, s6a=corsac) | Gx CCA 2001 + ULA 2001, Sh UDR thiếu | `false` + `SIM_SWAP_SUSPECT` (fail-closed đúng) |
+| A — LTE happy (memory transport) | pilot resolver/verifier | `true` |
 | A — discovery | Gx CCA 2001 + ULA 2001 | `{"devicePhoneNumber":"+2519…"}` |
 | A — tuple `accessTech: WIFI` | — (chặn trước Diameter) | `400 ACCESS_TECH_NOT_CELLULAR` |
 | B — Detached | ULA **5421** | `false` |
@@ -334,8 +349,11 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 | Triệu chứng | Nguyên nhân | Fix |
 |-------------|-------------|-----|
 | `UnsupportedClassVersionError` khi chạy jar | `java` mặc định là zulu-8 (shim) | dùng đường dẫn zulu-25 đầy đủ |
-| SAS báo fallback in-memory lúc start | corsac start exception | xem WARN trong log (log4j2 root=INFO đã bật) |
+| SAS không boot, im lặng sau `MicroSleeContainer started`, log toàn `Failed to load config value…` | build thiếu `-Dquarkus.profile=lab` | build lại với `-Dquarkus.profile=lab` (§1) |
+| `Peer is up` rất chậm (tới ~3 phút), sim log `Received connect request from non provisioned …` | host multi-home: SCTP thử nguồn LAN/IPv6, sim chỉ nhận loopback | đợi retry chọn 127.0.0.1 |
 | Verify luôn `false`, HSS không nhận gì | SCTP chưa "Peer is up" | đợi thêm; kiểm tra 3 association (S6a/SWx/Gx) |
+| Verify `false` + `SIM_SWAP_SUSPECT` dù CCA/ULA đều 2001 | `s6a=corsac` fail-closed chiều SIM-swap (lab không có Sh UDR) | đúng thiết kế; muốn `true` dùng memory transport |
+| Discovery `403 USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK` | binding resolve sang MSISDN verifier lab không biết | `POST http://127.0.0.1:28086/api/reset` re-seed |
 | SWx timeout dù HSS thấy MAR/MAA | 2 link cùng origin-host vào 1 port | tách SWx sang port riêng (`swx.peer-port=3869`) |
 | Gx resolver `false` dù có binding | binding nằm sai instance | seed binding ở instance **:3870** (`POST :28086/api/binding`) |
 | Operator-token verify sai identity | IMSI bị null (hạ cấp anchor) | xác nhận `/entitlement/issue` có `imsi`; bản vá đã luồn `claimedImsi` vào event |

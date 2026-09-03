@@ -91,7 +91,7 @@ across the SAS and all four SDKs, mutation-checked).
 
 **Declaration ≠ attestation.** A device can lie about `accessTech`, so the field
 is only used to *exclude* known-bad tuples and to correlate CDRs. Assurance still
-comes from what the network itself confirms (see `silent-auth-flow.md`).
+comes from what the network itself confirms (see `silent-auth-standard-flow.md`).
 Hardening steps recorded as open items in `sas-host/TODO.md`: compare the
 declaration against the observed source address of the tuple POST, and bind it to
 a platform attestation (Play Integrity / DeviceCheck).

@@ -85,11 +85,11 @@ Path: `service/sms/`
 |-----------|---------|------|
 | TCAP dialog inspection | `org/restcomm/protocols/ss7/tcap` | Detect multiple MAP components in `TCBegin` (FS.11 CVD-2018-0015) |
 
-### B.4 Diameter (Phase 2 — planned mirror of MAP verifier)
+### B.4 Diameter (Phase 2 — mirror of MAP verifier)
 
 | Module | Status | S6a messages |
 |--------|--------|--------------|
-| jDiameter client | **Open item** | ULR/ULA (S6a) + UDR/SNR (Sh) |
+| corsac-diameter client (AGPL fork) | Lab reference implemented (`ras/s6averifier` + `ras/swxverifier`); operator UAT outstanding | ULR/ULA (S6a) + MAR/SAR (SWx); UDR/SNR (Sh) freshness still open |
 | Parity requirement | Match MAP assurance outputs | subscriberReachable, authInfoAge |
 
 ---
@@ -101,8 +101,8 @@ Items below require resolution before or during the phase indicated. Status as o
 | ID | Item | Phase | Owner | Notes |
 |----|------|-------|-------|-------|
 | OI-01 | Resolver source: PGW RADIUS accounting vs PCRF Gx/Sd vs CGNAT flow log | 1 | Ethio Telecom + Restlink | Blocks WP1.2 |
-| OI-02 | jDiameter S6a client module (mirror jSS7 MAP verifier) | 2 | Restlink engineering | See Appendix B.4 |
-| OI-03 | CAMARA Number Verification adapter: SAS `/verify` ↔ NV contract mapping | 1 | Restlink engineering | OpenAPI 3.1 draft in integration pack |
+| OI-02 | Diameter S6a client module (mirror jSS7 MAP verifier) — lab reference on corsac-diameter fork exists; operator UAT + Sh UDR/SNR freshness outstanding | 2 | Restlink engineering | See Appendix B.4 |
+| OI-03 | CAMARA Number Verification adapter: SAS `/verify` ↔ NV contract mapping — Java adapter implemented in `sas-host/` (CAMARA NV v2.1.0); bank-facing conformance UAT outstanding | 1 | Restlink engineering | OpenAPI 3.1 draft in integration pack |
 | OI-04 | Assurance weights + per-risk thresholds (e-Gov login vs bank transfer) | 1–2 | Restlink + tenant risk | Config-driven; no code deploy per tune |
 | OI-05 | Shared identity-policy / rate-limit store (SAS + signalling FW) | 2 | Ethio Telecom + Restlink | Prevent legacy OTP abuse when silent blocked |
 | OI-06 | TS.43 entitlement server hosting model (operator vs co-manage) | 3 | Ethio Telecom product | Feasibility gate G3 |

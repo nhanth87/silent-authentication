@@ -6,7 +6,7 @@ canonical_tree: worktrees/silent-authentication/main
 runner: harness/run_hardness.py
 spec_notes: docs/research/3gpp-spec-reference-index.md
 coverage: docs/design/3gpp-spec-coverage.md
-fsm: docs/design/silent-auth-flow.md
+fsm: docs/design/silent-auth-standard-flow.md
 
 # Budgets (design, dialog-anchor). Every stage timeout < total budget.
 budgets:
@@ -43,9 +43,9 @@ gates:
 
   - id: H4
     title: SIM-swap freshness — LTE
-    spec: ["TS 29.272"]
-    clause: AIR/AIA (318)
-    rule: EPS vector set change ⇒ swap flag
+    spec: ["TS 29.328", "TS 29.329"]
+    clause: Sh UDR/SNR (read-only)
+    rule: read-only IMSI-change age / binding ⇒ swap flag (no AIR/IDR)
     check: mapping_present
     expect: { key: "fresh_lte" }
 
@@ -168,7 +168,7 @@ gates:
   - id: H18
     title: no fake signalling path in production
     spec: ["TS 29.002", "TS 29.272", "TS 29.273"]
-    clause: PSI/ATI/SAI + AIR/AIA + S6b-RADIUS provisioning
+    clause: PSI/ATI/SAI + Sh UDR (read-only) + S6b-RADIUS provisioning
     rule: memory resolver, loopback Diameter peer or a missing/unparseable jSS7 stack
       file must be caught before boot (unknown values fall back to memory in code)
     check: preflight

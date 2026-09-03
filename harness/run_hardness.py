@@ -30,7 +30,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 # Canonical contract — SAS design facts under test. Mirrors
-# docs/design/silent-auth-flow.md + docs/design/3gpp-spec-coverage.md and is the
+# docs/design/silent-auth-standard-flow.md + docs/design/3gpp-spec-coverage.md and is the
 # source of truth until a Java verifier emits a real trace.
 CONTRACT = {
     "resolver_timeout_ms": 300,
@@ -50,7 +50,7 @@ CONTRACT = {
         "force_reachable": "TS 29.002 anyTimeInterrogation (71) [intra-net only]",
         "fresh_2g3g": "TS 29.002 sendAuthenticationInfo (56)",
         "reachable_lte": "TS 29.272 ULR/ULA (316), PUR/PUA (321)",
-        "fresh_lte": "TS 29.272 AIR/AIA (318)",
+        "fresh_lte": "TS 29.328/29.329 Sh UDR/SNR (read-only)",
         "fallback_sms": "TS 29.338 SGd (Diameter SMS, via DEA)",
         "wifi_silent_auth": "TS 33.402 SWm/SWx (EAP-AKA) + GSMA TS.43",
         "reachable_5g": "TS 33.501 Nudm/Nausf via NEF/NRF",

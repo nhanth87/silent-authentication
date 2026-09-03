@@ -27,7 +27,7 @@ Specs in scope (100% of the SAS signalling surface):
 | Resolver hand-off | Which MSISDN owns IP:port:ts? | (PGW/GGSN binding, not MAP) | (PGW S6b/PCRF, not Diameter) | S6b/STa binding |
 | Verifier — reachable | Attached and reachable? | `provideSubscriberInfo` (PSI, **70**) | ULR/ULA (**316**), PUR/PUA (**321**) | SWx attr-check |
 | Verifier — forced reachable | Any-time state? | `anyTimeInterrogation` (ATI, **71**) — **intra-net only** | — | — |
-| Verifier — fresh | Credential not SIM-swapped? | `sendAuthenticationInfo` (SAI, **56**) | AIR/AIA (**318**) | EAP-AKA AV (SWx) |
+| Verifier — fresh | Credential not SIM-swapped? | `sendAuthenticationInfo` (SAI, **56**) | **Sh UDR/SNR** (TS 29.328/29.329, read-only) | EAP-AKA AV (SWx) |
 | Verifier — location | VLR/MME agrees with IP geo? | `requestedInfo.locationInformation*` | ULR location info | (n/a) |
 | Fallback OTP route | Where does SMS OTP route? | `sendRoutingInfoForSM` (SRI-SM, **45**) | **SGd** (TS 29.338, via DEA) | Nsms/SMSF |
 | Anti-takeover | New serving node appeared? | `cancelLocation` (**3**), `updateLocation` (**2**) | CLR/CLA (**317**) | — |
@@ -40,7 +40,7 @@ Specs in scope (100% of the SAS signalling surface):
 | Reachable | TS 29.272 ULR/ULA + PUR/PUA | serving MME registration; `PUR` ⇒ purged | purged ⇒ FALLBACK |
 | Reachable (Wi-Fi) | TS 33.402 SWx / 29.273 | EAP-AKA AV + subscription | entitlement ⇒ "live" (no cellular) |
 | Fresh | TS 29.002 SAI (`sendAuthenticationInfo`) | `authenticationSetList` / `eps-AuthenticationSetList` | last-seen vector set vs new set |
-| Fresh | TS 29.272 AIR/AIA | `E-UTRAN-Vector {RAND,XRES,AUTN,KASME}` | new vector set ⇒ swap |
+| Fresh | TS 29.328/29.329 Sh UDR/SNR | read-only IMSI-change age / binding | IMSI-change age < cooldown ⇒ swap |
 | Fresh (Wi-Fi) | TS 33.402 EAP-AKA | AV sync/resync | sync-failure ⇒ FALLBACK |
 | Location | TS 29.002 PSI `locationInformation*` | VLR/SGSN/MME/EPS/5GS location | compare vs Resolver IP-geo window |
 
@@ -51,6 +51,9 @@ Specs in scope (100% of the SAS signalling surface):
 - **Fail-closed** — absent `subscriberState` / vectors / `PUR` ⇒ FALLBACK, never soft-approve.
 - **One dialog per stage** — bounded TCAP dialog / Diameter transaction; timeout ⇒ `abort()`.
 - **Point-in-time** — treat state as a snapshot at `ts`; CGNAT needs IP+port+ts.
+- **No AIR/IDR for status** — the 4G/5G verifier uses ULR/ULA (liveness) + read-only
+  **Sh UDR/SNR** (freshness). AIR/AIA consumes EPS vectors and advances the AuC SQN
+  (MAC-failure re-sync risk); IDR/IDA is an HSS→MME push — neither is a read query.
 - **Privacy** — IMSI/IMEI/EPS vectors stay on SAS/backend; app sees a boolean only.
 - **CAMARA contract** — `/verify` → `devicePhoneNumberVerified` boolean; single-use ≤300 s token;
   403 on non-mobile-network auth (`NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`).

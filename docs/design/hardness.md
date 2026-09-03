@@ -30,7 +30,7 @@ documented contract, so the harness asserts both the design and the shipped conf
 | H1 | Resolver→Verifier hand-off, one PSI probe | TS 29.002 `provideSubscriberInfo` (70) |
 | H2 | No interconnect ATI | TS 29.002 `anyTimeInterrogation` (71); FS.11 Cat 1 |
 | H3 | SIM-swap freshness — 2G/3G | TS 29.002 `sendAuthenticationInfo` (56) |
-| H4 | SIM-swap freshness — LTE | TS 29.272 AIR/AIA (318) |
+| H4 | SIM-swap freshness — LTE | TS 29.328/29.329 Sh UDR/SNR (read-only) |
 | H5 | Attachment liveness / purged | TS 29.272 ULR/ULA (316), PUR/PUA (321) |
 | H6 | Fail-closed (cardinal) | `AGENTS.md` §4 |
 | H7 | Dialog hygiene — one dialog, abort on timeout | `AGENTS.md` §4; TC-TIMER (TS 23.018/060) |
@@ -108,7 +108,7 @@ travels with the tree. Design rationale:
 [`../../AGENTS.md`](../../AGENTS.md) §10 and [`cellular-bearer-login.md`](cellular-bearer-login.md).
 
 Coverage contract (stage-by-stage): [`3gpp-spec-coverage.md`](3gpp-spec-coverage.md).
-FSM under test: [`silent-auth-flow.md`](silent-auth-flow.md).
+FSM under test: [`silent-auth-standard-flow.md`](silent-auth-standard-flow.md).
 P0 implementation plan: [`p0-implementation-plan.md`](p0-implementation-plan.md).
 
 ## Why a harness

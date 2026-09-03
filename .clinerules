@@ -1,0 +1,2 @@
+> "Chỉ đọc và sửa đổi các file trực tiếp liên quan đến yêu cầu hiện tại. KHÔNG ĐƯỢC tự ý dùng lệnh quét toàn bộ thư mục hoặc đọc các file lớn nằm ngoài phạm vi tác vụ nếu chưa hỏi ý kiến của tôi. Khi giải thích code, chỉ trích dẫn đoạn cần sửa, không viết lại toàn bộ file."
+

@@ -189,7 +189,7 @@ Files reviewed: `sas/src/main/java/et/restlink/sas/api/VerifyResource.java`,
 `security/SasSecurityConfig.java`, `entitlement/EntitlementResource.java`,
 `entitlement/EntitlementTokenService.java`, `api/dto/VerifyRequestDto.java`,
 `api/dto/VerifyResponseDto.java`, `docs/P2-missing_item.md`,
-`docs/design/silent-auth-flow.md`.
+`docs/design/silent-auth-standard-flow.md`.
 
 ### Already conformant
 
