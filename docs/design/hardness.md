@@ -52,7 +52,7 @@ documented contract, so the harness asserts both the design and the shipped conf
 | H23 | Dual license stated where it binds: `LICENSE.md` + bundled `LICENSES/AGPL-3.0.txt`, root + every component README, Maven `<licenses>`, npm `license` — and no permissive relicense | AGPL-3.0 §13; CAMARA NV (Apache-2.0 attribution) |
 | H24 | Only micro-jainslee services run the SAS — nothing is coded around the container | TS 23.018 / TS 23.060 TC-TIMER; TS 29.002 / 29.272; CAMARA NV |
 
-H15–H21 are backed by 28 static checks (`PRO-01`…`PRO-28`) in
+H15–H21 are backed by 29 static checks (`PRO-01`…`PRO-29`) in
 [`harness/preflight_prod.py`](../../harness/preflight_prod.py): they read
 `application.properties` overlaid with `application-prod.properties`, expand `${ENV}`
 without lab fallbacks, and fail on any lab-shaped value — before the JVM starts.

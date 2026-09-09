@@ -51,10 +51,13 @@ public class AuthorizationRequestService {
     /** Resolver wait budget, mirroring the SAS resolver stage budget. */
     static final long RESOLVER_WAIT_MS = 500L;
 
-    /** CAMARA NV scope whitelist — anything else is invalid_scope. */
+    /** CAMARA scope whitelist (NV + SimSwap + OTP SMS) — anything else is invalid_scope. */
     private static final Set<String> SUPPORTED_SCOPES = Set.of(
             TokenValidator.SCOPE_NUMBER_VERIFICATION_VERIFY,
-            TokenValidator.SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ);
+            TokenValidator.SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ,
+            TokenValidator.SCOPE_SIM_SWAP_CHECK,
+            TokenValidator.SCOPE_SIM_SWAP_RETRIEVE_DATE,
+            TokenValidator.SCOPE_ONE_TIME_PASSWORD_SMS_SEND_VALIDATE);
 
     private static final SecureRandom RANDOM = new SecureRandom();
 

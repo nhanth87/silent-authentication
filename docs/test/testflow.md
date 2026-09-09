@@ -1,8 +1,9 @@
 # Silent Auth SAS — E2E Test Flow
 
-Date: 2026-08-23 · Updated: 2026-09-03 (dist demo path §0b verified end-to-end;
+Date: 2026-08-23 · Updated: 2026-09-09 (dist demo path §0b verified end-to-end;
 bẫy `quarkus.config.locations` thắng `-D` sysprops; build profile flag, 3 testapp
-instances incl. Gx, SIM-swap fail-closed on the corsac S6a leg; TS.43 = operator REST CAMARA NV + Sh UDR; SWx leg = operator AAA↔HSS)
+instances incl. Gx, SIM-swap fail-closed on the corsac S6a leg; TS.43 = operator REST CAMARA NV + Sh UDR; SWx leg = operator AAA↔HSS;
+CDR bền cho SimSwap + OTP: `dist/logs/sas.cdr`, DB history và admin merge)
 Scope: web → `POST /verify` → SAS → `sas-diameter-testapp`
 
 > CAMARA alignment: primary endpoints are now under `/number-verification/v2`
@@ -261,7 +262,9 @@ pgrep -x java || echo "all JVMs stopped"
 Same run as §0b, one command per step. Pre-built artifacts: `dist/` (SAS fast-jar) +
 `sas-diameter-testapp/target/sas-diameter-testapp.jar`. `dist/configs/application.properties`
 is **already configured** for the Diameter demo (`s6a=swx=corsac`, `resolver=sd` :3870,
-`swx.peer-port=3869`, entitlement HMAC secret).
+`swx.peer-port=3869`, entitlement HMAC secret) plus the two CAMARA add-ons:
+SimSwap evidence (in-memory MAP seed) and the OTP SMS lab sender
+(`sas.otp.enabled=true`, `sas.otp.sms-delivery=log` — logs the SMS, sends nothing).
 
 > ⚠️ **Config gotcha (verified):** `dist/run.sh` loads `configs/application.properties`
 > via `quarkus.config.locations`, and that source **outranks `-D` system properties**.
@@ -413,6 +416,169 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8085/verify \
 **Step 15 — signalling observation (optional, open a browser):**
 `http://127.0.0.1:8086/` (S6a) · `http://127.0.0.1:18086/` (SWx) · `http://127.0.0.1:28086/` (Gx)
 
+**Step 16 — ⑥ CAMARA SimSwap v2.1.0 `/sim-swap/v2/check` (2-legged, on the Step 4 SAS):**
+
+```bash
+curl -s -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw1' -d '{"phoneNumber":"+251911111111"}'
+```
+→ expect: `{"swapped":false}` — the pilot seed's last SIM change is 10 days old,
+i.e. outside the default `maxAge=240` h window. Evidence is the same read-only
+binding age the Verifier scores as `notSimSwapped` (MAP `lastUpdateLocation` →
+Sh UDR → SWx); no Diameter exchange is needed for this call.
+
+**Step 17 — same subscriber, wider window (`maxAge` is hours, spec range 1..2400):**
+
+```bash
+curl -s -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw2' -d '{"phoneNumber":"+251911111111","maxAge":2400}'
+```
+→ expect: `{"swapped":true}` (10 days ≤ 100 days).
+
+**Step 18 — `/sim-swap/v2/retrieve-date`:**
+
+```bash
+curl -s -X POST http://localhost:8085/sim-swap/v2/retrieve-date \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw3' -d '{"phoneNumber":"+251911111111"}'
+```
+→ expect: `{"latestSimChange":"<RFC 3339 instant, ~10 days ago>"}` (no
+`monitoredPeriod` while the SAS has no configured monitoring window).
+
+**Step 19 — fail-closed + CAMARA error codes (no evidence is never "not swapped"):**
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw4' -d '{"phoneNumber":"+251999999999"}'
+```
+→ expect: `404` `{"status":404,"code":"IDENTIFIER_NOT_FOUND",…}`
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw5' -d '{}'
+```
+→ expect: `422` `MISSING_IDENTIFIER` (2-legged call with no `phoneNumber`)
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw6' -d '{"phoneNumber":"+251911111111","maxAge":0}'
+```
+→ expect: `400` `OUT_OF_RANGE` (spec range is 1..2400 — never silently clamped)
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'x-correlator: sw7' \
+  -d '{"phoneNumber":"+251911111111"}'
+```
+→ expect: `401` `UNAUTHENTICATED` (no `Authorization` header)
+
+**Step 20 — ⑦ CAMARA OneTimePasswordSMS v1.1.1 `/send-code` (the FALLBACK branch):**
+
+```bash
+curl -s -X POST http://localhost:8085/one-time-password-sms/v1/send-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: otp1' \
+  -d '{"phoneNumber":"+251911111111","message":"{{code}} is your Restlink code"}'
+```
+→ expect: `200` with body `{"authenticationId":"<uuid>"}` (a UUID is exactly the
+36 chars the spec schema allows). The OTP itself is **never**
+in the response — `message` is a template that must contain `{{code}}` (≤160 chars).
+The SAS only orchestrates: in production the SMS goes out over the operator's own
+SMSC/SGd route (Restlink does not wholesale SMS).
+
+**Step 21 — read the OTP from the lab sender (log-only, nothing is sent):**
+
+```bash
+grep 'LAB-SMS' /tmp/sas-demo.log | tail -1
+```
+→ expect: `WARN LabLogSmsDelivery - [SAS][LAB-SMS — NOT SENT] to=+251****11 chars=28
+text="921540 is your Restlink code"` — set `OTP="921540"`, `AID="<authenticationId>"`.
+This cleartext OTP in the log is exactly why the prod profile ships the surface
+**off** and preflight `PRO-29` refuses a lab sender.
+
+**Step 22 — `/validate-code` wrong then right:**
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/one-time-password-sms/v1/validate-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: otp2' -d "{\"authenticationId\":\"$AID\",\"code\":\"000000\"}"
+```
+→ expect: `400` `ONE_TIME_PASSWORD_SMS.INVALID_OTP`
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8085/one-time-password-sms/v1/validate-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: otp3' -d "{\"authenticationId\":\"$AID\",\"code\":\"$OTP\"}"
+```
+→ expect: `204` (no body). Re-run it → `404 NOT_FOUND` (one OTP validates once).
+
+**Step 23 — attempt burn: 3 wrong codes kill the attempt:**
+
+```bash
+for i in 1 2 3; do curl -s -o /dev/null -w '%{http_code} ' -X POST \
+  http://localhost:8085/one-time-password-sms/v1/validate-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H "x-correlator: burn$i" -d "{\"authenticationId\":\"$AID2\",\"code\":\"000000\"}"; done; echo
+```
+→ expect: `400 400 400` — the third is `ONE_TIME_PASSWORD_SMS.VERIFICATION_FAILED`,
+and the **correct** code afterwards also answers `VERIFICATION_FAILED`.
+
+**Step 24 — OTP fail-closed matrix:**
+
+```bash
+# rate limit: a 4th send to the SAME number inside sas.otp.rate-window-seconds
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/one-time-password-sms/v1/send-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' -H 'x-correlator: otp4' \
+  -d '{"phoneNumber":"+251911111111","message":"{{code}} is your Restlink code"}'
+```
+→ expect: `403` `ONE_TIME_PASSWORD_SMS.MAX_OTP_CODES_EXCEEDED` (another MSISDN is
+unaffected; a restart clears the in-memory window)
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/one-time-password-sms/v1/send-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' -H 'x-correlator: otp5' \
+  -d '{"phoneNumber":"+251933333333","message":"no code label here"}'
+```
+→ expect: `400` `INVALID_ARGUMENT` (template must carry `{{code}}`; >160 chars likewise).
+No `Authorization` → `401`; unknown `authenticationId` → `404 NOT_FOUND`;
+`sas.otp.enabled=false` (or the key missing from `dist/configs/application.properties`)
+→ `404 NOT_FOUND` on both endpoints; no delivery route → `500 INTERNAL_ERROR` with
+**no** `authenticationId` issued.
+
+**Step 25 — ⑧ CDR/audit for the SimSwap + OTP calls:**
+
+Each ⑥/⑦ request writes one API CDR row, keyed by `x-correlator`, to both the
+durable `SAS_CDR` CSV file and the DB-backed admin ledger. With `dist/run.sh`,
+the CSV is `dist/logs/sas.cdr`.
+
+```bash
+grep -E 'swcdr1|otpcdr1|otpcdr2' dist/logs/sas.cdr
+```
+→ expect:
+```text
+…,swcdr1,+251****11,SIMSWAP,COMPLETED,action=check maxAgeHours=240 swapped=false http=200,http,http,lab
+…,otpcdr1,+251****11,OTP,COMPLETED,action=send-code messageChars=35 delivery=log result=SENT authenticationId=<uuid> ttlSeconds=300 http=200,http,http,lab
+…,otpcdr2,+251****11,OTP,FAILED,action=validate-code authenticationId=<uuid> attempts=1 maxAttempts=3 result=INVALID http=400 code=ONE_TIME_PASSWORD_SMS.INVALID_OTP,http,http,lab
+```
+
+The same rows are visible at `http://localhost:8085/admin/cdr` (lab seed
+`admin/admin`). The dashboard merges newly queued rows with persisted DB rows, so
+history survives a restart.
+
+Privacy invariants:
+
+- MSISDN is masked (`+251****11`) before the CDR port sees it; raw MSISDN/IMSI are absent.
+- OTP plaintext and SMS message text are absent; only `messageChars` and
+  `authenticationId` are recorded.
+- 2xx maps to `COMPLETED`; 4xx/5xx maps to `FAILED`, with `http=` and CAMARA `code=`.
+- A blank `x-correlator` is replaced by a generated UUID, but repeated smoke runs
+  should use fresh correlators because `sas_cdr_session.correlation_id` is unique.
+
 ---
 
 **CIBA money-loop (optional — run AFTER stopping the Step 4 SAS; keep the simulators):**
@@ -465,7 +631,50 @@ curl -s -X POST http://localhost:8085/number-verification/v2/verify \
 **Step C6 — reuse the token (single-use):** re-run the Step C5 command
 → expect: `401`
 
-**Step C7 — cleanup:**
+**Step C7 — SIM Swap on the 3-legged path (identity comes from the token, body empty):**
+
+```bash
+AUTH=$(curl -s -X POST http://localhost:8085/bc-authorize \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  -d 'scope=sim-swap:check' | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth_req_id"])')
+AT=$(curl -s -X POST http://localhost:8085/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:openid:params:grant-type:ciba' \
+  --data-urlencode "auth_req_id=$AUTH" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $AT" \
+  -H 'x-correlator: sw8' -d '{}'
+```
+→ expect: `{"swapped":false}` + `200`. Re-run the last curl → `401` (single-use).
+With a bound token, sending `{"phoneNumber":"+251911111111"}` → `422
+UNNECESSARY_IDENTIFIER`; a `number-verification:verify` token → `403
+PERMISSION_DENIED` (wrong scope family); `scope=sim-swap:retrieve-date` works on
+`/sim-swap/v2/retrieve-date` with an empty body.
+
+**Step C8 — OTP SMS on the 3-legged path (one scope covers both operations):**
+
+```bash
+AUTH=$(curl -s -X POST http://localhost:8085/bc-authorize \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  -d 'scope=one-time-password-sms:send-validate' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth_req_id"])')
+AT=$(curl -s -X POST http://localhost:8085/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:openid:params:grant-type:ciba' \
+  --data-urlencode "auth_req_id=$AUTH" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl -s -w '\n%{http_code}\n' -X POST http://localhost:8085/one-time-password-sms/v1/send-code \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $AT" -H 'x-correlator: otp6' \
+  -d '{"phoneNumber":"+251911111111","message":"{{code}} is your Restlink code"}'
+```
+→ expect: `200` + `authenticationId` when `phoneNumber` **equals** the token binding.
+A different number → `403 PERMISSION_DENIED` ("phoneNumber does not match the
+access-token binding") and no OTP is even composed; a `sim-swap:check` token →
+`403 PERMISSION_DENIED` (wrong scope family); re-using the token → `401` (single-use,
+so send-code and validate-code each need their own token).
+
+**Step C9 — cleanup:**
 
 ```bash
 for p in $(pgrep -x java); do kill $p; done
@@ -483,9 +692,20 @@ pgrep -x java || echo "all JVMs stopped"
 | 10 | ③ subscriber barred | ULA 2001 + ODB status | `false` |
 | 12–13 | ④ TS.43 token verify (SWx lab leg) | MAA items≥1 + SAA 2001 | `true` |
 | 14 | ⑤ token replay | — (blocked before Diameter) | `401` |
+| 16 | ⑥ SIM Swap `/check` (default `maxAge=240`) | — (read-only evidence) | `{"swapped":false}` |
+| 17 | ⑥ SIM Swap `/check` `maxAge=2400` | — | `{"swapped":true}` |
+| 18 | ⑥ SIM Swap `/retrieve-date` | — | `{"latestSimChange":"…Z"}` |
+| 19 | ⑥ unknown · no `phoneNumber` · `maxAge=0` · no token | — | `404` · `422` · `400` · `401` |
 | C3–C5 | CIBA money-loop (match) | resolver BOUND | `true`, `APPROVE`, score 100 |
 | C5 | CIBA wrong claimed number | — | `false` |
 | C6 | CIBA token reuse | — | `401` |
+| C7 | SIM Swap 3-legged (empty body) | resolver BOUND | `{"swapped":false}`; reuse → `401`; `phoneNumber` in body → `422` |
+| 20 | ⑦ OTP `/send-code` | — (no signalling; lab sender logs) | `200 {"authenticationId":"<uuid>"}` |
+| 21 | ⑦ read the OTP from the lab log | — | `[SAS][LAB-SMS — NOT SENT] … text="<6 digits> …"` |
+| 22 | ⑦ `/validate-code` wrong · right · replay | — | `400 INVALID_OTP` · `204` · `404` |
+| 23 | ⑦ 3 wrong codes burn the attempt | — | `400 400 400`, third = `VERIFICATION_FAILED` |
+| 24 | ⑦ 4th send to one number · bad template · no token | — | `403 MAX_OTP_CODES_EXCEEDED` · `400` · `401` |
+| C8 | OTP 3-legged (bound number) | resolver BOUND | `200`; foreign number → `403`; wrong scope → `403`; reuse → `401` |
 | — | LTE happy path on memory transport (optional) | pilot backends | `true`, score 100 |
 
 ## 1. Build
@@ -642,6 +862,102 @@ curl -s -X POST http://localhost:8085/verify \
 
 Dùng lại `$TOKEN` của bước ④ → `401` (consumed-jti).
 
+### ⑥ SIM Swap — CAMARA SimSwap v2.1.0 (`/sim-swap/v2`)
+
+Cùng evidence read-only mà Verifier chấm `notSimSwapped` (MAP `lastUpdateLocation`
+→ Sh UDR → SWx), phơi ra thành API CAMARA riêng cho bank. Không AIR/AIA (không đốt
+SQN của AuC), không IDR/IDA, không ATI liên mạng (FS.11). **Fail-closed:** không có
+evidence ⇒ `404 IDENTIFIER_NOT_FOUND`, không bao giờ trả `swapped:false`.
+
+```bash
+# 2-legged (lab: token validation tắt) — số trong body
+curl -s -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw1' -d '{"phoneNumber":"+251911111111"}'
+# → {"swapped":false}      (seed đổi SIM 10 ngày trước, ngoài cửa sổ mặc định maxAge=240h)
+
+curl -s -X POST http://localhost:8085/sim-swap/v2/check \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw2' -d '{"phoneNumber":"+251911111111","maxAge":2400}'
+# → {"swapped":true}       (maxAge tính theo GIỜ, spec 1..2400)
+
+curl -s -X POST http://localhost:8085/sim-swap/v2/retrieve-date \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: sw3' -d '{"phoneNumber":"+251911111111"}'
+# → {"latestSimChange":"2026-08-30T…Z"}   (RFC 3339; không có monitoredPeriod)
+
+# Error codes theo CAMARA commonalities
+#   số lạ / không có evidence → 404 IDENTIFIER_NOT_FOUND
+#   thiếu phoneNumber (2-legged) → 422 MISSING_IDENTIFIER
+#   maxAge=0 hoặc 2401          → 400 OUT_OF_RANGE (không tự clamp)
+#   không có Authorization      → 401 UNAUTHENTICATED
+```
+
+3-legged (SAS chạy validation như §4b): identity lấy từ binding của access token,
+body để `{}`; scope `sim-swap:check` / `sim-swap:retrieve-date` (family `sim-swap`
+cấp cả hai). Gửi kèm `phoneNumber` khi token đã bound → `422 UNNECESSARY_IDENTIFIER`;
+token khác family → `403 PERMISSION_DENIED`; dùng lại token → `401`.
+Chi tiết từng lệnh: §0c Step C7 (EN).
+
+### ⑦ OTP SMS — CAMARA OneTimePasswordSMS v1.1.1 (`/one-time-password-sms/v1`)
+
+**Nhánh FALLBACK**: khi `/verify` trả FALLBACK thì bank rơi về OTP qua SMS. SAS chỉ
+**orchestrate** (sinh OTP, giữ state, validate) — SMS thật do SMSC operator gửi
+(Restlink không bán SMS wholesale). Lab: `sas.otp.sms-delivery=log` → tin nhắn
+(**kèm OTP**) được ghi ra log, **không gửi đi đâu cả**. Prod: surface này TẮT
+(`sas.otp.enabled=false`), preflight `PRO-29` từ chối sender lab.
+
+```bash
+# 1) send-code — message là TEMPLATE, bắt buộc chứa {{code}}, ≤160 ký tự
+curl -s -X POST http://localhost:8085/one-time-password-sms/v1/send-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: otp1' \
+  -d '{"phoneNumber":"+251911111111","message":"{{code}} is your Restlink code"}'
+# → 200 {"authenticationId":"<uuid 36 ký tự>"}   (OTP KHÔNG bao giờ trả về body)
+
+# 2) đọc OTP từ log lab (chỉ lab — đây là lý do prod không được dùng sender log)
+grep 'LAB-SMS' /tmp/sas-otp.log | tail -1
+# → WARN LabLogSmsDelivery - [SAS][LAB-SMS — NOT SENT] to=+251****11 chars=28 text="921540 is your Restlink code"
+
+# 3) validate-code sai → 400 ONE_TIME_PASSWORD_SMS.INVALID_OTP
+#    sai tới lần thứ 3 (sas.otp.max-attempts) → 400 …VERIFICATION_FAILED (đốt attempt,
+#    sau đó nhập ĐÚNG code vẫn VERIFICATION_FAILED)
+#    đúng code → 204 (không body); dùng lại authenticationId → 404 NOT_FOUND
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  http://localhost:8085/one-time-password-sms/v1/validate-code \
+  -H 'Content-Type: application/json' -H 'Authorization: Bearer lab' \
+  -H 'x-correlator: otp2' -d '{"authenticationId":"<uuid>","code":"921540"}'
+# → 204
+```
+
+Các nhánh fail-closed đã verify: thiếu `{{code}}` / message >160 → `400
+INVALID_ARGUMENT`; gửi quá `sas.otp.max-codes-per-number` (3) cho MỘT số trong
+`rate-window` → `403 …MAX_OTP_CODES_EXCEEDED` (số khác không bị); operator từ chối
+(`NOT_ALLOWED`/`BLOCKED` từ delivery seam) → `403 …PHONE_NUMBER_*`; không có
+delivery route → `500 INTERNAL_ERROR` và **không** cấp `authenticationId`;
+`sas.otp.enabled=false` (hoặc thiếu key) → `404 NOT_FOUND` cho cả 2 endpoint.
+
+3-legged: scope duy nhất `one-time-password-sms:send-validate` cho cả hai endpoint;
+`phoneNumber` phải **trùng** binding của token, khác → `403 PERMISSION_DENIED`
+(chưa kịp sinh OTP). Lệnh đầy đủ: §0c Step C8 (EN).
+
+### ⑧ CDR/audit cho SimSwap + OTP
+
+Mỗi request ⑥/⑦ ghi **một** dòng CDR API theo `x-correlator` vào file CSV bền
+`dist/logs/sas.cdr` (log4j logger `SAS_CDR`) và vào ledger DB hiển thị ở
+`/admin/cdr`. `operation` là `SIMSWAP` hoặc `OTP`; 2xx → `COMPLETED`, 4xx/5xx →
+`FAILED` kèm `http=` và `code=` trong `detail`.
+
+```bash
+grep -E 'sw1|otp1|otp2' dist/logs/sas.cdr
+```
+
+Dashboard merge hàng vừa enqueue với hàng đã persist, nên restart vẫn thấy lịch sử.
+Quy tắc privacy đã smoke: MSISDN mask trước khi qua CDR port; **không** ghi OTP
+plaintext, nội dung SMS, raw MSISDN/IMSI. OTP chỉ ghi `authenticationId`,
+`messageChars`, delivery/result; SimSwap ghi `action`, `maxAgeHours`, `swapped`,
+`evidence=ABSENT` khi fail-closed.
+
 ## 4b. Money-loop — operator Auth Server (CAMARA CIBA)
 
 Đây là **lớp sản phẩm kiếm tiền**: SAS cấp token user-bound (bind số điện thoại vào
@@ -707,14 +1023,24 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 | amr sai/thiếu | — | `403` |
 | Body thiếu phoneNumber/hashed | — | `400 INVALID_ARGUMENT` |
 | Assurance detail không opt-in | — | response thuần boolean (CAMARA-pure) |
+| SIM Swap `/check` (seed 10 ngày, `maxAge` mặc định 240h) | — (đọc evidence, không Diameter) | `{"swapped":false}` |
+| SIM Swap `/check` `maxAge=2400` | — | `{"swapped":true}` |
+| SIM Swap `/retrieve-date` | — | `{"latestSimChange":"…Z"}` |
+| SIM Swap số lạ / thiếu evidence | — | `404 IDENTIFIER_NOT_FOUND` (fail-closed) |
+| SIM Swap 3-legged + `phoneNumber` trong body | — | `422 UNNECESSARY_IDENTIFIER` |
+| OTP SMS `/send-code` (lab sender `log`) | — (không signalling) | `200 {"authenticationId":…}`, OTP chỉ nằm trong log |
+| OTP SMS `/validate-code` đúng code | — | `204` (dùng lại → `404`) |
+| OTP SMS sai code 3 lần | — | `INVALID_OTP`, `INVALID_OTP`, `VERIFICATION_FAILED` |
+| OTP SMS quá 3 code/số/giờ | — | `403 MAX_OTP_CODES_EXCEEDED` |
+| OTP SMS 3-legged sai số bound | — | `403 PERMISSION_DENIED` (không sinh OTP) |
 
 ## 7. Kiểm thử khác trong tree
 
 ```bash
-/usr/bin/mvn -B clean test                           # từ repo root: 363 tests trên 3 module (JUnit 5, không cần mạng)
+/usr/bin/mvn -B clean test                           # từ repo root: 463 tests trên 3 module (JUnit 5, không cần mạng)
 python3 harness/run_hardness.py          # 34/34 gates (H1–H24)
 python3 harness/preflight_prod.py        # verdict for THIS env (exit = số check fail)
-python3 harness/preflight_prod.py --selftest   # 22/22 kịch bản cấu hình sai bị bắt
+python3 harness/preflight_prod.py --selftest   # 23/23 kịch bản cấu hình sai bị bắt
 ```
 
 ## 8. Lỗi thường gặp
@@ -730,3 +1056,13 @@ python3 harness/preflight_prod.py --selftest   # 22/22 kịch bản cấu hình 
 | Discovery `403 USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK` | binding resolve sang MSISDN mà verifier lab không biết (vd sau khi POST `/api/binding` thay seed) | `POST http://127.0.0.1:28086/api/reset` để re-seed |
 | Scenario ① `NO_BINDING` | thiếu Gx instance :3870 (resolver=sd) | chạy instance 3 ở §2 |
 | SWx timeout dù HSS thấy MAR/MAA | 2 link cùng origin-host vào 1 port | tách SWx sang port riêng (`swx.peer-port`) |
+| `/sim-swap/v2/*` trả `404 IDENTIFIER_NOT_FOUND` cho số có trong seed | không còn nguồn binding-age nào được wire: `sas.transport.map=jss7` **và** `s6a`/`swx`=corsac (Sh UDR/SNR thật chưa có — open item) | đúng thiết kế fail-closed; muốn demo `swapped` thật thì để MAP transport = memory |
+| `/sim-swap/v2/check` trả `403 PERMISSION_DENIED` dù token hợp lệ | token thiếu scope family `sim-swap` (vd chỉ có `number-verification:verify`) | xin lại token với `scope=sim-swap:check` (hoặc `sim-swap:retrieve-date`) ở `/bc-authorize` |
+| `/one-time-password-sms/v1/*` trả `404 NOT_FOUND` cho mọi request | `sas.otp.enabled` thiếu/`false` trong config đang nạp (dist: `dist/configs/application.properties`) | thêm block `sas.otp.*` (enabled=true, sms-delivery=log) rồi restart — prod cố tình TẮT (`PRO-29`) |
+| Không thấy OTP để validate | sender lab ghi OTP vào **log**, không trả về body | `grep 'LAB-SMS' <log>` — file log do lệnh chạy SAS quyết định (`/tmp/sas-demo.log`, `dist/logs/…`) |
+| `403 MAX_OTP_CODES_EXCEEDED` dù mới gửi 1 OTP | cửa sổ rate limit in-memory còn giữ lượt gửi trước đó | restart SAS (window reset) hoặc đổi số khác |
+| `500 INTERNAL_ERROR` khi send-code | `sas.otp.sms-delivery` không phải `log` mà cũng chưa có adapter operator thật | lab: đặt `log`; prod: giữ surface OFF tới khi có adapter SMSC/SGd (TS 29.338) |
+| Không thấy `dist/logs/sas.cdr` | chạy jar trực tiếp mà không set `-Dsas.log.dir`; appender fallback về `target/logs/sas.cdr` | dùng `dist/run.sh`, hoặc kiểm tra `target/logs/sas.cdr` |
+| Không thấy dòng CDR trên console | logger `SAS_CDR` được route `additivity=false` vào file CSV, không phải console | đọc `dist/logs/sas.cdr` hoặc `/admin/cdr` |
+| `/admin/cdr` thiếu lịch sử cũ | `sas.cdr.db.enabled=false`, DB lab bị xóa, hoặc process chưa persist xong | bật DB CDR, giữ `dist/data/`, chờ flusher ghi; file CSV vẫn là bản durable |
+| Log `[cdr-db] persist failed ... Unique index` | dùng lại cùng `x-correlator` trong DB CDR (`correlation_id` UNIQUE) | đổi `x-correlator` mới cho mỗi lần gọi, hoặc reset lab DB khi smoke lại |

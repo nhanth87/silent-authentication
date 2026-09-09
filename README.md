@@ -142,7 +142,7 @@ See [`docs/design/cellular-bearer-login.md`](docs/design/cellular-bearer-login.m
   pass/fail gates anchored to 3GPP clauses (skill `deepseek-hardness`).
 - [`docs/result_p1_reaudit.md`](docs/result_p1_reaudit.md) — **what is production-gated
   today**: the `prod` profile (`sas-host/src/main/resources/application-prod.properties`),
-  the 28-check pre-boot deployment gate (`harness/preflight_prod.py`, gates H15–H21) and
+  the 29-check pre-boot deployment gate (`harness/preflight_prod.py`, gates H15–H21) and
   the explicit list of what is still unproven (HSTS, live mTLS/SS7/Diameter UAT, key lifecycle).
 
 ```bash
@@ -209,6 +209,15 @@ python3 slides/scripts/build_pptx_v3.py
 - [ ] Resolver: PGW/PCRF/CGNAT binding source (IP+port+ts → MSISDN) — operator-side
       source per network (lab: PCRF Gx probe via `sas-diameter-testapp` works)
 - [x] CAMARA Number Verification adapter (Java) over SAS `/verify` — `sas-host/`
+- [x] CAMARA SimSwap v2.1.0 adapter — `POST /sim-swap/v2/check` + `/retrieve-date`
+      (`sas-api` surface + `sas-host` evidence adapter over the same read-only binding
+      age the Verifier scores as `notSimSwapped`; no evidence ⇒
+      `404 IDENTIFIER_NOT_FOUND`, never `swapped:false`)
+- [x] CAMARA OneTimePasswordSMS v1.1.1 (OTP SMS fallback) — `/one-time-password-sms/v1`
+      `send-code` + `validate-code`: the SAS orchestrates policy/attempt state and
+      validates, the operator SMSC sends (lab: log-only sender, nothing sent).
+      Production ships the surface **off** — preflight `PRO-29` refuses a lab sender
+      until a real SMSC/SGd adapter (TS 29.338) + persistent attempt store exist
 - [x] MAP verifier on jSS7 (PSI/SAI — never ATI) — `Jss7MapVerifierBackend`
 - [x] Diameter S6a verifier (ULR/ULA) + SWx (TS.43 lab leg) — corsac-diameter fork,
       lab peer `sas-diameter-testapp`

@@ -184,6 +184,22 @@ class AuthorizationRequestServiceTest {
     }
 
     @Test
+    void scope_simSwapCheckAndRetrieveDate_accepted() {
+        Set<String> scopes = AuthorizationRequestService.validateScope(
+                TokenValidator.SCOPE_SIM_SWAP_CHECK + " "
+                        + TokenValidator.SCOPE_SIM_SWAP_RETRIEVE_DATE);
+        assertEquals(Set.of(TokenValidator.SCOPE_SIM_SWAP_CHECK,
+                TokenValidator.SCOPE_SIM_SWAP_RETRIEVE_DATE), scopes);
+    }
+
+    @Test
+    void scope_simSwapAlongsideNumberVerification_accepted() {
+        Set<String> scopes = AuthorizationRequestService.validateScope(
+                SCOPE_VERIFY + " " + TokenValidator.SCOPE_SIM_SWAP_CHECK);
+        assertEquals(Set.of(SCOPE_VERIFY, TokenValidator.SCOPE_SIM_SWAP_CHECK), scopes);
+    }
+
+    @Test
     void scope_unknown_rejected() {
         CibaException e = assertThrows(CibaException.class,
                 () -> AuthorizationRequestService.validateScope("openid"));

@@ -93,6 +93,9 @@ public class SasBootstrap implements SasVerifyEngine {
     private volatile RadiusAccountingListenerBackend radiusListenerBackend;
     private volatile CgnatLogResolverBackend cgnatLogBackend;
     private volatile PcrfSdResolverBackend sdResolverBackend;
+    private volatile InMemoryMapVerifierBackend inMemoryMapBackend;
+    private volatile InMemoryS6aVerifierBackend inMemoryS6aBackend;
+    private volatile InMemorySwxVerifierBackend inMemorySwxBackend;
     private volatile boolean started;
 
     void onStart(@Observes StartupEvent ev) {
@@ -295,6 +298,48 @@ public class SasBootstrap implements SasVerifyEngine {
         return resolverBackendRef;
     }
 
+    /**
+     * Read-only SIM-change evidence for the CAMARA SimSwap surface
+     * ({@code /sim-swap/v2}): the same binding age the Verifier scores as
+     * {@code notSimSwapped}, read in the order MAP (SAI/PSI
+     * {@code lastUpdateLocation}) → S6a (read-only Sh UDR) → SWx (EAP-AKA
+     * identity). First known value wins.
+     *
+     * <p>Fail-closed: empty means "no evidence" — an unknown subscriber, or a
+     * live jSS7/corsac transport with no binding-age source wired — and the
+     * northbound answers {@code 404 IDENTIFIER_NOT_FOUND} instead of claiming
+     * "not swapped". No AIR/AIA (never advances the AuC SQN), no IDR/IDA, no
+     * interconnect ATI.</p>
+     */
+    public java.util.Optional<java.time.Instant> lastSimChange(String msisdn) {
+        if (msisdn == null || msisdn.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        String key = msisdn.trim();
+        InMemoryMapVerifierBackend map = inMemoryMapBackend;
+        if (map != null) {
+            java.util.Optional<Long> epochMs = map.lastImsiChangeEpochMs(key);
+            if (epochMs.isPresent()) {
+                return java.util.Optional.of(java.time.Instant.ofEpochMilli(epochMs.get()));
+            }
+        }
+        InMemoryS6aVerifierBackend s6a = inMemoryS6aBackend;
+        if (s6a != null) {
+            java.util.Optional<Long> epochMs = s6a.lastImsiChangeEpochMs(key);
+            if (epochMs.isPresent()) {
+                return java.util.Optional.of(java.time.Instant.ofEpochMilli(epochMs.get()));
+            }
+        }
+        InMemorySwxVerifierBackend swx = inMemorySwxBackend;
+        if (swx != null) {
+            java.util.Optional<Long> epochMs = swx.lastImsiChangeEpochMs(key);
+            if (epochMs.isPresent()) {
+                return java.util.Optional.of(java.time.Instant.ofEpochMilli(epochMs.get()));
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
     @PreDestroy
     void shutdown() {
         if (swxVerifierEndpoint != null) {
@@ -355,6 +400,7 @@ public class SasBootstrap implements SasVerifyEngine {
         InMemoryMapVerifierBackend b = new InMemoryMapVerifierBackend();
         // attached, last IMSI change 10 days ago (no SIM swap), region "AA".
         b.seed("+251911111111", "655010000000001", true, daysAgo(10), "AA");
+        inMemoryMapBackend = b;
         return b;
     }
 
@@ -362,6 +408,7 @@ public class SasBootstrap implements SasVerifyEngine {
         InMemoryS6aVerifierBackend b = new InMemoryS6aVerifierBackend();
         // registered (ULR/ULA), last IMSI change 10 days ago (read-only Sh UDR), region "AA".
         b.seed("+251911111111", "655010000000001", true, daysAgo(10), "AA");
+        inMemoryS6aBackend = b;
         return b;
     }
 
@@ -369,6 +416,7 @@ public class SasBootstrap implements SasVerifyEngine {
         InMemorySwxVerifierBackend b = new InMemorySwxVerifierBackend();
         // EAP-AKA registered, last IMSI change 10 days ago, region "AA".
         b.seed("+251911111111", "655010000000001", true, daysAgo(10), "AA");
+        inMemorySwxBackend = b;
         return b;
     }
 

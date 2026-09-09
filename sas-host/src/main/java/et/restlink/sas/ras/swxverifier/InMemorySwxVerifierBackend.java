@@ -53,6 +53,17 @@ public final class InMemorySwxVerifierBackend implements SwxVerifierBackend {
         subscribers.put(msisdn, new SwxRecord(imsi, eapAkaRegistered, lastImsiChangeEpochMs, aaaRegion));
     }
 
+    /**
+     * Read-only binding age for the CAMARA SimSwap surface on the Wi-Fi
+     * (EAP-AKA / TS.43) track. Empty when the subscriber is unknown (callers
+     * fail closed, never "not swapped").
+     */
+    public java.util.Optional<Long> lastImsiChangeEpochMs(String msisdn) {
+        SwxRecord r = subscribers.get(msisdn);
+        return r == null ? java.util.Optional.empty()
+                : java.util.Optional.of(r.lastImsiChangeEpochMs());
+    }
+
     @Override
     public CompletableFuture<VerificationEvidence> verify(String msisdn,
                                                            String imsi,

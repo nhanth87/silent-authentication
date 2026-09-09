@@ -31,6 +31,9 @@ POST /verify { phoneNumber }            (CAMARA NV v2.1.0)
 | Package | Role |
 |---------|------|
 | `et.restlink.sas.api` | CAMARA REST surface (`/verify`, `/retrieve-phone-number`) + DTOs |
+| `et.restlink.sas.simswap` | CAMARA SimSwap v2.1.0 surface (`/sim-swap/v2/check`, `/retrieve-date`) + host evidence adapter (`HostSimSwapEvidence` → `SasBootstrap.lastSimChange`) |
+| `et.restlink.sas.otpsms` | CAMARA OneTimePasswordSMS v1.1.1 surface (`/one-time-password-sms/v1/send-code`, `/validate-code`) + `LabLogSmsDelivery` (lab sender: logs the composed SMS, sends nothing — prod keeps the surface off, preflight `PRO-29`) |
+| `et.restlink.sas.cdr` | CDR ledger: `/verify` flow rows + CAMARA SimSwap/OTP API rows, DB flusher, durable `SAS_CDR` CSV reader, admin history merge |
 | `et.restlink.sas.bootstrap` | `SasBootstrap` (ElisaBootstrap clone) |
 | `et.restlink.sas.events` | `VerifyRequestEvent` (`@EventType`) |
 | `et.restlink.sas.sbbs` | `VerifySbb` (the entitlement-service SBB) |
@@ -52,7 +55,7 @@ Multi-module build (mirrors the epc pattern): root aggregator `sas-core` →
 
 ```bash
 cd worktrees/silent-authentication/main
-mvn -q clean test                 # all 3 modules (337 tests)
+mvn -q clean test                 # all 3 modules (463 tests)
 mvn -q package -DskipTests        # build everything
 java -jar sas-host/target/quarkus-app/quarkus-run.jar
 
@@ -87,10 +90,11 @@ mints it from the CIBA/network-auth token).
 
 The pure decision engine (`VerificationFsm`) + budgets (`SasTimeouts`) encode the same
 contracts asserted by `harness/gates.yaml` (H1–H14). H15–H21 additionally gate the
-**deployment artifact** (`application-prod.properties` + environment). Run from the tree root:
+**deployment artifact** (`application-prod.properties` + environment); H22–H24 add
+device-parity, license-parity and micro-jainslee boundary checks. Run from the tree root:
 
 ```bash
-python3 harness/run_hardness.py          # 31/31 pass (contract + deployment gates)
+python3 harness/run_hardness.py          # 34/34 pass (contract + deployment gates)
 python3 harness/preflight_prod.py        # prod-profile verdict for THIS environment
 python3 harness/preflight_prod.py --selftest   # prove the deployment gate bites
 ```
@@ -116,7 +120,7 @@ Highlights: `insecure-requests=disabled`, `ssl.client-auth=required`,
 `s6a/swx=corsac`, PostgreSQL + Flyway (`database.generation=none`),
 `entitlement.require-signed=true`, `cdr.db.enabled=true`.
 
-The preflight (`PRO-01`…`PRO-28`) reports what is missing/unsafe without printing any
+The preflight (`PRO-01`…`PRO-29`) reports what is missing/unsafe without printing any
 secret value — names, lengths and fingerprints only. Exit code = number of failed checks.
 
 **Not covered by the profile:** HSTS (Quarkus core has no such property — terminate it at
@@ -168,7 +172,7 @@ sas.transport.jss7.local-gt=<SAS local global title>
 
 If `sas.transport.jss7.config` is blank the bootstrap logs a warning and falls back
 to the in-memory backend (fail-closed — a misconfiguration never silently opens a
-si
+signalling path).
 
 ## License
 

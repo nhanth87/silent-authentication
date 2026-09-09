@@ -55,6 +55,10 @@ What follows is what is **left** — mostly runtime/UAT and code work.
 - [x] Persistence on PostgreSQL (not the H2 lab file) under Flyway, `generation=none`,
       `sas.cdr.db.enabled=true`, absolute `sas.log.dir` — PRO-25/PRO-26.
 - [x] Assurance detail off by default (not part of the CAMARA contract) — PRO-27.
+- [x] API CDR rows for CAMARA SimSwap + OTP SMS: `SAS_CDR` rolling CSV
+      (`${sas.log.dir}/sas.cdr`) + DB rows; admin `/admin/cdr` merges queued and
+      persisted rows. Live dist smoke (2026-09-09) verified masked MSISDN and no
+      OTP/message plaintext.
 - [ ] Redact MSISDN/IMSI from app-facing surfaces; CDR is bank-backend/admin only —
       verify with a live capture, not just code review.
 - [ ] Retention window + tenant-scoped CDR visibility in the dashboard.
@@ -85,5 +89,5 @@ What follows is what is **left** — mostly runtime/UAT and code work.
 ```bash
 python3 harness/preflight_prod.py            # verdict for this machine's env (exit = #fails)
 python3 harness/preflight_prod.py --selftest # prove the gate bites (exit = undetected)
-python3 harness/run_hardness.py              # 33/33 (H1–H23 + contract checks)
+python3 harness/run_hardness.py              # 34/34 (H1–H24 + contract checks)
 ```

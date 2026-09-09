@@ -58,6 +58,17 @@ public final class InMemoryS6aVerifierBackend implements S6aVerifierBackend {
         subscribers.put(msisdn, new HssRecord(imsi, registered, lastImsiChangeEpochMs, mmeRegion));
     }
 
+    /**
+     * Read-only binding age for the CAMARA SimSwap surface — the same Sh UDR
+     * value the verifier scores as {@code notSimSwapped}. Empty when the
+     * subscriber is unknown (callers fail closed, never "not swapped").
+     */
+    public java.util.Optional<Long> lastImsiChangeEpochMs(String msisdn) {
+        HssRecord r = subscribers.get(msisdn);
+        return r == null ? java.util.Optional.empty()
+                : java.util.Optional.of(r.lastImsiChangeEpochMs());
+    }
+
     @Override
     public CompletableFuture<VerificationEvidence> verify(String msisdn,
                                                            String imsi,

@@ -14,12 +14,17 @@ import io.quarkus.hibernate.orm.panache.Panache;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.transaction.Status;
 import jakarta.transaction.TransactionManager;
 
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -100,6 +105,14 @@ public class CdrDbFlusher {
         }
     }
 
+    public List<SasCdrEntity> recentDurable(int limit) {
+        int cap = Math.max(0, limit);
+        if (cap == 0) {
+            return List.of();
+        }
+        return merge(recent(cap), queryRecent(cap), cap);
+    }
+
     public long dropped() {
         return dropped.get();
     }
@@ -155,5 +168,84 @@ public class CdrDbFlusher {
             }
             LOG.warn("[cdr-db] persist failed corr={}: {}", row.correlationId, ex.toString());
         }
+    }
+
+    private List<SasCdrEntity> queryRecent(int cap) {
+        TransactionManager tm = null;
+        boolean began = false;
+        try {
+            tm = Panache.getTransactionManager();
+            if (tm != null && tm.getStatus() != Status.STATUS_ACTIVE) {
+                tm.begin();
+                began = true;
+            }
+            List<SasCdrEntity> rows = SasCdrEntity
+                    .find("order by recordedAt desc, updatedAt desc")
+                    .page(0, cap)
+                    .list();
+            if (began && tm != null) {
+                tm.commit();
+            }
+            return rows;
+        } catch (Exception ex) {
+            if (began && tm != null) {
+                try {
+                    tm.rollback();
+                } catch (Exception ignored) {
+                }
+            }
+            LOG.debug("[cdr-db] recent query unavailable: {}", ex.toString());
+            return List.of();
+        }
+    }
+
+    static List<SasCdrEntity> merge(List<SasCdrEntity> queued, List<SasCdrEntity> persisted, int cap) {
+        int limit = Math.max(0, cap);
+        if (limit == 0) {
+            return List.of();
+        }
+        Map<Object, SasCdrEntity> byKey = new LinkedHashMap<>();
+        if (persisted != null) {
+            for (SasCdrEntity row : persisted) {
+                byKey.put(key(row), row);
+            }
+        }
+        if (queued != null) {
+            for (SasCdrEntity row : queued) {
+                byKey.put(key(row), row);
+            }
+        }
+        List<SasCdrEntity> out = new ArrayList<>(byKey.values());
+        out.sort((a, b) -> {
+            int byRecorded = compareInstantDesc(a.recordedAt, b.recordedAt);
+            if (byRecorded != 0) {
+                return byRecorded;
+            }
+            return compareInstantDesc(a.updatedAt, b.updatedAt);
+        });
+        return out.size() > limit ? new ArrayList<>(out.subList(0, limit)) : out;
+    }
+
+    private static Object key(SasCdrEntity row) {
+        if (row == null) {
+            return UUID.randomUUID();
+        }
+        if (row.id != null) {
+            return row.id;
+        }
+        return row.correlationId + "|" + row.recordedAt;
+    }
+
+    private static int compareInstantDesc(Instant left, Instant right) {
+        if (left == null && right == null) {
+            return 0;
+        }
+        if (left == null) {
+            return 1;
+        }
+        if (right == null) {
+            return -1;
+        }
+        return right.compareTo(left);
     }
 }

@@ -56,6 +56,19 @@ public class TokenValidator {
     public static final String SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ =
             "number-verification:device-phone-number:read";
 
+    /** CAMARA SimSwap v2.1.0 scope for {@code POST /sim-swap/v2/check}. */
+    public static final String SCOPE_SIM_SWAP_CHECK = "sim-swap:check";
+
+    /** CAMARA SimSwap v2.1.0 scope for {@code POST /sim-swap/v2/retrieve-date}. */
+    public static final String SCOPE_SIM_SWAP_RETRIEVE_DATE = "sim-swap:retrieve-date";
+
+    /**
+     * CAMARA OneTimePasswordSMS v1.1.1 scope — one scope covers both
+     * {@code POST /one-time-password-sms/v1/send-code} and {@code /validate-code}.
+     */
+    public static final String SCOPE_ONE_TIME_PASSWORD_SMS_SEND_VALIDATE =
+            "one-time-password-sms:send-validate";
+
     @Inject
     SasSecurityConfig config;
 

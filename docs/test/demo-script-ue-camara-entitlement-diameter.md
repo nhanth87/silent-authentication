@@ -363,7 +363,7 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 ## 10. Kiểm thử tự động liên quan
 
 ```bash
-/usr/bin/mvn -B clean test                          # 363 tests trên các module (JUnit 5)
+/usr/bin/mvn -B clean test                          # 463 tests trên các module (JUnit 5)
 /usr/bin/mvn -B -pl sas-api test -Dtest=VerifyResourceTest   # regress nhánh operator-token (threads claimedImsi)
 python3 harness/run_hardness.py          # gates H1–H24 (H22 bearer parity, H24 slee boundary)
 python3 harness/preflight_prod.py        # verdict profile prod cho MÔI TRƯỜNG này

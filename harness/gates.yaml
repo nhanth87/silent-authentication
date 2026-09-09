@@ -167,13 +167,15 @@ gates:
 
   - id: H18
     title: no fake signalling path in production
-    spec: ["TS 29.002", "TS 29.272", "TS 29.273"]
-    clause: PSI/ATI/SAI + Sh UDR (read-only) + S6b-RADIUS provisioning
-    rule: memory resolver, loopback Diameter peer or a missing/unparseable jSS7 stack
-      file must be caught before boot (unknown values fall back to memory in code)
+    spec: ["TS 29.002", "TS 29.272", "TS 29.273", "TS 29.338"]
+    clause: PSI/ATI/SAI + Sh UDR (read-only) + S6b-RADIUS provisioning + SGd fallback SMS
+    rule: memory resolver, loopback Diameter peer, a missing/unparseable jSS7 stack
+      file, or the OTP SMS fallback switched on with the lab log-only sender must be
+      caught before boot (unknown values fall back to memory/log in code)
     check: preflight
     expect:
-      scenarios: ["memory transport", "loopback Diameter peer", "missing jss7 stack file"]
+      scenarios: ["memory transport", "loopback Diameter peer", "missing jss7 stack file",
+                  "lab OTP SMS sender"]
 
   - id: H19
     title: TS.43 entitlement flow stays signed and attested

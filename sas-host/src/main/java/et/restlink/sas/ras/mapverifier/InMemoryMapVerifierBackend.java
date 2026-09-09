@@ -53,6 +53,18 @@ public final class InMemoryMapVerifierBackend implements MapVerifierBackend {
         subscribers.put(msisdn, new Subscriber(imsi, attached, lastImsiChangeEpochMs, vlrRegion));
     }
 
+    /**
+     * Read-only binding age for the CAMARA SimSwap surface — the MAP
+     * {@code lastUpdateLocation} / SAI freshness the verifier scores as
+     * {@code notSimSwapped}. Empty when the subscriber is unknown (callers fail
+     * closed, never "not swapped"). No ATI, no interconnect query.
+     */
+    public java.util.Optional<Long> lastImsiChangeEpochMs(String msisdn) {
+        Subscriber s = subscribers.get(msisdn);
+        return s == null ? java.util.Optional.empty()
+                : java.util.Optional.of(s.lastImsiChangeEpochMs());
+    }
+
     @Override
     public CompletableFuture<VerificationEvidence> verify(String msisdn,
                                                           String imsi,

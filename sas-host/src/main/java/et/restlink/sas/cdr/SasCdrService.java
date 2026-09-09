@@ -7,6 +7,7 @@
 
 package et.restlink.sas.cdr;
 
+import et.restlink.sas.api.ApiCdrRecorder;
 import et.restlink.sas.persist.SasCdrEntity;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -30,7 +31,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * RFC-4180 CSV line and is enqueued into the in-memory DB flusher.</p>
  */
 @ApplicationScoped
-public class SasCdrService {
+public class SasCdrService implements ApiCdrRecorder {
 
     private static final Logger CDR = LogManager.getLogger("SAS_CDR");
 
@@ -177,9 +178,49 @@ public class SasCdrService {
         }
     }
 
+    @Override
+    public void record(ApiCdrRecorder.ApiCdrRecord record) {
+        if (!enabled || record == null) {
+            return;
+        }
+        Instant now = Instant.now();
+        String correlationId = blankTo(record.correlationId(), UUID.randomUUID().toString());
+        String phase = blankTo(record.phase(), "API");
+        String operation = blankTo(record.operation(), "API");
+        String status = record.ok() ? "COMPLETED" : "FAILED";
+        String detail = truncate(apiDetail(record), 1024);
+        int totalMs = Math.max(0, record.totalMs());
+
+        SasCdrEntity row = new SasCdrEntity();
+        row.id = UUID.randomUUID();
+        row.recordedAt = now;
+        row.correlationId = truncate(correlationId, 128);
+        row.phase = truncate(phase, 32);
+        row.status = status;
+        row.msisdn = truncate(blankToNull(record.msisdn()), 32);
+        row.operation = truncate(operation, 16);
+        row.detail = detail;
+        row.networkId = 0;
+        row.tenantId = truncate(blankToNull(record.tenantId()), 128);
+        row.csvLine = csvLine(now, row.correlationId, row.msisdn, row.operation, status,
+                detail, DEFAULT_USER, DEFAULT_CONNECTOR, row.tenantId);
+        row.startedAt = now.minusMillis(totalMs);
+        row.updatedAt = now;
+        row.eventCount = 1;
+        row.eventsJson = truncate(row.phase + ":" + status
+                + ":http=" + record.httpStatus()
+                + (record.errorCode() == null ? "" : ":code=" + record.errorCode()), 8192);
+        row.totalMs = totalMs;
+
+        CDR.info(row.csvLine);
+        if (dbEnabled) {
+            flusher.enqueue(row);
+        }
+    }
+
     /** Most recent persisted/queued ledger rows (newest first). */
     public List<SasCdrEntity> recent(int limit) {
-        return flusher.recent(limit);
+        return dbEnabled ? flusher.recentDurable(limit) : flusher.recent(limit);
     }
 
     /**
@@ -249,6 +290,37 @@ public class SasCdrService {
             return value;
         }
         return "\"" + value.replace("\"", "\"\"") + "\"";
+    }
+
+    private static String apiDetail(ApiCdrRecorder.ApiCdrRecord record) {
+        StringBuilder sb = new StringBuilder();
+        if (record.detail() != null && !record.detail().isBlank()) {
+            sb.append(record.detail().trim());
+        }
+        appendField(sb, "http", record.httpStatus());
+        appendField(sb, "code", record.errorCode());
+        return sb.toString();
+    }
+
+    private static void appendField(StringBuilder sb, String name, Object value) {
+        if (value == null) {
+            return;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return;
+        }
+        if (sb.length() > 0) {
+            sb.append(' ');
+        }
+        sb.append(name).append('=').append(text);
+    }
+
+    private static String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     private static String blankTo(String value, String fallback) {

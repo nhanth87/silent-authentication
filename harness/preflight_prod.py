@@ -77,6 +77,8 @@ CRITICAL_KEYS = (
     "sas.entitlement.issue-attestation-required",
     "sas.entitlement.issue-attestation-secret",
     "sas.oauth.secret",
+    "sas.otp.enabled",
+    "sas.otp.sms-delivery",
 )
 
 
@@ -497,7 +499,40 @@ def quota_tenant_check(p: Profile) -> Report:
     orphaned = [key for key in sorted(p.merged)
                 if key.startswith(prefix) and key[len(prefix):].strip() not in tenants]
     r.add("PRO-28", "every per-tenant quota names a real tenant", not orphaned,
-          "quota keys with no matching tenant: " + ", ".join(orphaned))
+           "quota keys with no matching tenant: " + ", ".join(orphaned))
+    return r
+
+
+LAB_OTP_SENDERS = ("", "log", "lab", "memory", "pilot", "in-memory", "test-only")
+
+
+def otp_surface_check(p: Profile) -> Report:
+    """PRO-29 — the CAMARA OTP SMS fallback must not run on a lab sender.
+
+    `/one-time-password-sms/v1` is the fallback branch banks land on when the
+    silent path fails, so it is exactly the surface an attacker hammers (AIT /
+    OTP bombing, SG.22). Two things make the current implementation lab-only:
+    the sole delivery seam logs the composed SMS (with the cleartext OTP) and
+    sends nothing — production delivery belongs to the operator SMSC or SGd
+    (TS 29.338) behind Home Routing + a signalling firewall — and the attempt
+    store is in-memory, so a restart drops live attempts. Enabled with a lab
+    sender therefore fails closed here rather than at 3 a.m. in front of a bank.
+    """
+    r = Report()
+    notes: list[str] = []
+    if p.get("sas.otp.enabled") == "true":
+        delivery = (p.get("sas.otp.sms-delivery") or "").strip().lower()
+        if delivery in LAB_OTP_SENDERS:
+            notes.append(
+                f"sas.otp.enabled=true with sas.otp.sms-delivery="
+                f"{delivery or 'unset'!r} — the only wired sender logs the OTP "
+                f"and sends nothing")
+            notes.append(
+                "production OTP delivery needs an operator SMSC/SGd adapter "
+                "(TS 29.338) plus a persistent attempt store; keep "
+                "sas.otp.enabled=false until both exist")
+    r.add("PRO-29", "OTP SMS fallback is off or on a real operator route", not notes,
+          "\n".join(notes))
     return r
 
 
@@ -506,6 +541,7 @@ def run(env: dict[str, str], overrides: dict[str, str | None] | None = None,
     profile = Profile(env, check_files=check_files, overrides=overrides)
     report = build_checks(profile)
     report.rows.extend(quota_tenant_check(profile).rows)
+    report.rows.extend(otp_surface_check(profile).rows)
     return report
 
 
@@ -637,6 +673,8 @@ MUTATIONS: list[tuple[str, dict, set[str]]] = [
     ("secret env var unset", {"SAS_OAUTH_SECRET": ""}, {"PRO-03", "PRO-24"}),
     ("assurance detail on", {"sas.api.assurance-detail-enabled": "true"}, {"PRO-27"}),
     ("relative log dir", {"SAS_LOG_DIR": "logs"}, {"PRO-26"}),
+    ("lab OTP SMS sender", {"sas.otp.enabled": "true", "sas.otp.sms-delivery": "log"},
+     {"PRO-29"}),
 ]
 
 

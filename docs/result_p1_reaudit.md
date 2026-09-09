@@ -1,6 +1,6 @@
 # SAS P1 Re-Audit — from "lab accepts everything" to a gated production profile
 
-> Date: 2026-08-30
+> Date: 2026-08-30 · Updated: 2026-09-09 (PRO-29, H22–H24, current gate totals)
 > Scope: re-audit of `result_p1.md` §2 (deferred items) **plus** the deployment
 > surface that the P1 code changes did not cover — profile, transport, persistence,
 > operator identity.
@@ -67,13 +67,14 @@ boot instead of silently falling back.
 (`max-age=31536000; includeSubDomains; preload`) until an app-level response
 filter lands — tracked in `sas-host/TODO.md`.
 
-### 2.2 `harness/preflight_prod.py` — 28 static checks, pre-boot
+### 2.2 `harness/preflight_prod.py` — 29 static checks, pre-boot
 
 Merges base + prod properties, expands `${VAR}/${VAR:default}` against the real
-environment, and asserts 28 invariants (PRO-01…PRO-28) in five families:
-gate integrity (01–03), northbound auth (04–10), transport security (11–13),
-admin (14–16), signalling truthfulness (17–21), entitlement/OAuth/persistence/ops
-(22–28). Design notes:
+environment, and asserts 29 invariants (PRO-01…PRO-29) across the deployment
+families: gate integrity (01–03), northbound auth (04–10), transport security
+(11–13), admin (14–16), signalling truthfulness (17–21),
+entitlement/OAuth/persistence/ops (22–28), and the OTP SMS fallback surface (29).
+Design notes:
 
 - **Coverage guard (PRO-02):** a 30-key `CRITICAL_KEYS` list — if a key is dropped
   from the prod file, the lab default silently wins, so "overridden every critical
@@ -91,7 +92,7 @@ python3 harness/preflight_prod.py --json           # CI-consumable
 python3 harness/preflight_prod.py --selftest       # prove the gate bites
 ```
 
-Without secrets provisioned the gate reports `12/28 pass, 16 fail` and exits 16 —
+Without secrets provisioned the gate reports `12/29 pass, 17 fail` and exits 17 —
 i.e. it *refuses*, and names every missing variable — instead of booting a
 reject-all-auth, memory-transport, H2-backed process.
 
@@ -99,12 +100,12 @@ reject-all-auth, memory-transport, H2-backed process.
 
 New checker `preflight` drives `preflight_prod.verify(scenario)`, which applies a
 deliberate misconfiguration to a synthetic complete deployment and requires the
-expected `PRO-xx` ids to fire. Gate totals moved **24 → 31** (10 contract checks +
-21 gates, H1–H21), all passing, exit 0.
+expected `PRO-xx` ids to fire. Gate totals moved **24 → 31** when H15–H21 landed;
+H22–H24 later moved the harness to **34 entries**, all passing, exit 0.
 
 | Gate | Assertion |
 |---|---|
-| H15 | baseline: a fully provisioned prod profile passes all 28 checks (the gate is not vacuous) |
+| H15 | baseline: a fully provisioned prod profile passes all 29 checks (the gate is not vacuous) |
 | H16 | auth cannot be softened: validation off, enforcement off, over-pinned scope, duplicate tenant key, dropped/short/unset secret |
 | H17 | cleartext HTTP, `client-auth=none`, lab keystore path are refused |
 | H18 | no fake signalling: memory resolver, loopback Diameter peer, missing jSS7 stack file |
@@ -113,8 +114,8 @@ expected `PRO-xx` ids to fire. Gate totals moved **24 → 31** (10 contract chec
 | H21 | quota bound to a real tenant; assurance detail not forced on globally |
 
 Negative control: flipping `token-validation-enabled=true → false` in the prod
-file makes H15 fail (`30/31`) and `--selftest` report `21/22`. Restoring it
-returns `31/31` — the gate is attached to the real artifact, not to a fixture.
+file makes H15 fail (`33/34`) and `--selftest` report `22/23`. Restoring it
+returns `34/34` — the gate is attached to the real artifact, not to a fixture.
 
 ---
 
@@ -157,10 +158,10 @@ Policy caveats worth stating plainly:
 
 - ✅ The `prod` profile exists, carries no lab defaults, and cannot boot with a
   missing secret (no `:default` fallbacks).
-- ✅ 28 preflight checks + 7 new harness gates (H15–H21) refuse every
+- ✅ 29 preflight checks + deployment gates H15–H21 (now part of the 34-entry harness) refuse every
   lab-shaped deployment state that P1 left behind, with a readable verdict and a
   non-zero exit code before the JVM starts.
-- ✅ `python3 harness/run_hardness.py` → **31/31 pass**, exit 0.
+- ✅ `python3 harness/run_hardness.py` → **34/34 pass**, exit 0.
 - ⛔ **Not** production-ready until: HSTS at the edge, live mTLS + SS7/Diameter
   UAT against the operator's own HLR/HSS/AAA/PGW, Flyway applied on the real DB,
   and P-H3/P-H7 lifecycle + observability work land.

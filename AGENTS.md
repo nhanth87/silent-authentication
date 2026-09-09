@@ -72,7 +72,7 @@ java -jar sas-jss7-testapp/target/sas-jss7-testapp.jar           # HLR sim SCTP 
 python3 harness/run_hardness.py              # 34/34 gates H1–H24, exit 0 = pass
 python3 harness/run_hardness.py --mutations  # H24 slee_boundary mutation self-test — 10/10
 python3 harness/preflight_prod.py            # prod-profile verdict for THIS env (exit = #fails)
-python3 harness/preflight_prod.py --selftest # 22/22 mutation scenarios detected
+python3 harness/preflight_prod.py --selftest # 23/23 mutation scenarios detected
 
 # Artifacts
 python3 proposal/scripts/build_proposal_docx.py
@@ -189,7 +189,7 @@ GSMA index: `docs/research/gsma-fs-index.md`.
 
 Gates in `harness/gates.yaml` (H1–H24), each anchored to a 3GPP clause / CAMARA contract.
 H1–H14 assert the documented design contract; **H15–H21** assert the deployment artifact
-via `preflight_prod.verify()` (28 `PRO-xx` static checks over `application.properties` +
+via `preflight_prod.verify()` (29 `PRO-xx` static checks over `application.properties` +
 `application-prod.properties` + `${ENV}`); **H22** device bearer-declaration parity
 (checker `access_tech_parity`); **H23** dual-license parity (checker `license_parity`);
 **H24** micro-jainslee boundary (checker `slee_boundary`, mutation-checked via
@@ -265,6 +265,25 @@ Open items (do not silently invent answers):
 - [x] CAMARA NV **Java adapter** over SAS `/verify` — implemented in
       [`sas-host/`](sas-host/README.md) (Quarkus + micro-jainslee; clones `ra-diameter`
       + `ElisaBootstrap`). Contract: `docs/research/camara-number-verification.md`.
+- [x] CAMARA **SimSwap v2.1.0** adapter — `POST /sim-swap/v2/check` + `/retrieve-date`
+      (`sas-api/src/main/java/et/restlink/sas/simswap/` + `sas-host` evidence adapter
+      `HostSimSwapEvidence` → `SasBootstrap.lastSimChange`, reading the same read-only
+      binding age the Verifier scores as `notSimSwapped`; MAP → Sh UDR → SWx).
+      Fail-closed: no evidence ⇒ `404 IDENTIFIER_NOT_FOUND`, never `swapped:false`.
+      Status + decisions: `docs/research/camara_sim_swap/simswap-flow-analysis.md` §E;
+      verified steps: `docs/test/testflow.md` §4 ⑥ (VN) and §0c Step 16–19 + C7 (EN).
+- [x] CAMARA **OneTimePasswordSMS v1.1.1** (OTP SMS fallback) — `POST
+      /one-time-password-sms/v1/send-code` + `/validate-code`
+      (`sas-api/src/main/java/et/restlink/sas/otpsms/` + sas-host lab sender
+      `LabLogSmsDelivery`). Scope `one-time-password-sms:send-validate` (one scope,
+      both ops). Position held: the SAS **orchestrates** (OTP mint, attempt state,
+      validation); the operator SMSC sends — lab sender only logs, sends nothing,
+      and prod ships the surface **off** (`sas.otp.enabled=false`, preflight
+      `PRO-29` refuses a lab sender; gate H18 scenario `lab OTP SMS sender`).
+      Spec snapshot + decisions: `docs/research/camara_otp_sms/`;
+      verified steps: `docs/test/testflow.md` §4 ⑦ (VN) and §0c Step 20–24 + C8 (EN).
+      Still open: real SMSC/SGd adapter (TS 29.338) + persistent attempt store —
+      both are preconditions for enabling it in prod.
 - [x] **P2 real MAP transport** — `Jss7MapVerifierBackend` (jSS7 coral-valley) drives
       PSI + SAI dialogs against the own HLR/HSS, never ATI. Opt-in via
       `sas.transport.map=jss7` (sample config `sas-host/src/main/resources/ss7-sas.json`).
