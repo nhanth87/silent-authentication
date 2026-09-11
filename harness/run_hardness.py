@@ -376,11 +376,54 @@ def check_slee_boundary(expect, contract):
                 f"{n_rules} rules, exceptions pinned)" if ok else "; ".join(problems))
 
 
+def check_camara_contract(expect, contract):
+    root = HERE.parent
+    problems = []
+    requirements = expect.get("requirements", [])
+    if not requirements:
+        return False, "camara_contract expects requirements"
+    if contract.get("camara_contract") is not True:
+        problems.append("contract['camara_contract'] is not True")
+
+    checked = 0
+    for req in requirements:
+        rel = req.get("path")
+        if not rel:
+            problems.append("requirement missing path")
+            continue
+        path = root / rel
+        if not path.exists():
+            problems.append(f"{rel}: missing")
+            continue
+        text = path.read_text(encoding="utf-8")
+        checked += 1
+        missing = []
+        label = req.get("label", "CAMARA contract")
+        for token in req.get("tokens", []):
+            if token not in text:
+                missing.append(token)
+        for pat in req.get("patterns", []):
+            try:
+                found = re.search(pat, text) is not None
+            except re.error as exc:
+                found = False
+                missing.append(f"{pat} (invalid regex: {exc})")
+            if not found:
+                missing.append(pat)
+        if missing:
+            problems.append(f"{rel}: {label} missing {'; '.join(missing)}")
+
+    ok = not problems
+    return ok, (f"CAMARA contract asserted over {checked} source/config/test files"
+                if ok else "; ".join(problems))
+
+
 CHECKERS = {
     "mapping_present": check_mapping_present,
     "flag": check_flag,
     "budget": check_budget,
     "preflight": check_preflight,
+    "camara_contract": check_camara_contract,
     "access_tech_parity": check_access_tech_parity,
     "license_parity": check_license_parity,
     "slee_boundary": check_slee_boundary,

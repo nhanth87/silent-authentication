@@ -284,6 +284,12 @@ Open items (do not silently invent answers):
       verified steps: `docs/test/testflow.md` §4 ⑦ (VN) and §0c Step 20–24 + C8 (EN).
       Still open: real SMSC/SGd adapter (TS 29.338) + persistent attempt store —
       both are preconditions for enabling it in prod.
+- [x] CAMARA **ICM OAuth Phase 3** — `/bc-authorize` client-assertion binding,
+      `private_key_jwt`, `/token` CIBA + `client_credentials` + JWT bearer
+      (`sub=tel:<E.164>` / `operatortoken:<token>`), discovery/JWKS, and CAMARA scope
+      policy. H14 source-checks the grant/auth surface. Still open: authorization code,
+      refresh tokens, ID token, pseudonymous `sub`, and prod enforcement of
+      `sas.oauth.require-client-auth=true` + an env-sourced `sas.oauth.clients-json`.
 - [x] **P2 real MAP transport** — `Jss7MapVerifierBackend` (jSS7 coral-valley) drives
       PSI + SAI dialogs against the own HLR/HSS, never ATI. Opt-in via
       `sas.transport.map=jss7` (sample config `sas-host/src/main/resources/ss7-sas.json`).

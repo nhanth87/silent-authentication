@@ -123,11 +123,265 @@ gates:
 
   - id: H14
     title: CAMARA contract fidelity
-    spec: ["CAMARA NV v2.1.0"]
-    clause: /verify
-    rule: /verify ⇒ devicePhoneNumberVerified boolean; single-use ≤300s token; 403 non-mobile auth
-    check: flag
-    expect: { key: "camara_contract", value: true }
+    spec: ["CAMARA NV v2.1.0", "CAMARA ICM", "CAMARA SimSwap v2.1.0", "CAMARA OneTimePasswordSMS v1.1.1"]
+    clause: >-
+      /verify, /device-phone-number, SimSwap, OTP SMS, x-correlator, ErrorInfo,
+      request-body strictness, /bc-authorize, /token, private_key_jwt,
+      client_credentials, JWT bearer
+    rule: >-
+      /verify ⇒ devicePhoneNumberVerified boolean; single-use ≤300s token; 403
+      non-mobile auth; x-correlator validated/echoed; unknown CAMARA request
+      properties ⇒ 400 INVALID_ARGUMENT; /camara aliases delegate to legacy
+      resources and /camara/health reports UP; /bc-authorize and /token implement
+      CAMARA ICM CIBA, client_credentials and JWT bearer grants, private_key_jwt
+      client authentication, one-time auth_req_id/client binding, CAMARA scope
+      policy and user-bound versus 2-legged token separation
+    check: camara_contract
+    expect:
+      requirements:
+        - path: sas-api/src/main/java/et/restlink/sas/api/VerifyResource.java
+          label: NV endpoints
+          patterns:
+            - '@Path\s*\(\s*"/number-verification/v2/verify"\s*\)'
+            - '@Path\s*\(\s*"/number-verification/v2/device-phone-number"\s*\)'
+            - '@Path\s*\(\s*"/verify"\s*\)'
+            - '@Path\s*\(\s*"/retrieve-phone-number"\s*\)'
+          tokens:
+            - 'NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK'
+        - path: sas-api/src/main/java/et/restlink/sas/api/dto/VerifyResponseDto.java
+          label: NV response
+          patterns:
+            - 'boolean\s+devicePhoneNumberVerified'
+        - path: sas-api/src/main/java/et/restlink/sas/security/TokenValidator.java
+          label: token lifetime and replay key
+          tokens:
+            - 'MAX_TOKEN_LIFETIME_SECONDS = 300L'
+            - '"jti"'
+          patterns:
+            - 'exp\s*-\s*iat\s*>\s*MAX_TOKEN_LIFETIME_SECONDS'
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/AccessTokenService.java
+          label: single-use access token
+          tokens:
+            - 'TOKEN_TTL_SECONDS = 300L'
+            - 'markConsumed(String jti)'
+            - 'isConsumed(String jti)'
+        - path: sas-api/src/main/java/et/restlink/sas/simswap/SimSwapResource.java
+          label: SimSwap endpoints
+          tokens:
+            - '@Path("/sim-swap/v2")'
+            - '@Path("/check")'
+            - '@Path("/retrieve-date")'
+        - path: sas-api/src/main/java/et/restlink/sas/otpsms/OtpSmsResource.java
+          label: OTP SMS endpoints
+          tokens:
+            - '@Path("/one-time-password-sms/v1")'
+            - '@Path("/send-code")'
+            - '@Path("/validate-code")'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraHeaders.java
+          label: correlator header
+          tokens:
+            - 'CORRELATOR = "x-correlator"'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraPaths.java
+          label: CAMARA path normalization
+          tokens:
+            - 'API_ROOT = "/camara"'
+            - 'NUMBER_VERIFICATION_PREFIX = "/number-verification/"'
+            - 'SIM_SWAP_PREFIX = "/sim-swap/"'
+            - 'ONE_TIME_PASSWORD_SMS_PREFIX = "/one-time-password-sms/"'
+            - 'isCamaraPath('
+            - 'withoutApiRoot('
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraCorrelatorRequestFilter.java
+          label: correlator validation
+          tokens:
+            - '^[a-zA-Z0-9\\-_:;./<>{}]{0,256}$'
+            - 'CamaraPaths.isCamaraPath('
+            - 'CamaraHeaders.CORRELATOR'
+            - 'abortWith('
+            - 'CamaraErrorInfo.invalidArgument('
+            - 'BAD_REQUEST'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraCorrelatorResponseFilter.java
+          label: correlator echo
+          tokens:
+            - 'CamaraPaths.isCamaraPath('
+            - 'CamaraCorrelatorRequestFilter.isValid('
+            - 'remove(CamaraHeaders.CORRELATOR)'
+            - 'putSingle(CamaraHeaders.CORRELATOR, value)'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraErrorInfo.java
+          label: ErrorInfo
+          tokens:
+            - 'record CamaraErrorInfo(int status, String code, String message)'
+            - 'CODE_INVALID_ARGUMENT = "INVALID_ARGUMENT"'
+            - 'new CamaraErrorInfo(400, CODE_INVALID_ARGUMENT, message)'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraConformanceException.java
+          label: conformance exception
+          tokens:
+            - 'new CamaraConformanceException(400, "INVALID_ARGUMENT", message)'
+            - 'int status()'
+            - 'String code()'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraConformanceExceptionMapper.java
+          label: conformance exception mapper
+          tokens:
+            - 'ExceptionMapper<CamaraConformanceException>'
+            - 'new CamaraErrorInfo(exception.status(), exception.code(),'
+            - 'MediaType.APPLICATION_JSON'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraUnrecognizedPropertyExceptionMapper.java
+          label: strict request-body mapper
+          tokens:
+            - 'ExceptionMapper<UnrecognizedPropertyException>'
+            - 'CamaraErrorInfo.invalidArgument('
+            - 'unknown request property: '
+            - 'BAD_REQUEST'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraHealthResource.java
+          label: health alias
+          tokens:
+            - '@Path("/camara/health")'
+            - 'new CamaraHealthStatus("UP")'
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraNumberVerificationResource.java
+          label: NV alias delegation
+          tokens:
+            - '@Path("/camara/number-verification/v2")'
+            - '@Path("/verify")'
+            - '@Path("/device-phone-number")'
+            - 'delegate.verifyV2('
+            - 'delegate.devicePhoneNumber('
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraSimSwapResource.java
+          label: SimSwap alias delegation
+          tokens:
+            - '@Path("/camara/sim-swap/v2")'
+            - '@Path("/check")'
+            - '@Path("/retrieve-date")'
+            - 'delegate.check('
+            - 'delegate.retrieveDate('
+        - path: sas-api/src/main/java/et/restlink/sas/camara/CamaraOtpSmsResource.java
+          label: OTP SMS alias delegation
+          tokens:
+            - '@Path("/camara/one-time-password-sms/v1")'
+            - '@Path("/send-code")'
+            - '@Path("/validate-code")'
+            - 'delegate.sendCode('
+            - 'delegate.validateCode('
+        - path: sas-api/src/main/java/et/restlink/sas/api/dto/VerifyRequestDto.java
+          label: strict NV request body
+          patterns:
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*false\s*\)'
+        - path: sas-api/src/main/java/et/restlink/sas/simswap/SimSwapCheckRequest.java
+          label: strict SimSwap check body
+          patterns:
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*false\s*\)'
+        - path: sas-api/src/main/java/et/restlink/sas/simswap/SimSwapDateRequest.java
+          label: strict SimSwap date body
+          patterns:
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*false\s*\)'
+        - path: sas-api/src/main/java/et/restlink/sas/otpsms/SendCodeRequest.java
+          label: strict OTP send body
+          patterns:
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*false\s*\)'
+        - path: sas-api/src/main/java/et/restlink/sas/otpsms/ValidateCodeRequest.java
+          label: strict OTP validate body
+          patterns:
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*false\s*\)'
+        - path: sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
+          label: lenient non-CAMARA session tuple extension
+          patterns:
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*true\s*\)\s*public\s+record\s+TupleRequest'
+        - path: sas-entitlement/src/main/java/et/restlink/sas/entitlement/EntitlementResource.java
+          label: lenient non-CAMARA entitlement extension
+          patterns:
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*true\s*\)\s*public\s+record\s+IssueRequest'
+            - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*true\s*\)\s*public\s+record\s+ExchangeRequest'
+        - path: sas-host/src/main/resources/application.properties
+          label: runtime strict Jackson behavior
+          tokens:
+            - 'quarkus.jackson.fail-on-unknown-properties=true'
+        - path: sas-api/src/test/java/et/restlink/sas/camara/CamaraConformanceTest.java
+          label: CAMARA conformance tests
+          tokens:
+            - 'pathsRecognizeCamaraSurfaces'
+            - 'pathsStripConfigurableApiRoot'
+            - 'correlatorPatternMatchesCamaraSchema'
+            - 'requestFilterRejectsInvalidCorrelatorOnCamaraPaths'
+            - 'requestFilterAllowsValidCorrelatorAndNonCamaraPaths'
+            - 'responseFilterEchoesOnlyValidCorrelator'
+            - 'conformanceExceptionMapperReturnsCamaraErrorInfo'
+            - 'verifyRequestRejectsUnknownProperties'
+            - 'simSwapRequestsRejectUnknownProperties'
+            - 'otpRequestsRejectUnknownProperties'
+            - 'camaraAliasRoutesAreAnnotated'
+            - 'numberVerificationAliasDelegates'
+            - 'simSwapAliasDelegates'
+            - 'otpSmsAliasDelegates'
+            - 'healthAliasReportsUp'
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/TokenResource.java
+          label: CAMARA ICM token grants
+          tokens:
+            - '@Path("/token")'
+            - 'CIBA_GRANT_TYPE = "urn:openid:params:grant-type:ciba"'
+            - 'CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials"'
+            - 'JWT_BEARER_GRANT_TYPE = OAuthClientAuthenticator.JWT_BEARER_GRANT_TYPE'
+            - 'scope MUST NOT be specified for the CIBA token request'
+            - 'scope MUST NOT be specified for the JWT bearer token request'
+            - 'auth_req_id was issued to another client'
+            - 'issueClientToken('
+            - 'issueUserToken('
+            - 'tel:<E.164> or operatortoken:<token>'
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/BcAuthorizeResource.java
+          label: CIBA client binding
+          tokens:
+            - '@Path("/bc-authorize")'
+            - '@FormParam("client_assertion_type")'
+            - '@FormParam("client_assertion")'
+            - 'authenticateClient('
+            - 'client.authorizeGrant(TokenResource.CIBA_GRANT_TYPE)'
+            - 'client.authorizeScope(scope, false)'
+            - 'client.clientId()'
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/OAuthClient.java
+          label: registered-client grant/scope policy
+          tokens:
+            - 'AUTH_METHOD_PRIVATE_KEY_JWT = "private_key_jwt"'
+            - 'authorizeScope(String requestedScope, boolean purposeRequired)'
+            - 'authorizeGrantedScopes(Set<String> grantedScopes)'
+            - 'a dpv purpose scope is required'
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/OAuthClientAuthenticator.java
+          label: private_key_jwt assertion policy
+          tokens:
+            - 'CLIENT_ASSERTION_TYPE_JWT_BEARER'
+            - 'JWT_BEARER_GRANT_TYPE'
+            - 'authenticateJwtBearer('
+            - 'client has no usable private_key_jwt key'
+            - 'MAX_ASSERTION_LIFETIME_SECONDS = 300L'
+            - 'useOnce('
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/OAuthScopePolicy.java
+          label: CAMARA scope policy
+          tokens:
+            - 'PURPOSE_PREFIX = "dpv:"'
+            - 'at least one CAMARA API scope is required'
+            - 'unsupported scope: '
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/OAuthMetadataService.java
+          label: ICM discovery metadata
+          tokens:
+            - 'grant_types_supported'
+            - 'token_endpoint_auth_methods_supported'
+            - 'token_endpoint_auth_signing_alg_values_supported'
+            - 'backchannel_authentication_endpoint'
+        - path: sas-api/src/main/java/et/restlink/sas/oauth/AccessTokenService.java
+          label: user-bound versus 2-legged token model
+          tokens:
+            - 'issueUserToken('
+            - 'issueClientToken('
+            - '"token_use"'
+        - path: sas-api/src/test/java/et/restlink/sas/oauth/OauthTokenResourceTest.java
+          label: token-grant tests
+          tokens:
+            - 'cibaTokenForAnotherClient_invalidGrant400'
+            - 'clientCredentialsHappy_returns2LeggedToken'
+            - 'jwtBearerHappyWithTelSubject_returns3LeggedToken'
+            - 'jwtBearerHappyWithOperatorToken_resolvesSubscriber'
+        - path: sas-api/src/test/java/et/restlink/sas/oauth/OAuthClientAuthenticatorTest.java
+          label: private_key_jwt tests
+          tokens:
+            - 'validClientAssertionIsAccepted'
+            - 'replayedAssertionIsRejected'
+            - 'jwtBearerSubjectMayIdentifyTheUser'
   # -------------------------------------------------------------------------
   # P-H1…P-H7 — production deployment gates.
   # Unlike H1–H14 (which assert the documented design contract), these assert

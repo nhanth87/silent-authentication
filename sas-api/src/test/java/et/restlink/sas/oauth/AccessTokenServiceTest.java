@@ -150,10 +150,21 @@ class AccessTokenServiceTest {
                 Set.of(scope.split(" ")), nowSec, nowSec + 120L);
     }
 
-    private void setSecret(Optional<String> value) throws Exception {
-        var field = AccessTokenService.class.getDeclaredField("secret");
-        field.setAccessible(true);
-        field.set(service, value);
+    private void setSecret(Optional<String> value) {
+        service.config = new FakeOAuthServerConfig(value.orElse(""));
+    }
+
+    private static final class FakeOAuthServerConfig extends OAuthServerConfig {
+        private final String secret;
+
+        private FakeOAuthServerConfig(String secret) {
+            this.secret = secret;
+        }
+
+        @Override
+        public String secret() {
+            return secret;
+        }
     }
 
     private static String decodePayload(String token) {

@@ -1,14 +1,18 @@
 # Silent Auth SAS — E2E Test Flow
 
-Date: 2026-08-23 · Updated: 2026-09-09 (dist demo path §0b verified end-to-end;
+Date: 2026-08-23 · Updated: 2026-09-11 (CAMARA `/camara` aliases, strict request bodies,
+`x-correlator` validation/echo; GSMA mock ↔ local compare §0d; CAMARA ICM OAuth Phase 3 manual runbook §0e; dist demo path §0b verified end-to-end;
 bẫy `quarkus.config.locations` thắng `-D` sysprops; build profile flag, 3 testapp
 instances incl. Gx, SIM-swap fail-closed on the corsac S6a leg; TS.43 = operator REST CAMARA NV + Sh UDR; SWx leg = operator AAA↔HSS;
 CDR bền cho SimSwap + OTP: `dist/logs/sas.cdr`, DB history và admin merge)
 Scope: web → `POST /verify` → SAS → `sas-diameter-testapp`
 
-> CAMARA alignment: primary endpoints are now under `/number-verification/v2`
-> (`POST …/verify`, `GET …/device-phone-number`). Legacy `/verify` and
-> `/retrieve-phone-number` still work as deprecated lab aliases. Assurance detail
+> CAMARA alignment: primary endpoints are under `/number-verification/v2` and the
+> `/camara` alias root (`POST /camara/number-verification/v2/verify`,
+> `GET /camara/number-verification/v2/device-phone-number`). Legacy `/verify` and
+> `/retrieve-phone-number` still work as deprecated lab aliases. Unknown CAMARA request
+> properties are rejected as `400 INVALID_ARGUMENT`; a present `x-correlator` must match
+> `^[a-zA-Z0-9-_:;./<>{}]{0,256}$` and is echoed. Assurance detail
 > (score/factors) is OPT-IN via header `X-Sas-Assurance-Detail: true`.
 > Spec snapshot + gap analysis: `docs/research/camara/`.
 
@@ -236,6 +240,10 @@ curl -s -X POST http://localhost:8085/token \
   --data-urlencode "auth_req_id=$AUTH"
 ```
 → kỳ vọng: `{"access_token":"eyJ…","expires_in":300,…}` — đặt `AT="<access_token>"`
+
+> Nếu Bước C3 gửi `client_id=...`, Bước C4 phải gửi cùng `client_id`; `auth_req_id`
+> được bind vào client. Với `private_key_jwt`, mỗi endpoint cần một client assertion
+> riêng vì `jti` chỉ dùng một lần.
 
 **Bước C5 — verify số khớp (token bound +251911111111):**
 
@@ -618,6 +626,10 @@ curl -s -X POST http://localhost:8085/token \
 ```
 → expect: `{"access_token":"eyJ…","expires_in":300,…}` — set `AT="<access_token>"`
 
+> If Step C3 sends `client_id=...`, Step C4 must send the same `client_id`; the
+> `auth_req_id` is bound to that client. With `private_key_jwt`, each endpoint needs a
+> separate client assertion because a `jti` is one-time use.
+
 **Step C5 — verify the matching number (token is bound to +251911111111):**
 
 ```bash
@@ -706,7 +718,370 @@ pgrep -x java || echo "all JVMs stopped"
 | 23 | ⑦ 3 wrong codes burn the attempt | — | `400 400 400`, third = `VERIFICATION_FAILED` |
 | 24 | ⑦ 4th send to one number · bad template · no token | — | `403 MAX_OTP_CODES_EXCEEDED` · `400` · `401` |
 | C8 | OTP 3-legged (bound number) | resolver BOUND | `200`; foreign number → `403`; wrong scope → `403`; reuse → `401` |
+| ICM | `/token` CIBA with `scope` · replayed `auth_req_id` · wrong/expired/replayed client assertion | — (manual §0e) | `400 invalid_request` · `400 invalid_grant` · `401 invalid_client` |
+| ICM | `auth_req_id` expiry · pending binding issued to another client | — (unit-tested) | `400 expired_token` · `400 invalid_grant` |
+| ICM | `client_credentials` against NV `/verify` | — (manual §0e) | 2-legged `token_use=client`; `/verify` → `403 NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK` |
+| ICM | JWT bearer `tel:` · missing purpose · bad subject · form `scope` | — (manual §0e) | user-bound token · `400 invalid_scope` · `400 invalid_grant` · `400 invalid_request` |
+| ICM | JWT bearer `operatortoken:` | — (unit-tested; manual run needs the §0b entitlement/SWx lab stack) | user-bound token |
 | — | LTE happy path on memory transport (optional) | pilot backends | `true`, score 100 |
+
+## 0d. GSMA Open Gateway smoke / mock ↔ local SAS (verified 2026-09-10)
+
+Lab helpers:
+
+- `scripts/gsma_mock_server.py` — mock Open Gateway on `127.0.0.1:18099`.
+- `scripts/gsma_camara_smoke.py` — CAMARA smoke/compare for `local`, `gsma`, or `compare`.
+- `scripts/gsma.env.template` — copy outside the repo and fill live sandbox values.
+
+The smoke script adds `X-Sas-*` headers only for `--target local`; it never sends them to
+GSMA. Reports mask phone numbers and tokens. Do not commit a filled env file or live report.
+
+### Mock ↔ local compare (no live sandbox required)
+
+```bash
+MOCK_PORT=18099 python3 scripts/gsma_mock_server.py > /tmp/gsma_mock.log 2>&1 &
+MOCK_PID=$!
+./dist/run.sh > /tmp/sas.log 2>&1 &
+SAS_PID=$!
+
+curl -fsS http://127.0.0.1:18099/health
+curl -fsS http://127.0.0.1:8085/camara/health
+
+python3 scripts/gsma_camara_smoke.py --target compare \
+  --gsma-api-root http://127.0.0.1:18099/camara \
+  --token-url http://127.0.0.1:18099/oauth/token \
+  --client-id mock-client --client-secret mock-secret \
+  --gsma-test-number +251911111111 \
+  --local-base http://127.0.0.1:8085 \
+  --local-test-number +251911111111 \
+  --tests simswap,cdr --timeout 20 \
+  --report /tmp/gsma_local_compare.json --require-match
+
+pkill -P "$SAS_PID" 2>/dev/null || true
+kill "$SAS_PID" "$MOCK_PID" 2>/dev/null || true
+```
+
+Expected:
+
+```text
+[simswap-check] MATCH
+[simswap-retrieve-date] MATCH
+[cdr-privacy] OK
+COMPARE_SUMMARY MATCH=2 OK=1
+EXIT=0
+```
+
+`cdr-privacy` is local-only: it confirms the CDR/report masks the MSISDN and contains no
+OTP plaintext.
+
+### Local SAS only
+
+```bash
+python3 scripts/gsma_camara_smoke.py --target local \
+  --local-base http://127.0.0.1:8085 \
+  --tests nv,simswap,otp,cdr \
+  --report /tmp/sas_local_smoke.json
+```
+
+Expected exit `0` for the lab dist. NV may return `devicePhoneNumberVerified:false` when
+no binding evidence exists; OTP validation reads the lab log-only code.
+
+### Live GSMA sandbox (blocked until browser values are supplied)
+
+Cloudflare blocks curl/headless automation. Copy the template outside the repo and fill it
+from a real browser session:
+
+```bash
+cp scripts/gsma.env.template /tmp/gsma.env
+```
+
+Required values: `GSMA_API_ROOT`, `GSMA_TOKEN_URL`, `GSMA_CLIENT_ID`,
+`GSMA_CLIENT_SECRET` or preissued tokens, `GSMA_TEST_NUMBER`, and enabled scopes. NV
+usually requires a user-bound 3-legged token (`GSMA_NV_TOKEN`, `GSMA_DISCOVERY_TOKEN`);
+with a bound token the request body should be `{}`.
+
+```bash
+python3 scripts/gsma_camara_smoke.py --target gsma --env-file /tmp/gsma.env \
+  --tests token,simswap,nv --timeout 20 --report /tmp/gsma_live.json
+```
+
+Do not run live OTP unless the sandbox explicitly confirms it will not send a real SMS;
+the script refuses GSMA OTP without `--allow-send`.
+
+## 0e. CAMARA ICM OAuth Phase 3 — manual runbook (verified 2026-09-11)
+
+Chạy độc lập với §0b–§0d. Không cần Diameter simulator vì SAS dùng memory/pilot
+transport. Phải chạy `java -jar dist/quarkus-run.jar` trực tiếp để `-D` system
+properties thắng config; **không dùng `dist/run.sh`** cho phần này. Helper lab
+`scripts/sas_oauth_jwt_tool.py` tạo RSA key, `clients.json`, và ký assertion RS256.
+
+**P0 — dọn process cũ, đặt biến môi trường:**
+
+```bash
+cd /home/meodien/Desktop/ethiopia-working-dir/worktrees/silent-authentication/main
+pkill -f "$PWD/dist/quarkus-run.jar" || true
+export JAVA_HOME="$HOME/.local/share/mise/installs/java/zulu-25"
+export PATH="$JAVA_HOME/bin:$PATH"
+J="$JAVA_HOME/bin/java"
+BASE=http://localhost:8085
+CID=bank-backend
+TYPE='urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+decode() {
+  python3 -c 'import base64,json,sys; p=sys.argv[1].split(".")[1]; p+="="*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))' "$1"
+}
+"$J" -version
+```
+→ kỳ vọng: `openjdk version "25…"` (zulu).
+
+**P1 — regression tự động:**
+
+```bash
+/usr/bin/mvn -o -B test -Dquarkus.profile=lab
+python3 harness/run_hardness.py
+python3 harness/run_hardness.py --mutations
+python3 harness/preflight_prod.py --selftest
+```
+→ kỳ vọng: `528` tests pass · `34/34 gates` · `10` mutations caught · `23/23` preflight
+scenarios detected.
+
+**P2 — build/package dist:**
+
+```bash
+/usr/bin/mvn -o -B clean package -DskipTests -Dquarkus.profile=lab
+./scripts/package-dist.sh
+```
+→ kỳ vọng: có `dist/quarkus-run.jar`.
+
+**P3 — tạo lab client key + registry:**
+
+```bash
+rm -rf /tmp/sas-oauth-test
+python3 scripts/sas_oauth_jwt_tool.py keygen --client-id "$CID" --out /tmp/sas-oauth-test
+KEY=/tmp/sas-oauth-test/client.key
+```
+→ kỳ vọng: in `private_key=...client.key`, `clients_json=...clients.json`, `kid=...`.
+
+**P4 — start SAS với `private_key_jwt` bắt buộc:**
+
+```bash
+export SAS_OAUTH_CLIENTS_JSON="$(cat /tmp/sas-oauth-test/clients.json)"
+nohup "$J" \
+  -Dsas.security.token-validation-enabled=true \
+  -Dsas.security.hmac-secret=k1 \
+  -Dsas.oauth.secret=k1 \
+  -Dsas.oauth.public-base-url="$BASE" \
+  -Dsas.oauth.require-client-auth=true \
+  -Dsas.oauth.clients-json="$SAS_OAUTH_CLIENTS_JSON" \
+  --add-modules jdk.sctp \
+  -jar dist/quarkus-run.jar >/tmp/sas-oauth.log 2>&1 &
+echo $! >/tmp/sas-oauth.pid
+for i in {1..60}; do curl -fs "$BASE/camara/health" >/dev/null && break; sleep 1; done
+curl -s "$BASE/camara/health"
+```
+→ kỳ vọng: `{"status":"UP"}`.
+
+**P5 — discovery metadata:**
+
+```bash
+curl -s "$BASE/.well-known/oauth-authorization-server" | python3 -m json.tool
+```
+→ kỳ vọng: `token_endpoint_auth_methods_supported` chứa `private_key_jwt`;
+`grant_types_supported` chứa `urn:openid:params:grant-type:ciba`, `client_credentials`,
+`urn:ietf:params:oauth:grant-type:jwt-bearer`.
+
+**P6 — CIBA + `private_key_jwt` happy path:**
+
+```bash
+BCA=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" --aud "$BASE/bc-authorize")
+AUTH=$(curl -s -X POST "$BASE/bc-authorize" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$BCA" \
+  -d 'scope=number-verification:verify' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth_req_id"])')
+echo "$AUTH"
+```
+→ kỳ vọng: in một `auth_req_id` không rỗng.
+
+```bash
+TCA=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" --aud "$BASE/token")
+AT=$(curl -s -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:openid:params:grant-type:ciba' \
+  --data-urlencode "auth_req_id=$AUTH" \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$TCA" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+decode "$AT"
+```
+→ kỳ vọng: payload có `token_use: user` và `phone_number: +251911111111`.
+
+```bash
+curl -s -X POST "$BASE/number-verification/v2/verify" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $AT" \
+  -H 'X-Sas-Amr: mobile' -H 'X-Sas-Assurance-Detail: true' \
+  -d '{"phoneNumber":"+251911111111"}'
+```
+→ kỳ vọng: `"devicePhoneNumberVerified":true`, `"decision":"APPROVE"`, `"score":100`.
+
+**P7 — CIBA access token single-use:** chạy lại đúng lệnh verify ở P6
+→ kỳ vọng: `401`, `UNAUTHENTICATED`, `token already used (single-use)`.
+
+**P8 — `auth_req_id` replay:**
+
+```bash
+TCA2=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" --aud "$BASE/token")
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:openid:params:grant-type:ciba' \
+  --data-urlencode "auth_req_id=$AUTH" \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$TCA2"
+```
+→ kỳ vọng: `400`, `invalid_grant`, `auth_req_id is invalid or was already exchanged`.
+
+**P9 — `client_credentials` 2-legged:**
+
+```bash
+CCA=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" --aud "$BASE/token")
+TOK_C=$(curl -s -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'scope=number-verification:verify' \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$CCA" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+decode "$TOK_C"
+```
+→ kỳ vọng: `token_use: client`, `client_id: bank-backend`, không có `phone_number`.
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/number-verification/v2/verify" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOK_C" \
+  -H 'X-Sas-Amr: mobile' \
+  -d '{"phoneNumber":"+251911111111"}'
+```
+→ kỳ vọng: `403`, `NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`,
+message nói token không có user phone-number binding.
+
+**P10 — JWT bearer, subject `tel:`:**
+
+```bash
+JBA=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" \
+  --aud "$BASE/token" --sub 'tel:+251911111111' \
+  --scope 'dpv:FraudPreventionAndDetection number-verification:verify')
+TOK_J=$(curl -s -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+  --data-urlencode "assertion=$JBA" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+decode "$TOK_J"
+```
+→ kỳ vọng: `token_use: user`, `phone_number: +251911111111`.
+
+```bash
+curl -s -X POST "$BASE/number-verification/v2/verify" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOK_J" \
+  -H 'X-Sas-Amr: mobile' -H 'X-Sas-Assurance-Detail: true' \
+  -d '{"phoneNumber":"+251911111111"}'
+```
+→ kỳ vọng: `true`, `APPROVE`, `score: 100`.
+
+**P11 — JWT bearer negatives:**
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+  --data-urlencode "assertion=$JBA" \
+  --data-urlencode 'scope=number-verification:verify'
+```
+→ kỳ vọng: `400`, `invalid_request`, scope không được gửi ở JWT bearer token request.
+
+```bash
+JBA_NO_PURPOSE=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" \
+  --aud "$BASE/token" --sub 'tel:+251911111111' --scope 'number-verification:verify')
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+  --data-urlencode "assertion=$JBA_NO_PURPOSE"
+```
+→ kỳ vọng: `400`, `invalid_scope`, `a dpv purpose scope is required`.
+
+```bash
+JBA_BAD_SUB=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" \
+  --aud "$BASE/token" --sub 'user@example.com' \
+  --scope 'dpv:FraudPreventionAndDetection number-verification:verify')
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+  --data-urlencode "assertion=$JBA_BAD_SUB"
+```
+→ kỳ vọng: `400`, `invalid_grant`, `sub must be tel:<E.164> or operatortoken:<token>`.
+Path `operatortoken:` cần entitlement/SWx lab stack ở §0b nên ở runbook này chỉ
+unit-test; JWT bearer `tel:` là manual step.
+
+**P12 — client-authentication negatives:**
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/bc-authorize" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  -d "client_id=$CID" -d 'scope=number-verification:verify'
+```
+→ kỳ vọng: `401`, `invalid_client`, `client authentication is required`.
+
+```bash
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/bc-authorize" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$BCA" \
+  -d 'scope=number-verification:verify'
+```
+→ kỳ vọng: `401`, `invalid_client`, `JWT assertion jti has already been used`.
+
+```bash
+BAD_CLIENT=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id wrong-client --aud "$BASE/token")
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'scope=number-verification:verify' \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$BAD_CLIENT"
+```
+→ kỳ vọng: `401`, `invalid_client`, `unknown client: wrong-client`.
+
+```bash
+EXPIRED=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" --aud "$BASE/token" --ttl -5)
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'scope=number-verification:verify' \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$EXPIRED"
+```
+→ kỳ vọng: `401`, `invalid_client`, `JWT assertion has expired`.
+
+```bash
+WRONG_AUD=$(python3 scripts/sas_oauth_jwt_tool.py sign --key "$KEY" --client-id "$CID" --aud "$BASE/bc-authorize")
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=client_credentials' \
+  --data-urlencode 'scope=number-verification:verify' \
+  -d "client_id=$CID" -d "client_assertion_type=$TYPE" \
+  --data-urlencode "client_assertion=$WRONG_AUD"
+```
+→ kỳ vọng: `401`, `invalid_client`, `JWT assertion audience is invalid`.
+
+**P13 — cleanup:**
+
+```bash
+kill "$(cat /tmp/sas-oauth.pid 2>/dev/null)" 2>/dev/null || true
+pkill -f "$PWD/dist/quarkus-run.jar" || true
+pgrep -f "$PWD/dist/quarkus-run.jar" || echo 'SAS stopped'
+```
 
 ## 1. Build
 
@@ -1033,11 +1408,16 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 | OTP SMS sai code 3 lần | — | `INVALID_OTP`, `INVALID_OTP`, `VERIFICATION_FAILED` |
 | OTP SMS quá 3 code/số/giờ | — | `403 MAX_OTP_CODES_EXCEEDED` |
 | OTP SMS 3-legged sai số bound | — | `403 PERMISSION_DENIED` (không sinh OTP) |
+| `/token` CIBA có `scope` · replay `auth_req_id` · client assertion sai/hết hạn/dùng lại | — (manual §0e) | `400 invalid_request` · `400 invalid_grant` · `401 invalid_client` |
+| `auth_req_id` hết hạn · pending binding cấp cho client khác | — (unit-tested) | `400 expired_token` · `400 invalid_grant` |
+| `client_credentials` gọi NV `/verify` | — (manual §0e) | token 2-legged `token_use=client`; `/verify` → `403 NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK` |
+| JWT bearer `tel:` · thiếu purpose · `sub` lạ · `scope` ở form | — (manual §0e) | token user-bound · `400 invalid_scope` · `400 invalid_grant` · `400 invalid_request` |
+| JWT bearer `operatortoken:` | — (unit-tested; muốn chạy manual cần entitlement/SWx lab stack ở §0b) | token user-bound |
 
 ## 7. Kiểm thử khác trong tree
 
 ```bash
-/usr/bin/mvn -B clean test                           # từ repo root: 463 tests trên 3 module (JUnit 5, không cần mạng)
+mvn -o -B test -Dquarkus.profile=lab                  # từ repo root: 528 tests trên 3 module (JUnit 5, không cần mạng)
 python3 harness/run_hardness.py          # 34/34 gates (H1–H24)
 python3 harness/preflight_prod.py        # verdict for THIS env (exit = số check fail)
 python3 harness/preflight_prod.py --selftest   # 23/23 kịch bản cấu hình sai bị bắt

@@ -7,6 +7,7 @@
 
 package et.restlink.sas.oauth;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,7 +17,6 @@ import jakarta.inject.Inject;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -61,24 +61,39 @@ public class AccessTokenService {
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     @Inject
-    @ConfigProperty(name = "sas.oauth.secret")
-    java.util.Optional<String> secret;
+    OAuthServerConfig config;
 
     /** jti → consumption deadline epoch sec (replay guard hook for /verify). */
     private final Map<String, Long> consumedJtis = new ConcurrentHashMap<>();
 
-    /** Signed-token payload. Boxed Longs detect missing iat/exp at parse time. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private record TokenPayload(
             String iss,
             String sub,
             @JsonProperty("phone_number") String phoneNumber,
+            @JsonProperty("client_id") String clientId,
+            @JsonProperty("token_use") String tokenUse,
             String scope,
             String jti,
             Long iat,
             Long exp) {}
 
-    /** Verified token content handed to the resource layer. */
-    public record Decoded(String msisdn, Set<String> scopes, String jti, long expiresEpochSec) {}
+    public record Decoded(
+            String msisdn,
+            Set<String> scopes,
+            String jti,
+            long expiresEpochSec,
+            String clientId,
+            String tokenUse) {
+
+        public Decoded(String msisdn, Set<String> scopes, String jti, long expiresEpochSec) {
+            this(msisdn, scopes, jti, expiresEpochSec, null, null);
+        }
+
+        public boolean userBound() {
+            return msisdn != null && !msisdn.isBlank();
+        }
+    }
 
     /**
      * Sign and return the access token bound to the pending binding.
@@ -87,29 +102,64 @@ public class AccessTokenService {
      *         (misconfiguration never downgrades to unsigned tokens)
      */
     public String issue(PendingBinding binding) {
-        String signingSecret = secret.orElse("");
+        return issueUserToken(binding.msisdn(), binding.scopes(), binding.clientId());
+    }
+
+    public String issueUserToken(String msisdn, Set<String> scopes, String clientId) {
+        if (msisdn == null || msisdn.isBlank()) {
+            throw new IllegalStateException("user-bound access token requires an msisdn");
+        }
+        long nowSec = currentEpochSeconds();
+        TokenPayload payload = new TokenPayload(
+                issuer(),
+                msisdn,
+                msisdn,
+                clientId,
+                "user",
+                String.join(" ", scopes == null ? Set.of() : scopes),
+                randomJti(),
+                nowSec,
+                nowSec + TOKEN_TTL_SECONDS);
+        String token = sign(payload);
+        LOG.info("[SAS] user-bound access token issued for {} (ttl={}s)",
+                AuthorizationRequestService.maskMsisdn(msisdn), TOKEN_TTL_SECONDS);
+        return token;
+    }
+
+    public String issueClientToken(String clientId, Set<String> scopes) {
+        if (clientId == null || clientId.isBlank()) {
+            throw new IllegalStateException("client-credentials access token requires client_id");
+        }
+        long nowSec = currentEpochSeconds();
+        TokenPayload payload = new TokenPayload(
+                issuer(),
+                null,
+                null,
+                clientId,
+                "client",
+                String.join(" ", scopes == null ? Set.of() : scopes),
+                randomJti(),
+                nowSec,
+                nowSec + TOKEN_TTL_SECONDS);
+        String token = sign(payload);
+        LOG.info("[SAS] 2-legged access token issued for client {} (ttl={}s)",
+                clientId, TOKEN_TTL_SECONDS);
+        return token;
+    }
+
+    private String sign(TokenPayload payload) {
+        String signingSecret = config == null ? "" : config.secret();
         if (signingSecret.isBlank()) {
             LOG.error("sas.oauth.secret is blank — refusing to issue access tokens");
             throw new IllegalStateException(
                     "sas.oauth.secret is required to issue access tokens");
         }
-        long nowSec = System.currentTimeMillis() / 1000L;
-        TokenPayload payload = new TokenPayload(
-                ISSUER,
-                binding.msisdn(),
-                binding.msisdn(),
-                String.join(" ", binding.scopes()),
-                randomJti(),
-                nowSec,
-                nowSec + TOKEN_TTL_SECONDS);
         byte[] payloadBytes;
         try {
             payloadBytes = MAPPER.writeValueAsBytes(payload);
         } catch (IOException e) {
             throw new IllegalStateException("access-token payload serialization failed", e);
         }
-        // Standard JWS compact form (header.payload.signature) so the northbound
-        // TokenValidator accepts operator-issued access tokens as-is.
         String header = Base64.getUrlEncoder().withoutPadding().encodeToString(
                 "{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
         String payloadB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(payloadBytes);
@@ -119,8 +169,6 @@ public class AccessTokenService {
         if (signature == null) {
             throw new IllegalStateException("HMAC unavailable — cannot issue access token");
         }
-        LOG.info("[SAS] access token issued for {} (ttl={}s)",
-                AuthorizationRequestService.maskMsisdn(binding.msisdn()), TOKEN_TTL_SECONDS);
         return header
                 + PART_SEPARATOR
                 + payloadB64
@@ -142,8 +190,10 @@ public class AccessTokenService {
             LOG.warn("Access-token introspect: token expired");
             return null;
         }
-        if (p.sub() == null || p.sub().isBlank()) {
-            LOG.warn("Access-token introspect: signed payload has no bound msisdn");
+        boolean userBound = p.sub() != null && !p.sub().isBlank();
+        boolean clientBound = p.clientId() != null && !p.clientId().isBlank();
+        if (!userBound && !clientBound) {
+            LOG.warn("Access-token introspect: signed payload has no subject or client binding");
             return null;
         }
         Set<String> scopes = new LinkedHashSet<>();
@@ -152,7 +202,12 @@ public class AccessTokenService {
                 scopes.add(s);
             }
         }
-        return new Decoded(p.sub(), scopes, p.jti(), p.exp());
+        return new Decoded(userBound ? p.sub() : null, scopes, p.jti(), p.exp(),
+                p.clientId(), p.tokenUse());
+    }
+
+    public String issuer() {
+        return config == null ? ISSUER : config.issuer();
     }
 
     /** Registers a jti as consumed (single-use enforcement at /verify). */
@@ -188,7 +243,7 @@ public class AccessTokenService {
         if (token == null || token.isBlank()) {
             return null;
         }
-        String signingSecret = secret.orElse("");
+        String signingSecret = config == null ? "" : config.secret();
         if (signingSecret.isBlank()) {
             LOG.warn("sas.oauth.secret not configured — rejecting access token");
             return null;
@@ -241,6 +296,10 @@ public class AccessTokenService {
             LOG.error("HMAC sign failed", e);
             return null;
         }
+    }
+
+    private static long currentEpochSeconds() {
+        return System.currentTimeMillis() / 1000L;
     }
 
     private static String randomJti() {

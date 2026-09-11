@@ -7,6 +7,8 @@
 
 package et.restlink.sas.api;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import et.restlink.sas.ras.resolver.InMemoryResolverBackend;
 import et.restlink.sas.ras.resolver.ResolverBackend;
 import et.restlink.sas.security.ApiKeyAuthenticator;
@@ -80,6 +82,7 @@ public class SessionTupleResource {
     @Inject
     ApiKeyAuthenticator apiKeys;
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record TupleRequest(String srcIp, Integer srcPort, Long ts, String msisdn,
                                String imsi, String accessTech) {}
 

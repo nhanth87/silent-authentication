@@ -7,13 +7,17 @@
 
 package et.restlink.sas.simswap;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 /**
  * CAMARA SimSwap v2.1.0 {@code POST /sim-swap/v2/check} request body
  * ({@code CreateCheckSimSwap}). {@code phoneNumber} is optional and only
  * allowed on the 2-legged path — with a user-bound (3-legged) access token the
  * identifier comes from the token and an explicit number answers
  * {@code 422 UNNECESSARY_IDENTIFIER}. {@code maxAge} is the look-back window in
- * hours (spec range 1..2400, default 240). Unknown properties are ignored.
+ * hours (spec range 1..2400, default 240). Unknown properties are rejected as
+ * {@code 400 INVALID_ARGUMENT}.
  */
+@JsonIgnoreProperties(ignoreUnknown = false)
 public record SimSwapCheckRequest(String phoneNumber, Integer maxAge) {
 }
