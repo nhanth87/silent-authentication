@@ -7,11 +7,15 @@
 
 package et.restlink.sas.simswap;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 /**
  * CAMARA SimSwap v2.1.0 {@code POST /sim-swap/v2/retrieve-date} request body
  * ({@code CreateSimSwapDate}). Same identifier rules as
  * {@link SimSwapCheckRequest}: 3-legged tokens carry the number, 2-legged
- * callers must supply it.
+ * callers must supply it. Unknown properties are rejected as
+ * {@code 400 INVALID_ARGUMENT}.
  */
+@JsonIgnoreProperties(ignoreUnknown = false)
 public record SimSwapDateRequest(String phoneNumber) {
 }

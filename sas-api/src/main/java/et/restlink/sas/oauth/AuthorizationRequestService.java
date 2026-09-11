@@ -11,7 +11,6 @@ import et.restlink.sas.api.SasVerifyEngine;
 import et.restlink.sas.model.ResolverResult;
 import et.restlink.sas.ras.resolver.ResolverBackend;
 import et.restlink.sas.security.RequestValidator;
-import et.restlink.sas.security.TokenValidator;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -20,7 +19,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.security.SecureRandom;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -51,14 +49,6 @@ public class AuthorizationRequestService {
     /** Resolver wait budget, mirroring the SAS resolver stage budget. */
     static final long RESOLVER_WAIT_MS = 500L;
 
-    /** CAMARA scope whitelist (NV + SimSwap + OTP SMS) — anything else is invalid_scope. */
-    private static final Set<String> SUPPORTED_SCOPES = Set.of(
-            TokenValidator.SCOPE_NUMBER_VERIFICATION_VERIFY,
-            TokenValidator.SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ,
-            TokenValidator.SCOPE_SIM_SWAP_CHECK,
-            TokenValidator.SCOPE_SIM_SWAP_RETRIEVE_DATE,
-            TokenValidator.SCOPE_ONE_TIME_PASSWORD_SMS_SEND_VALIDATE);
-
     private static final SecureRandom RANDOM = new SecureRandom();
 
     @Inject
@@ -82,6 +72,14 @@ public class AuthorizationRequestService {
      * @throws CibaException invalid_request / invalid_scope / access_denied
      */
     public AuthRequest start(String loginHint, String srcIp, int srcPort, String requestedScope) {
+        return start(loginHint, srcIp, srcPort, requestedScope, null);
+    }
+
+    public AuthRequest start(String loginHint,
+                             String srcIp,
+                             int srcPort,
+                             String requestedScope,
+                             String clientId) {
         Set<String> scopes = validateScope(requestedScope);
         long nowSec = System.currentTimeMillis() / 1000L;
         evictExpired(nowSec);
@@ -96,7 +94,7 @@ public class AuthorizationRequestService {
         String authReqId = randomAuthReqId();
         pendings.put(authReqId, new PendingBinding(
                 authReqId, msisdn, anchor.imsi(), scopes,
-                nowSec, nowSec + AUTH_REQ_TTL_SECONDS));
+                nowSec, nowSec + AUTH_REQ_TTL_SECONDS, clientId));
         LOG.info("[SAS] bc-authorize bound {} to {} (ttl={}s)",
                 maskMsisdn(msisdn), authReqId, AUTH_REQ_TTL_SECONDS);
         return new AuthRequest(authReqId, AUTH_REQ_TTL_SECONDS);
@@ -202,24 +200,7 @@ public class AuthorizationRequestService {
     // ---- helpers ----
 
     static Set<String> validateScope(String requestedScope) {
-        if (requestedScope == null || requestedScope.isBlank()) {
-            throw CibaException.invalidRequest("scope is required");
-        }
-        Set<String> requested = new LinkedHashSet<>();
-        for (String token : requestedScope.trim().split("\\s+")) {
-            if (!token.isBlank()) {
-                requested.add(token);
-            }
-        }
-        if (requested.isEmpty()) {
-            throw CibaException.invalidRequest("scope is required");
-        }
-        for (String scope : requested) {
-            if (!SUPPORTED_SCOPES.contains(scope)) {
-                throw CibaException.invalidScope("unsupported scope: " + scope);
-            }
-        }
-        return requested;
+        return OAuthScopePolicy.parse(requestedScope).responseScopes();
     }
 
     private void evictExpired(long nowSec) {

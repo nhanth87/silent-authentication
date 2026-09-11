@@ -40,7 +40,7 @@ documented contract, so the harness asserts both the design and the shipped conf
 | H11 | TCAP dialog/timer bound (no leak) | TS 23.018 / TS 23.060 TC-TIMER |
 | H12 | 5G path via Nudm/Nausf; SEPP/N32 boundary | TS 33.501 |
 | H13 | Resolver stays data-plane (S6b/SGi) — no IP→MSISDN in MAP/Diameter | TS 29.273 |
-| H14 | CAMARA contract fidelity (`/verify` boolean; single-use token) | CAMARA NV v2.1.0 |
+| H14 | CAMARA contract fidelity (`/verify` boolean; single-use ≤300s token; 403 non-mobile auth; `x-correlator`; strict CAMARA bodies; `/camara` aliases; CAMARA ICM CIBA/`client_credentials`/JWT-bearer grants and `private_key_jwt`) | CAMARA NV v2.1.0; CAMARA ICM; SimSwap v2.1.0; OneTimePasswordSMS v1.1.1 |
 | H15 | `prod` profile admits a correctly provisioned deployment | FS.31 (baseline) |
 | H16 | Northbound auth cannot be softened (validation/enforcement/scopes/secrets) | FS.11 §3.3.4; CAMARA NV |
 | H17 | Cleartext HTTP / no-mTLS / lab keystore refused | FS.07; FS.31 |
@@ -56,6 +56,19 @@ H15–H21 are backed by 29 static checks (`PRO-01`…`PRO-29`) in
 [`harness/preflight_prod.py`](../../harness/preflight_prod.py): they read
 `application.properties` overlaid with `application-prod.properties`, expand `${ENV}`
 without lab fallbacks, and fail on any lab-shaped value — before the JVM starts.
+
+H14 is a **source-contract** gate (`check: camara_contract`). It asserts the CAMARA
+northbound paths and response fields, the single-use ≤300 s token policy, the 403
+non-mobile-auth code, `x-correlator` validation/echo, `400 INVALID_ARGUMENT` for unknown
+CAMARA request properties, `/camara` alias delegation, and `/camara/health`. It also asserts
+the CAMARA ICM OAuth surface: `/bc-authorize` and `/token` keep CIBA, `client_credentials`
+and JWT-bearer grants; `private_key_jwt` assertions are lifetime-, audience-, signature- and
+replay-checked; one `auth_req_id` is bound to one client and consumed once; CAMARA scope
+policy requires at least one API scope and a JWT-bearer `dpv:` purpose; and NV separates
+user-bound tokens from 2-legged client tokens. Strictness is checked at both levels: CAMARA
+DTOs carry `@JsonIgnoreProperties(ignoreUnknown = false)` and the runtime sets
+`quarkus.jackson.fail-on-unknown-properties=true`; non-CAMARA Restlink extensions remain
+explicitly lenient.
 
 H22 is a **source-parity** gate (`check: access_tech_parity`): it parses the declared
 enum/raw-value/map-entry sites in each artefact rather than substring-searching, so

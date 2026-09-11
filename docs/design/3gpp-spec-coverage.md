@@ -56,7 +56,13 @@ Specs in scope (100% of the SAS signalling surface):
   (MAC-failure re-sync risk); IDR/IDA is an HSS→MME push — neither is a read query.
 - **Privacy** — IMSI/IMEI/EPS vectors stay on SAS/backend; app sees a boolean only.
 - **CAMARA contract** — `/verify` → `devicePhoneNumberVerified` boolean; single-use ≤300 s token;
-  403 on non-mobile-network auth (`NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`).
+  403 on non-mobile-network auth (`NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`)
+  or a missing user binding; `x-correlator` validated/echoed; unknown CAMARA request properties →
+  `400 INVALID_ARGUMENT`; `/camara` aliases delegate to the same NV/SimSwap/OTP resources.
+- **CAMARA ICM OAuth** — `/bc-authorize` + `/token` support CIBA, `client_credentials` and
+  JWT bearer with `private_key_jwt`; CIBA `auth_req_id` is single-use and client-bound;
+  JWT bearer requires an assertion `scope` with a `dpv:` purpose and `sub=tel:<E.164>` or
+  `operatortoken:<token>`.
 
 See `docs/research/*.md` for the ASN.1/command-code extracts and
 `docs/research/3gpp-spec-reference-index.md` for the (now 100%) index.

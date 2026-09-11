@@ -20,7 +20,17 @@ public record PendingBinding(
         String imsi,
         Set<String> scopes,
         long issuedEpochSec,
-        long expiresEpochSec) {
+        long expiresEpochSec,
+        String clientId) {
+
+    public PendingBinding(String authReqId,
+                          String msisdn,
+                          String imsi,
+                          Set<String> scopes,
+                          long issuedEpochSec,
+                          long expiresEpochSec) {
+        this(authReqId, msisdn, imsi, scopes, issuedEpochSec, expiresEpochSec, null);
+    }
 
     /** RFC 7519: current time must be strictly before exp. */
     public boolean expiredAt(long nowEpochSec) {

@@ -244,7 +244,14 @@ Timeouts (SAS is the dialog anchor; never let the HSS hang the app):
 
 Rules that must not regress:
 
-- **OIDC 3-legged** (app + user) or 2-legged `client_credentials` (server flow).
+- **CAMARA ICM OAuth:** CIBA, 2-legged `client_credentials`, and JWT bearer
+  (`sub=tel:<E.164>` or `operatortoken:<token>`) are implemented; authorization code,
+  refresh tokens, ID tokens and pseudonymous `sub` remain open.
+- **Client authentication:** `private_key_jwt`; `none` is kept only when
+  `sas.oauth.require-client-auth=false` for lab/legacy compatibility.
+- `/verify` accepts only a **user-bound** token; a `client_credentials` token has no
+  `phone_number`/`msisdn` binding and fails closed with
+  `403 NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`.
 - Scope: `number-verification:verify` / `number-verification:device-phone-number:read`.
 - **Single-use token** — one API call per token (anti-replay).
 - **No refresh token** for NV scopes; token ≤ **300 s**.
@@ -253,6 +260,9 @@ Rules that must not regress:
 - Default response **byte-conformant** = boolean only; assurance/score only when
   opted in via `X-Sas-Assurance-Detail: true` (no `matchScore` — that field does
   not exist in CAMARA NV).
+- **CAMARA aliases**: each NV v2 path is also served under `/camara`; `x-correlator`
+  is validated and echoed; unknown CAMARA request properties are rejected as
+  `400 INVALID_ARGUMENT`; non-CAMARA Restlink extensions remain explicitly lenient.
 
 Two documentation "tracks" (per analysis r3.2):
 

@@ -241,7 +241,14 @@ Timeout (SAS là dialog-anchor, không để HSS treo app):
 
 Quy tắc không được regress:
 
-- **OIDC 3-legged** (app + user) hoặc 2-legged `client_credentials` (server flow).
+- **CAMARA ICM OAuth**: đã triển khai CIBA, 2-legged `client_credentials`, và JWT bearer
+  (`sub=tel:<E.164>` hoặc `operatortoken:<token>`); authorization code, refresh token,
+  ID token và pseudonymous `sub` vẫn là open item.
+- **Client authentication**: `private_key_jwt`; `none` chỉ được giữ khi
+  `sas.oauth.require-client-auth=false` cho lab/legacy.
+- `/verify` chỉ chấp nhận token **user-bound**; token `client_credentials` không có
+  `phone_number`/`msisdn` nên fail-closed với
+  `403 NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`.
 - Scope: `number-verification:verify` / `number-verification:device-phone-number:read`.
 - **Single-use token** — một lần gọi API mỗi token (anti-replay).
 - **Không refresh token** cho NV scopes; token ≤ **300 s**.
@@ -250,6 +257,9 @@ Quy tắc không được regress:
 - Response mặc định **byte-conformant** = chỉ boolean; assurance/score chỉ khi
   opt-in qua `X-Sas-Assurance-Detail: true` (không có `matchScore` — trường đó
   không tồn tại trong CAMARA NV).
+- **Alias CAMARA**: mỗi path NV v2 cũng được phục vụ dưới `/camara`; `x-correlator`
+  được validate và echo; request body CAMARA chứa property lạ bị từ chối
+  `400 INVALID_ARGUMENT`; extension ngoài CAMARA vẫn lenient có chủ đích.
 
 Hai "track" tài liệu (theo phân tích r3.2):
 

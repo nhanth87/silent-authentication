@@ -200,9 +200,16 @@ class AuthorizationRequestServiceTest {
     }
 
     @Test
+    void scope_openidAndPurpose_accepted_butExcludedOrIncludedPerCamaraResponse() {
+        Set<String> scopes = AuthorizationRequestService.validateScope(
+                "openid dpv:FraudPreventionAndDetection " + SCOPE_VERIFY + " offline_access");
+        assertEquals(Set.of("dpv:FraudPreventionAndDetection", SCOPE_VERIFY), scopes);
+    }
+
+    @Test
     void scope_unknown_rejected() {
         CibaException e = assertThrows(CibaException.class,
-                () -> AuthorizationRequestService.validateScope("openid"));
+                () -> AuthorizationRequestService.validateScope("unknown-scope"));
         assertEquals("invalid_scope", e.error());
         assertEquals(400, e.httpStatus());
     }
@@ -210,7 +217,24 @@ class AuthorizationRequestServiceTest {
     @Test
     void scope_validPlusUnknown_rejectedEntirely() {
         CibaException e = assertThrows(CibaException.class,
-                () -> AuthorizationRequestService.validateScope(SCOPE_VERIFY + " openid"));
+                () -> AuthorizationRequestService.validateScope(SCOPE_VERIFY + " unknown-scope"));
+        assertEquals("invalid_scope", e.error());
+    }
+
+    @Test
+    void scope_onlyOpenidOrPurpose_rejected() {
+        CibaException e = assertThrows(CibaException.class,
+                () -> AuthorizationRequestService.validateScope("openid"));
+        assertEquals("invalid_scope", e.error());
+        assertThrows(CibaException.class,
+                () -> AuthorizationRequestService.validateScope("dpv:FraudPreventionAndDetection"));
+    }
+
+    @Test
+    void scope_multiplePurposes_rejected() {
+        CibaException e = assertThrows(CibaException.class,
+                () -> AuthorizationRequestService.validateScope(
+                        "dpv:FraudPreventionAndDetection dpv:Security " + SCOPE_VERIFY));
         assertEquals("invalid_scope", e.error());
     }
 

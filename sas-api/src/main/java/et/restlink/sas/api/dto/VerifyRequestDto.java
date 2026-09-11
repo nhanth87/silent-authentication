@@ -7,6 +7,8 @@
 
 package et.restlink.sas.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import et.restlink.sas.fsm.AssurancePolicy;
 
 import java.util.Locale;
@@ -15,9 +17,11 @@ import java.util.Locale;
  * CAMARA NumberVerification v2.1.0 {@code POST /verify} request body.
  * Exactly one of {@code phoneNumber} / {@code hashedPhoneNumber} must be
  * present ({@code minProperties:1, maxProperties:1}). Unknown properties are
- * ignored, never parsed (spec request-body strictness — F2/F4: the former
- * {@code riskClass} extension moved to the {@code X-Sas-Risk-Class} header).
+ * rejected as {@code 400 INVALID_ARGUMENT} (spec request-body strictness —
+ * F2/F4: the former {@code riskClass} extension moved to the
+ * {@code X-Sas-Risk-Class} header).
  */
+@JsonIgnoreProperties(ignoreUnknown = false)
 public record VerifyRequestDto(String phoneNumber,
                                String hashedPhoneNumber) {
 

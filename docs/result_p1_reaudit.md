@@ -57,7 +57,7 @@ boot instead of silently falling back.
 | Resolver | `sas.transport.resolver=${SAS_TRANSPORT_RESOLVER}` ∈ `radius\|cgnat\|sd` | operator decision stays an operator input, but a *typo* is refused |
 | RADIUS | `resolver.radius.secret=${SAS_RADIUS_SECRET}` (no default) | an empty secret disables `Message-Authenticator` (RFC 2869 §5.7) → spoofable bindings |
 | TS.43 | `require-signed=true`, `issue-attestation-required=true`, TTL 300 s | unsigned entitlement = anyone claims any MSISDN over Wi-Fi |
-| OAuth | `sas.oauth.secret=${SAS_OAUTH_SECRET}` | blank makes issuance throw |
+| OAuth | `sas.oauth.secret=${SAS_OAUTH_SECRET}` | blank makes issuance throw. CAMARA ICM `private_key_jwt` / client-registry support is implemented, but prod enforcement of `sas.oauth.require-client-auth=true` + `sas.oauth.clients-json` is still an open decision |
 | Persistence | PostgreSQL + `database.generation=none` + `flyway.migrate-at-start=true` | schema owned by migrations, not Hibernate |
 | CDR | `sas.cdr.enabled=true`, `sas.cdr.db.enabled=true`, `sas.log.dir` absolute | auditability (P-H6) |
 | Contract | `sas.api.assurance-detail-enabled=false` | internal evidence is not in CAMARA NV; opt-in per request only |
@@ -135,6 +135,7 @@ assert runtime behaviour. Still open before a real pilot:
 | 7 | **Key lifecycle (P-H3)** | rotation/revocation, per-key scopes, `maxTps` enforcement on `/verify` remain code work |
 | 8 | **Login rate limiting, metrics/alerting (P-H7)** | observability work, out of scope for a config gate |
 | 9 | **Assurance weights / thresholds** | still the design placeholder from `AGENTS.md` §10 |
+| 10 | **OAuth client authentication in prod** | Phase 3 supports `private_key_jwt`, but `application-prod.properties` does not yet pin `sas.oauth.require-client-auth=true` or an env-sourced `sas.oauth.clients-json`, and no PRO check refuses the legacy anonymous lab shape |
 
 Policy caveats worth stating plainly:
 

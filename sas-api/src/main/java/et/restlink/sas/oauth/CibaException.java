@@ -7,19 +7,10 @@
 
 package et.restlink.sas.oauth;
 
-/**
- * OAuth/CIBA error carried from the services to the northbound resources and
- * mapped 1:1 onto the RFC 6749 §5.2 error response body.
- */
-public final class CibaException extends RuntimeException {
-
-    private final String error;
-    private final int httpStatus;
+public final class CibaException extends OAuthException {
 
     private CibaException(String error, int httpStatus, String description) {
-        super(description);
-        this.error = error;
-        this.httpStatus = httpStatus;
+        super(error, httpStatus, description);
     }
 
     public static CibaException invalidRequest(String description) {
@@ -34,11 +25,7 @@ public final class CibaException extends RuntimeException {
         return new CibaException("access_denied", 403, description);
     }
 
-    public String error() {
-        return error;
-    }
-
-    public int httpStatus() {
-        return httpStatus;
+    public static CibaException expiredToken(String description) {
+        return new CibaException("expired_token", 400, description);
     }
 }

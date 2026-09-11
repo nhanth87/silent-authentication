@@ -7,6 +7,8 @@
 
 package et.restlink.sas.entitlement;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import et.restlink.sas.security.ApiKeyAuthenticator;
 
 import jakarta.inject.Inject;
@@ -69,8 +71,10 @@ public class EntitlementResource {
     @Inject
     AttestationVerifier attestation;
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record IssueRequest(String msisdn, String imsi, String eapMethod) {}
     public record IssueResponse(String token, long expiresInSeconds) {}
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ExchangeRequest(String token) {}
     public record ExchangeResponse(String msisdn, String imsi, String eapMethod, boolean valid) {}
 
