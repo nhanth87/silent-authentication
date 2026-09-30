@@ -326,7 +326,8 @@ Hai "track" tài liệu (theo phân tích r3.2):
 2. `docs/research/3gpp-ts33-402-eap-aka.md` — TS.43 EAP-AKA (SWm/SWx).
 3. `docs/research/3gpp-ts29-272-s6a.md` — Diameter S6a (Verifier).
 4. `docs/design/cellular-bearer-login.md` — UE SDK bearer contract.
-5. `docs/test/demo-script-ue-camara-entitlement-diameter.md` — kịch bản demo đầu cuối.
+5. `docs/test/demo-script-ue-camara-entitlement-diameter.vi.md` — kịch bản demo đầu cuối
+   (test flow: `docs/test/testflow.vi.md`).
 
 ---
 

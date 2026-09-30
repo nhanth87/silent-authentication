@@ -98,7 +98,7 @@ Mã lỗi đặc thù (ngoài `INVALID_ARGUMENT`/`UNAUTHENTICATED`/`PERMISSION_D
   mutation scenario `lab OTP SMS sender` trong gate **H18** → selftest 23/23.
 - Test: `OtpSmsResourceTest` (26 → 32 sau CDR) + `OtpAttemptStoreTest` (8) + `LabLogSmsDeliveryTest` (4);
   root `mvn test` lúc đó = 438, hiện tại sau CDR = 463, gates 34/34. Steps đã verify trên dist:
-  `docs/test/testflow.md` §4 ⑦ (VN), §0c Step 20–24 + C8 (EN), CDR: §4 ⑧ / Step 25.
+  `docs/test/testflow.vi.md` / `testflow.en.md` §4 ⑦, §0b Step 20–24 + C8, CDR: §4 ⑧ / Step 25.
 
 Quyết định đáng chú ý:
 

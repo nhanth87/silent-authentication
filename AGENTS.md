@@ -327,7 +327,7 @@ Open items (do not silently invent answers):
       binding age the Verifier scores as `notSimSwapped`; MAP → Sh UDR → SWx).
       Fail-closed: no evidence ⇒ `404 IDENTIFIER_NOT_FOUND`, never `swapped:false`.
       Status + decisions: `docs/research/camara_sim_swap/simswap-flow-analysis.md` §E;
-      verified steps: `docs/test/testflow.md` §4 ⑥ (VN) and §0c Step 16–19 + C7 (EN).
+      verified steps: §4 ⑥ + §0b Step 16–19 + C7 of `docs/test/testflow.vi.md` / `testflow.en.md`.
 - [x] CAMARA **OneTimePasswordSMS v1.1.1** (OTP SMS fallback) — `POST
       /one-time-password-sms/v1/send-code` + `/validate-code`
       (`sas-api/src/main/java/et/restlink/sas/otpsms/` + sas-host lab sender
@@ -337,7 +337,7 @@ Open items (do not silently invent answers):
       and prod ships the surface **off** (`sas.otp.enabled=false`, preflight
       `PRO-29` refuses a lab sender; gate H18 scenario `lab OTP SMS sender`).
       Spec snapshot + decisions: `docs/research/camara_otp_sms/`;
-      verified steps: `docs/test/testflow.md` §4 ⑦ (VN) and §0c Step 20–24 + C8 (EN).
+      verified steps: §4 ⑦ + §0b Step 20–24 + C8 of `docs/test/testflow.vi.md` / `testflow.en.md`.
       Still open: real SMSC/SGd adapter (TS 29.338) + persistent attempt store —
       both are preconditions for enabling it in prod.
 - [x] CAMARA **ICM OAuth Phase 3** — `/bc-authorize` client-assertion binding,

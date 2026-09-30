@@ -79,10 +79,10 @@ Quyết định khác với bản nháp D:
 Đã làm (D4): `/sim-swap` ghi CDR qua `ApiCdrRecorder`/`ApiAudit` với phase/operation
 `SIMSWAP`; hàng CDR được ghi CSV bền qua logger `SAS_CDR`, flush vào DB và hiện trên
 admin sau restart. Live-smoke đã kiểm tra masked MSISDN, không lộ số thuê bao thô
-(`docs/test/testflow.md` §4 ⑧ / Step 25).
+(`docs/test/testflow.vi.md` / `testflow.en.md` §4 ⑧ / §0b Step 25).
 
 Chưa làm (D5): testapp API set `lastImsiChange` (muốn demo nhánh `swapped:true` trên transport
 thật thì cần Sh UDR thật, không phải seed).
 
-Test steps đã verify trên dist: `docs/test/testflow.md` §4 ⑥ (VN), §0c Step 16–19 +
-Step C7 (EN).
+Test steps đã verify trên dist: `docs/test/testflow.vi.md` (hoặc `testflow.en.md`) §4 ⑥,
+§0b Bước 16–19 + Bước C7.

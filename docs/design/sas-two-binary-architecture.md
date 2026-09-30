@@ -302,6 +302,18 @@ High / follow-ups:
 9. OTP SMS: lab sender + in-memory attempts (prod keeps it off, PRO-29).
 10. Logging mandate: `run.sh` does not yet pass the log4j2 JUL/jboss-logging `-D` flags
     (pre-existing; the JUL `LogManager` warning in test output is that gap).
+11. MAP SAI `returnError` on `sas-ecs` does not end the request early — the caller waits
+    for the full 2 s dialog budget before failing closed (observed in `ecs-map-smoke.sh`).
+
+Closed after the split (2026-10-01):
+
+- ECS-local legacy `/entitlement/exchange` is a second, independent redemption point; it is
+  switched by `sas.entitlement.legacy-exchange-enabled` (lab `true`, prod `false` → `404`,
+  preflight PRO-22), so `sas-camara`'s ledger is the only redemption in prod.
+- Issuer key rotation: an operator token signed with an unknown `kid` forces one JWKS
+  refetch, rate-limited to one per issuer per 30 s (`OperatorTokenAnchor`).
+- Verification at this point: 649 tests, hardness 37/37, mutations H24 10/10 + H25 9/9,
+  preflight self-test 42/42, `split-smoke.sh` 8/8, `ecs-map-smoke.sh` demo + 7/7 fail-closed.
 
 ## 10. GSMA Open Gateway sandbox (SIM Swap + NV first)
 
