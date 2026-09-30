@@ -865,11 +865,46 @@ ls sas-host/target/quarkus-app/quarkus-run.jar   # fast-jar entry point
 
 ## 6. Implementation Phases and Milestones
 
-### Phase 1a: EAP-AKA Library + Test Vectors (4–5 days) — **unblocked, start here**
+### Phase 1a: EAP-AKA Library + Test Vectors — **DONE** (library + crypto; `Ts43Parser` pending)
 
-**Deliverable:** `sas-entitlement/src/main/java/.../eap/` + `src/test/java/.../eap/`, all
-tests pass. Pure library: no I/O, no signalling, no config keys, no gate changes. Useful
-under both D6 outcomes (UE-side under R, server-side under S).
+Landed in `sas-entitlement/src/main/java/.../entitlement/eap/`, pure and I/O-free
+(no signalling, no config keys, no new gate), 38 tests green:
+
+| Class | What it is | Verification |
+|---|---|---|
+| `EapAkaPrimeKeys` | EAP-AKA' key derivation: TS 33.402 Annex A.2 (CK'/IK') → RFC 9048 §3.3 (K_encr/K_aut/K_re/MSK/EMSK) + the IKEv2 PRF' | **KAT: RFC 9048 Appendix D Cases 3 and 4**, vectors transcribed from the RFC by script, not typed |
+| `EapAkaKeys` | Plain EAP-AKA: RFC 4187 §7 (`MK = SHA1(Identity‖IK‖CK)` → FIPS 186-2 PRF, Annex A) + `AT_MAC` (HMAC-SHA-1-128) | no KAT exists in RFC 4187 — structural tests only, **UAT-gated** |
+| `EapPacket` | RFC 3748 codec, fail-closed on every malformed input | RFC 3748 legacy Nak (Type 3) byte-exact; 20k-case fuzz |
+| `EapAkaAttributes` | RFC 4187 §11 / 5216 / 9048 §3 TLV codec + `AT_MAC` coverage | round-trip, 20k-case fuzz, `AT_MAC` coverage layout |
+| `EapAkaServer` | the D6/Shape S server FSM: Challenge → Response → Success, `AT_AUTS` resync capped at 1, fail-closed everywhere | synthetic peer that computes the real `AT_MAC` from the real derived `K_aut` |
+
+Three corrections to this plan that Phase 1a proved against the specs:
+
+1. **There is no `AT_ENCR_DATA(130)`** — 130 is `NAS-Identifier` in the IANA EAP registry.
+   The full verified `AT_*` list is now in `EapAkaAttributes`.
+2. **TS 33.402 Annex A.2 `P1 = AK` (6 octets), not `SQN‖AK`.** Annex A.2 prints
+   `L1 = 0x0006`, which fixes P1 at 6 octets. Proved by experiment: with AK-only the
+   derivation reproduces RFC 9048 Case 3/4 exactly; with `SQN‖AK` (11 octets) it does not.
+3. **`K_aut` is 128 bits in EAP-AKA and 256 bits in EAP-AKA'** — the two methods are not
+   interchangeable, so `EapAkaServer` keeps them on separate code paths.
+
+Two defects the new tests caught during this phase, both now fixed:
+
+- `EapPacket.length()` added `MIN_PACKET_LEN` (the smallest *legal* packet) instead of
+  the per-packet base, so every encoded Length was one octet too long.
+- `EapAkaServer.deriveKeys` handed the derived arrays to its result record and wiped the
+  source in a `finally` — the records expose their internal arrays, so the server MACed
+  with zeroed keys. Ownership is now explicit (copy, then wipe the source).
+
+**Known gap (not a defect):** RFC 9048 Appendix D Cases 1 and 2 use real Milenage
+test-set-19 material but the RFC never prints the 6-byte `AK` that TS 33.402 Annex A.2
+feeds into the KDF, so those two cases cannot be reproduced from the published text.
+Cases 3 and 4 cover the same construction end to end, so the KAT coverage is complete
+for the algorithm; the gap is recorded in `EapAkaPrimeKeysTest` so nobody later mistakes
+it for a code defect. Worth an errata note to the RFC authors.
+
+**Still open in 1a:** `Ts43Request`/`Ts43Response`/`Ts43Parser` (the `/ts43` parameter
+surface) — deliberately left for 1d so the FSM shape drives the parser, not the reverse.
 
 - `EapPacket` (encode/decode RFC 3748).
 - `EapAkaAttributes` (all AT_* attributes).
