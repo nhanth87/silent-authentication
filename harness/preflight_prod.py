@@ -115,6 +115,7 @@ CRITICAL_KEYS_ECS = (
     "sas.ecs.token.audience",
     "sas.ecs.token.recipient-enc-jwk",
     "sas.ecs.token.allow-unencrypted",
+    "sas.entitlement.legacy-exchange-enabled",
     "sas.security.enforce-api-keys",
     "sas.security.api-key",
 )
@@ -723,6 +724,9 @@ def ecs_checks(p: Profile) -> Report:
         notes.append("ephemeral ECS signing key — lab only")
     if p.get("sas.ecs.token.allow-unencrypted") == "true":
         notes.append("unencrypted operator tokens would expose the MSISDN to the device/app")
+    if p.get("sas.entitlement.legacy-exchange-enabled", "true") != "false":
+        notes.append("legacy /entitlement/exchange is a second consumer next to the CAMARA "
+                     "ledger — one token could be redeemed twice; disable it in prod")
     ok, why = jwk_secret(p, "sas.ecs.signing-jwk", "sig")
     if not ok:
         notes.append(why)
@@ -1086,6 +1090,8 @@ MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
         ("ecs cleartext HTTP", {"quarkus.http.insecure-requests": "enabled"}, {"PRO-11"}),
         ("ecs missing jss7 stack", {"ECS_JSS7_CONFIG": "/nope/ss7-ecs.json"}, {"PRO-18"}),
         ("ecs signing key dropped", {"sas.ecs.signing-jwk": None}, {"PRO-02", "PRO-22"}),
+        ("legacy exchange left on", {"sas.entitlement.legacy-exchange-enabled": "true"},
+         {"PRO-22"}),
     ],
 }
 

@@ -75,6 +75,23 @@ class EntitlementIssueAttestationTest {
         assertEquals(300L, body.expiresInSeconds());
     }
 
+    // ---- legacy exchange switch (split deployment: CAMARA is the only consumer) ----
+
+    @Test
+    void legacyExchangeDisabled_isNotFoundAndDoesNotConsume() throws Exception {
+        requireAttestation(false, SECRET);
+        long ts = System.currentTimeMillis();
+        var issued = (EntitlementResource.IssueResponse) resource.issue(
+                new EntitlementResource.IssueRequest(MSISDN, IMSI, EAP), null, Long.toString(ts), null)
+                .getEntity();
+        set(resource.config, "legacyExchangeEnabled", false);
+        Response off = resource.exchange(new EntitlementResource.ExchangeRequest(issued.token()), null);
+        assertEquals(404, off.getStatus());
+        set(resource.config, "legacyExchangeEnabled", true);
+        Response on = resource.exchange(new EntitlementResource.ExchangeRequest(issued.token()), null);
+        assertEquals(200, on.getStatus(), "the disabled call must not have spent the token");
+    }
+
     // ---- single use ----
 
     @Test

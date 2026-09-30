@@ -156,13 +156,30 @@ public final class OperatorToken {
      */
     public record Policy(Map<String, List<ECKey>> trustedIssuers, String expectedAudience,
                          List<ECKey> decryptionKeys, boolean requireEncryption,
-                         long clockSkewSeconds) {
+                         long clockSkewSeconds, KeyRefresher refresher) {
 
         public Policy {
             trustedIssuers = Map.copyOf(Objects.requireNonNull(trustedIssuers, "trustedIssuers"));
             decryptionKeys = List.copyOf(decryptionKeys == null ? List.of() : decryptionKeys);
             requireText(expectedAudience, "expectedAudience");
         }
+
+        public Policy(Map<String, List<ECKey>> trustedIssuers, String expectedAudience,
+                      List<ECKey> decryptionKeys, boolean requireEncryption, long clockSkewSeconds) {
+            this(trustedIssuers, expectedAudience, decryptionKeys, requireEncryption,
+                    clockSkewSeconds, null);
+        }
+    }
+
+    /**
+     * Called when a trusted issuer's token names a {@code kid} the cached key set does not
+     * have (the issuer rotated its key). Returns the issuer's current keys, or an empty list.
+     * The caller rate-limits it; an unknown {@code kid} never makes an untrusted issuer
+     * trusted.
+     */
+    @FunctionalInterface
+    public interface KeyRefresher {
+        List<ECKey> refresh(String issuer);
     }
 
     /** Verify a token; returns its claims or throws {@link RejectedException}. */
@@ -185,9 +202,20 @@ public final class OperatorToken {
         }
 
         String issuer = peekIssuer(jws);
-        List<ECKey> keys = issuer == null ? null : policy.trustedIssuers().get(issuer);
-        if (keys == null || keys.isEmpty()) {
+        if (issuer == null || !policy.trustedIssuers().containsKey(issuer)) {
             throw new RejectedException("operator token issuer is not trusted");
+        }
+        List<ECKey> keys = policy.trustedIssuers().get(issuer);
+        String kid = peekKeyId(jws);
+        boolean known = kid == null || keys.stream().anyMatch(k -> kid.equals(k.getKeyID()));
+        if ((!known || keys.isEmpty()) && policy.refresher() != null) {
+            List<ECKey> fresh = policy.refresher().refresh(issuer);
+            if (fresh != null && !fresh.isEmpty()) {
+                keys = fresh;
+            }
+        }
+        if (keys == null || keys.isEmpty()) {
+            throw new RejectedException("operator token issuer has no usable keys");
         }
         JWTClaimsSet claims = Es256Jws.verify(jws, keys, TYPE);
         if (claims == null) {
@@ -275,6 +303,14 @@ public final class OperatorToken {
             return com.nimbusds.jwt.SignedJWT.parse(jws).getJWTClaimsSet().getIssuer();
         } catch (ParseException e) {
             throw new RejectedException("operator token JWS is malformed");
+        }
+    }
+
+    private static String peekKeyId(String jws) {
+        try {
+            return com.nimbusds.jwt.SignedJWT.parse(jws).getHeader().getKeyID();
+        } catch (ParseException e) {
+            return null;
         }
     }
 

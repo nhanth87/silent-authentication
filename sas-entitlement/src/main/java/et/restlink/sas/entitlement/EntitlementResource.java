@@ -125,6 +125,10 @@ public class EntitlementResource {
         if (!config.enabled()) {
             return error(503, "ENTITLEMENT_DISABLED", "Entitlement service is disabled");
         }
+        if (!config.legacyExchangeEnabled()) {
+            // The CAMARA server is the single consumer of operator tokens (its ledger).
+            return error(404, "NOT_FOUND", "legacy exchange is disabled; redeem at the CAMARA server");
+        }
         if (body == null || body.token() == null || body.token().isBlank()) {
             return error(400, "INVALID_REQUEST", "token is required");
         }

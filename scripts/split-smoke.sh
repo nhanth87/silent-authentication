@@ -40,17 +40,19 @@ CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none"
 (cd "$OUT/ecs" && exec "$JAVA" --add-modules jdk.sctp -Dquarkus.profile=lab \
   -Dsas.log.dir="$OUT/ecs" -jar "$REPO/sas-ecs-host/target/quarkus-app/quarkus-run.jar" \
   >"$OUT/ecs/stdout.log" 2>&1) &
-ECS=$!
+ECS_PID=$!
 (cd "$OUT/camara" && exec "$JAVA" --add-modules jdk.sctp -Dquarkus.profile=lab \
   -Dsas.log.dir="$OUT/camara" -Dsas.security.token-validation-enabled=true \
   -Dsas.security.accept-hs256=false \
   "-Dsas.oauth.clients-json=$(echo "$CLIENTS" | tr -d '\n ')" \
   -jar "$REPO/sas-host/target/quarkus-app/quarkus-run.jar" \
   >"$OUT/camara/stdout.log" 2>&1) &
-CAM=$!
+CAM_PID=$!
 cleanup() {
-  kill "$ECS" "$CAM" 2>/dev/null || true
-  wait "$ECS" "$CAM" 2>/dev/null || true
+  kill "$ECS_PID" "$CAM_PID" 2>/dev/null || true
+  wait "$ECS_PID" "$CAM_PID" 2>/dev/null || true
+  # safety net: every JVM of this run carries -Dsas.log.dir=$OUT/…
+  pkill -f -- "-Dsas.log.dir=$OUT" 2>/dev/null || true
   kill "$TCPDUMP" 2>/dev/null || true
   wait "$TCPDUMP" 2>/dev/null || true
 }

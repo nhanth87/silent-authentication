@@ -87,6 +87,19 @@ public class EntitlementConfig {
     @ConfigProperty(name = "sas.ecs.token.allow-unencrypted", defaultValue = "false")
     boolean allowUnencrypted;
 
+    /**
+     * Legacy ECS-local {@code POST /entitlement/exchange}. With operator-jwe tokens the
+     * CAMARA server keeps the authoritative single-use ledger; an ECS-local redeem is a
+     * second, independent consumer — the same token could then be spent once here and
+     * once at CAMARA. Lab: on for the old demos. Prod: off (preflight PRO-22).
+     */
+    @ConfigProperty(name = "sas.entitlement.legacy-exchange-enabled", defaultValue = "true")
+    boolean legacyExchangeEnabled;
+
+    public boolean legacyExchangeEnabled() {
+        return legacyExchangeEnabled;
+    }
+
     public boolean operatorJweFormat() {
         return "operator-jwe".equalsIgnoreCase(tokenFormat == null ? "" : tokenFormat.trim());
     }

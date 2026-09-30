@@ -36,16 +36,20 @@
 #   against the same codec, so it cannot prove interoperability with a real UE.
 #   3. This script (mvn-compiles the lab card on demand).
 #
-# Usage: scripts/ts43-lab-demo.sh [sas-base] [hlr-control-base] [imsi] [msisdn]
+# Usage: scripts/ts43-lab-demo.sh [ecs-base] [hlr-control-base] [imsi] [msisdn] [camara-base]
+#   ecs-base    sas-ecs (/ts43)                      default http://127.0.0.1:8095
+#   camara-base sas-camara (redeems the token)        default http://127.0.0.1:8085
+#               pass "-" to stop after the token (no CAMARA running)
 set -euo pipefail
 
 APP_HOME="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_HOME"
 
 SAS="${1:-http://127.0.0.1:8095}"
-HLR="${2:-http://127.0.0.1:18087}"
+HLR="${2:-http://127.0.0.1:8087}"
 IMSI="${3:-655010000000001}"
 MSISDN="${4:-+251911111111}"
+CAMARA="${5:-http://127.0.0.1:8085}"
 ENT_CLASS=et.restlink.sas.entitlement.lab.LabSimCardMain
 
 step() { printf '\n\033[1m── %s\033[0m\n' "$*"; }
@@ -86,23 +90,27 @@ note "token=${TOKEN:0:64}…"
 note "→ the HLR simulator log now shows sendAuthenticationInfo then sendImsi:"
 note "  curl -s $HLR/messages"
 
-step "bank        POST /entitlement/exchange (token → the confirmed number)"
-EXCHANGED="$(curl -sS --max-time 10 -X POST "$SAS/entitlement/exchange" \
-  -H 'Content-Type: application/json' -H 'Authorization: Bearer demo' \
-  -d "{\"token\":\"$TOKEN\"}")"
-note "$EXCHANGED"
-[[ "$EXCHANGED" == *'"valid":true'* ]] || die "the token did not redeem: $EXCHANGED"
-
-step "bank        POST /number-verification/v2/verify (CAMARA NV)"
-VERIFIED="$(curl -sS --max-time 10 -X POST "$SAS/number-verification/v2/verify" \
-  -H 'Content-Type: application/json' -H 'Authorization: Bearer demo' \
-  -d "{\"phoneNumber\":\"$MSISDN\",\"hashedPhoneNumber\":\"\"}")"
-note "$VERIFIED"
-if [[ "$VERIFIED" != *'"devicePhoneNumberVerified":true'* ]]; then
-  note "(false here is CORRECT and fail-closed: CAMARA NV resolves a cellular"
-  note " bearer IP:port → MSISDN, and this demo has no bearer tuple. The /ts43"
-  note " path above is the Wi-Fi/TS.43 story; feed /session-tuple a real tuple"
-  note " from the UE SDK and CAMARA flips to true.)"
+if [[ "$CAMARA" == "-" ]]; then
+  step "DEMO OK (token only) — EAP-AKA over /ts43, vectors over MAP SAI, number over MAP SendIMSI"
+  exit 0
 fi
 
-step "DEMO OK — EAP-AKA over TS.43, vectors over MAP SAI, number over MAP SendIMSI"
+step "bank → CAMARA  POST /camara/number-verification/v2/verify (Wi-Fi path, operator token)"
+note "sas-camara decrypts the JWE, verifies the ECS signature from its /jwks.json and"
+note "records the jti in its ledger — the number comes from the token, never the body"
+VERIFIED="$(curl -sS --max-time 10 -X POST "$CAMARA/camara/number-verification/v2/verify" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer operatortoken:$TOKEN" \
+  -H 'X-Sas-Access-Tech: WIFI' -H 'x-correlator: ts43-demo-1' \
+  -d "{\"phoneNumber\":\"$MSISDN\"}")"
+note "$VERIFIED"
+
+step "bank → CAMARA  replay the same operator token (single use)"
+REPLAY="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST \
+  "$CAMARA/camara/number-verification/v2/verify" \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer operatortoken:$TOKEN" \
+  -H 'X-Sas-Access-Tech: WIFI' -H 'x-correlator: ts43-demo-2' \
+  -d "{\"phoneNumber\":\"$MSISDN\"}")"
+note "HTTP $REPLAY (expected 401)"
+[[ "$REPLAY" == 401 ]] || die "replay was not refused"
+
+step "DEMO OK — EAP-AKA on sas-ecs (MAP SAI + SendIMSI), operator token redeemed once on sas-camara"

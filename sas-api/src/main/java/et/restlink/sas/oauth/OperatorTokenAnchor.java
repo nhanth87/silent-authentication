@@ -66,7 +66,11 @@ public class OperatorTokenAnchor implements IdentityAnchor {
 
     Clock clock = Clock.systemUTC();
 
+    /** Minimum spacing of forced JWKS refetches per issuer (unknown-kid path). */
+    static final long FORCED_REFRESH_SECONDS = 30L;
+
     private final Map<String, CachedKeys> uriCache = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastForced = new ConcurrentHashMap<>();
     private volatile String parsedFor;
     private volatile Map<String, IssuerEntry> issuers = Map.of();
     private volatile List<ECKey> decryptionKeys = List.of();
@@ -149,12 +153,41 @@ public class OperatorTokenAnchor implements IdentityAnchor {
             if (e.getValue().jwksUri() != null) {
                 keys.addAll(uriKeys(e.getValue().jwksUri()));
             }
-            if (!keys.isEmpty()) {
-                trusted.put(e.getKey(), List.copyOf(keys));
-            }
+            // A configured issuer stays listed even with no key yet, so that an unknown
+            // kid can trigger a refetch instead of "issuer not trusted".
+            trusted.put(e.getKey(), List.copyOf(keys));
         }
         return new OperatorToken.Policy(trusted, config.audience(), decryptionKeys,
-                config.requireEncryption(), config.clockSkewSeconds());
+                config.requireEncryption(), config.clockSkewSeconds(), this::forceRefresh);
+    }
+
+    /**
+     * Unknown {@code kid} from a trusted issuer: the issuer rotated (or, in the lab,
+     * restarted with a fresh key). Refetch its JWKS at most once per
+     * {@value #FORCED_REFRESH_SECONDS} s so a stream of bogus kids cannot turn CAMARA into
+     * a request amplifier against the ECS.
+     */
+    private List<ECKey> forceRefresh(String issuer) {
+        IssuerEntry entry = issuers.get(issuer);
+        if (entry == null || entry.jwksUri() == null) {
+            return List.of();
+        }
+        long now = clock.millis() / 1000L;
+        Long last = lastForced.get(issuer);
+        if (last != null && now - last < FORCED_REFRESH_SECONDS) {
+            return List.of();
+        }
+        lastForced.put(issuer, now);
+        List<ECKey> fetched = keySource == null ? List.of() : keySource.fetch(entry.jwksUri());
+        if (fetched == null || fetched.isEmpty()) {
+            return List.of();
+        }
+        uriCache.put(entry.jwksUri().toString(), new CachedKeys(List.copyOf(fetched), now));
+        List<ECKey> all = new ArrayList<>(entry.inlineKeys());
+        all.addAll(fetched);
+        LOG.info("[SAS] issuer {} presented an unknown kid — JWKS refetched ({} key(s))",
+                issuer, fetched.size());
+        return List.copyOf(all);
     }
 
     private List<ECKey> uriKeys(URI uri) {

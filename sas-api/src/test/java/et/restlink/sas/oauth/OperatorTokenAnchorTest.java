@@ -97,6 +97,27 @@ class OperatorTokenAnchorTest {
     }
 
     @Test
+    void rotatedIssuerKeyIsPickedUpWithoutWaitingForTheCache() {
+        cfg.issuers = "{\"issuers\":[{\"issuer\":\"" + ECS + "\",\"jwks_uri\":\"" + ECS + "/jwks.json\"}]}";
+        assertNotNull(anchor.resolveOperatorToken(mint(CAMARA)), "first key, fetched once");
+        ECKey rotated = Es256Keys.generate(KeyUse.SIGNATURE);
+        anchor.keySource = uri -> {
+            fetched.add(uri);
+            return List.of(rotated.toPublicJWK());
+        };
+        String withNewKey = OperatorToken.issue(ECS, CAMARA, MSISDN, OperatorToken.EAP_AKA, 300,
+                rotated, camaraEnc.toPublicJWK(), Clock.systemUTC());
+        assertNotNull(anchor.resolveOperatorToken(withNewKey), "unknown kid forces one refetch");
+        assertEquals(2, fetched.size());
+        // A second unknown kid inside the 30 s window must NOT refetch again.
+        ECKey bogus = Es256Keys.generate(KeyUse.SIGNATURE);
+        String bogusToken = OperatorToken.issue(ECS, CAMARA, MSISDN, OperatorToken.EAP_AKA, 300,
+                bogus, camaraEnc.toPublicJWK(), Clock.systemUTC());
+        assertNull(anchor.resolveOperatorToken(bogusToken));
+        assertEquals(2, fetched.size(), "forced refetch is rate-limited");
+    }
+
+    @Test
     void failedJwksFetchMeansUntrusted() {
         cfg.issuers = "{\"issuers\":[{\"issuer\":\"" + ECS + "\",\"jwks_uri\":\"" + ECS + "/jwks.json\"}]}";
         anchor.keySource = uri -> List.of();
