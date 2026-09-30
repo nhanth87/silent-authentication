@@ -63,7 +63,7 @@
 │  │ ├─ Diameter Origin-Host/Realm + whitelist             │          │
 │  │ ├─ STP: route/firewall M3UA and SWx                   │          │
 │  │ ├─ DEA (Diameter Edge Agent) for SEPP/N32             │          │
-│  │ ├─ ARA-M (AppData Rule for Apps) on USIM:            │          │
+│  │ ├─ ARA-M (Access Rule Application Master) on UICC:   │          │
 │  │ │    app cert for bank or helper app (FS.11)           │          │
 │  │ └─ SIM provisioning + AuC/HlrAuc parameter (K, OPc)   │          │
 │  └────────────────────────────────────────────────────────┘          │
@@ -78,7 +78,7 @@ These decisions **block the implementation** until resolved with Ethio Telecom. 
 
 | ID | Decision | Impact | How to close |
 |---|---|---|---|
-| **D1** | Does bank app have **carrier privilege** on Ethio Telecom USIM for `TelephonyManager.getIccAuthentication()`? | If no: EAP-AKA is unreachable from app. iOS has zero API. Must use helper app (nhà mạng ký) or fall back to OTP. | **Ethio Telecom** confirm ARA-M (AppData Rule for Apps) cert for Restlink bank app or helper app. **iOS:** OTP/Passkey fallback only. |
+| **D1** | Does bank app have **carrier privilege** on Ethio Telecom USIM for `TelephonyManager.getIccAuthentication()`? | If no: EAP-AKA is unreachable from app. iOS has zero API. Must use helper app (nhà mạng ký) or fall back to OTP. | **Ethio Telecom** confirm ARA-M (Access Rule Application Master) rule for the Restlink bank app or helper app. **iOS:** OTP/Passkey fallback only. |
 | **D2** | Core network topology: which paths are live? | Determines default backend order: (a) HSS only (MAR/SWx-only), (b) HLR only (SAI-only), (c) dual (HLR+HSS). | **Ethio Telecom** network diagram + HSS vendor (ALU, Ericsson, Oracle…). |
 | **D3** | How to hydrate IMSI → MSISDN when only MAP available? | MAP PSI returns location, not MSISDN. SAI returns vectors, not subscriber identity. | Choose one: (1) MAP SendIMSI on claimed MSISDN (device-declared), (2) subscriber DB read-only export, (3) ATI (nope, FS.11 ban). See §3.4. |
 | **D4** | What TS.43 **app identifier** and token format? | Token expires, format, scope. Not inventing. | **Ethio Telecom** or **GSMA** spec section reference. |
@@ -170,9 +170,9 @@ class EapPacket {
 }
 
 class EapAkaAttributes {
-    // AT_RAND(1), AT_AUTN(2), AT_RES(3), AT_AUTS(14), AT_MAC(11),
-    // AT_ENCR_DATA(19), AT_IDENTITY(14), AT_KDF(23), AT_KDF_INPUT(24),
-    // AT_CLIENT_ERROR_CODE(192), ...
+    // RFC 4187 §11 / RFC 9048 §8 assigned numbers (verify against RFC before coding):
+    // AT_RAND(1), AT_AUTN(2), AT_RES(3), AT_AUTS(4), AT_MAC(11), AT_IDENTITY(14),
+    // AT_ENCR_DATA(130), AT_KDF_INPUT(23), AT_KDF(24), AT_CLIENT_ERROR_CODE(22)
     // Builder pattern, constant-length padding to block boundary
 }
 
@@ -217,7 +217,7 @@ SAS ─────────────────┐
     MAR (client)     │
     • Destination   : HSS Realm/Host (config)
     • User-Name     : IMSI@nai.epc
-    • Auth-Application-Id: 16777251 (SWx)
+    • Auth-Application-Id: 16777265 (SWx, TS 29.273)
     • SIP-Auth-Data-Item (request):
       └─ SIP-Authentication-Scheme: "EAP-AKA'" (or "EAP-AKA")
       └─ SIP-Authorization: <empty on first challenge>
@@ -231,9 +231,10 @@ SAS ─────────────────┐
       └─ SIP-Number-Auth-Items: 1
       └─ SIP-Authentication-Scheme: "EAP-AKA'" (echo)
       └─ SIP-Authenticate: EAP-Request/AKA-Challenge (RAND || AUTN || MAC)
-      └─ SIP-Authorization-Context (SAS derives):
-         • XRES (4 or 8 bytes), CK (128 bits), IK (128 bits)
-         • ← HSS already computed CK' / IK' and sent them here
+      └─ SIP-Authorization: XRES (expected response)
+      └─ Confidentiality-Key / Integrity-Key: CK / IK (for AKA': CK' / IK'
+         already derived by the HSS from the ANID in the MAR)
+      (AVP names per TS 29.229/29.273 — verify against the spec)
     ↑ timeout 2s (Diameter Tx)
 └─────────────────────────
 ```
@@ -280,15 +281,14 @@ SAS ─ SAR ─► HSS
     • Destination: HSS (non-3GPP-User-Data request)
     • User-Name: IMSI@nai.epc
     • Server-Assignment-Type: AAA_USER_DATA_REQUEST
-    • Auth-Application-Id: 16777251 (SWx)
+    • Auth-Application-Id: 16777265 (SWx, TS 29.273)
     ↓
    HSS (does NOT register SAP as serving AAA; read-only)
     ↓
     SAA
     • Result-Code: 2001
-    • User-Data (XML)
-      └─ Non-3GPP-User-Data (decoded)
-         └─ MSISDN
+    • Non-3GPP-User-Data (grouped AVP, TS 29.273 §8.2.3.x — verify)
+      └─ MSISDN AVP (if the HSS provisions it for this profile)
     ↑ timeout 2s
 └───────────────────────
 ```
@@ -422,13 +422,13 @@ ENDED (activity destroyed, timer cleared)
 
 ```
 POST /token
-  grant_type=urn:ietf:params:oauth:grant-type:token-exchange
-  assertion=<entitlement_token>
-  assertion_type=urn:ietf:params:oauth:assertion-type:token-exchange
+  grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer   (existing JWT_BEARER_GRANT_TYPE)
+  assertion=<client-signed JWT with sub=operatortoken:<entitlement_token>>
+  (client authentication as already enforced by OAuthClientAuthenticator)
 
 CAMARA SAS /token endpoint:
-  ├─ verify assertion signature
-  ├─ extract {sub, msisdn, imsi, eapMethod, exp}
+  ├─ verify assertion signature (existing OperatorTokenAnchor)
+  ├─ resolve operatortoken → {msisdn, imsi, eapMethod, exp} via EntitlementTokenService
   ├─ generate access_token
   │   ├─ iss: sas.oauth.issuer
   │   ├─ sub: <pseudonymous (HMAC(msisdn, secret))>  ← never plaintext MSISDN
@@ -496,7 +496,7 @@ public class SubscriberBindingResourceAdaptor extends ResourceAdaptor {
     }
     
     void onSwxSarResponse(...) {
-        // extract MSISDN from User-Data
+        // extract MSISDN from Non-3GPP-User-Data
         // fire event
     }
     
@@ -547,7 +547,7 @@ public class SubscriberBindingResourceAdaptor extends ResourceAdaptor {
 
 - Generate vectors using **Milenage (TS 35.208 test set)**, not random.
 - MAR with `SIP-Authentication-Scheme: EAP-AKA'` → MAA with CK' + IK' (already derived by simulator).
-- SAR `AAA_USER_DATA_REQUEST` → SAA with MSISDN in User-Data XML (new).
+- SAR `AAA_USER_DATA_REQUEST` → SAA with MSISDN in Non-3GPP-User-Data (new).
 - Support AUTS resync: MAR with `SIP-Authorization: RAND||AUTS` → recalculate SQN, new vector.
 - Increment SQN per subscriber session, reject if SQN too close (simulate HlrAuc).
 
@@ -637,8 +637,8 @@ curl -X POST -H 'Content-Type: application/json' \
 
 # Verify token at /token
 curl -X POST http://localhost:8085/token \
-  -d 'grant_type=urn:...' \
-  -d "assertion=<token>"
+  -d 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
+  -d "assertion=<jwt with sub=operatortoken:<token>>"
 
 # → 200 with access_token, amr=[eap-aka], msisdn redacted
 
