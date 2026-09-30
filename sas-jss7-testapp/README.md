@@ -20,8 +20,8 @@ FS.11-clean by construction:
 ```
 src/main/java/et/restlink/hlrsim/
 ├── Main.java               entry point (--listen-port/--peer-port/--http-port)
-├── HlrSimulator.java       jSS7 SERVER-side stack + MAPServiceMobilityListener
-├── SimState.java           {attached:bool, vectors:int} control state
+├── HlrSimulator.java       jSS7 SERVER-side stack + Mobility/OAM MAP listeners
+├── SimState.java           subscriber table (IMSI↔MSISDN) + lab AKA vectors
 └── web/                    JDK HttpServer control API (:8087) + minimal JSON
 src/test/java/et/restlink/hlrsim/
 ├── LiveLoopTest.java       client↔server over loopback SCTP, in-process
@@ -33,7 +33,41 @@ Server wiring mirrors the coral-valley `map/load` harness `ss7-server.json`
 pattern): SCTP link `type=server`, M3UA AS with `functionality=ipsp,
 ipsp=server, routingContext=0` (matching the SAS client's
 `functionality=as, ipsp=client, routingContext=0` from `ss7-sas.json`), SCCP
-point code 2 serving SSN 6, bounded TCAP timers.
+point code 2, bounded TCAP timers.
+
+Two service selectors are wired, because the entitlement service needs both:
+**SSN 6 (HLR)** for `provideSubscriberInfo` (PSI) and `sendAuthenticationInfo`
+(SAI), and **SSN 3 (OAM)** for `sendImsi` — TS 29.002 puts the number→IMSI query on
+the network-management SSN, not the HLR's. A simulator that answers only SSN 6 is
+blind to it, and a peer that routes only SSN 6 fails with
+`No AS found for routing message ... si=3`.
+
+The MAP services are **explicitly activated** after start
+(`MAPServiceMobility.activate()` / `MAPServiceOam.activate()`): this jSS7 fork does
+not activate them from `MAPStackImpl.start()`, and an inactive service answers an
+inbound dialog with a TCAP abort.
+
+### MAP operations
+
+| Operation | SSN | Answers |
+|---|---|---|
+| `provideSubscriberInfo` (PSI) | 6 | location + subscriber state |
+| `sendAuthenticationInfo` (SAI) | 6 | a **UMTS quintuplet** (RAND, RES, CK, IK, AUTN) |
+| `sendImsi` | 3 | the IMSI that owns a claimed MSISDN |
+
+The GSM triplet path is still available for the SMS-era demo; EAP-AKA needs the
+quintuplet (CK/IK), and the SAS treats a triplet answer as a **refusal**, never a
+downgrade.
+
+### The lab vector is a fiction, on purpose
+
+`SimState.mintQuintuplet` derives RAND/RES/CK/IK/AUTN from
+`SHA-256("TS43-LAB-QUINTUPLET"|IMSI|RAND|<label>)` instead of running Milenage over
+K. A demo cannot carry a subscriber key, and a real AuC derives RES inside the HSS
+and never transmits it. **Every other part of the exchange is real** — the SAS runs
+the actual RFC 4187 `AT_MAC` check against these keys, and
+`sas-host/src/test/java/et/restlink/sas/lab/LabSimAkaCardTest.java` proves a client
+answering with the same rule is accepted by the server's own verifier.
 
 ## Run
 
@@ -54,7 +88,21 @@ curl http://127.0.0.1:8087/state                      # {"attached":true,"vector
 curl -X POST -d '{"attached":false}' http://127.0.0.1:8087/state   # detach
 curl -X POST -d '{"vectors":0}' http://127.0.0.1:8087/state        # starve SAI
 curl http://127.0.0.1:8087/messages                   # ring buffer of MAP traffic
+curl http://127.0.0.1:8087/subscribers                # the IMSI↔MSISDN table
+# LAB-ONLY: the RES a demo device must present for a RAND. A real UE computes this
+# inside the SIM and never publishes it — this endpoint exists so the demo can drive
+# EAP without a card, and it says so in its own response.
+curl 'http://127.0.0.1:8087/expected-res?imsi=655010000000001&rand=<32 hex chars>'
 ```
+
+Seeded subscriber: IMSI `655010000000001` ↔ MSISDN `+251911111111`.
+
+Scenario levers (all via `/state`): `{"attached":false}` detaches everyone (SAI and
+sendImsi then fail with `systemFailure`), `{"vectors":0}` starves the quintuplet
+path so you can watch the SAS fail closed.
+
+**End-to-end demo**: with this simulator and the SAS lab dist running, drive the
+whole TS.43 chain with [`scripts/ts43-lab-demo.sh`](../scripts/ts43-lab-demo.sh).
 
 ## Automated live-loop test
 

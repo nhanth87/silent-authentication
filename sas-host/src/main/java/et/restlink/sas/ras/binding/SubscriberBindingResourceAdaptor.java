@@ -199,8 +199,14 @@ public final class SubscriberBindingResourceAdaptor {
         }
         SubscriberBindingBackend backend = new java.util.ArrayList<>(sources.values()).get(index);
         long remainingMs = Math.max(1, deadline - System.currentTimeMillis());
-        backend.lookup(imsi)
-                .completeOnTimeout(SubscriberBinding.unresolved(imsi, backend.name()),
+        // A discovery source is asked for the number; a claim-only source (MAP SendIMSI)
+        // is asked to confirm the number. The two are never mixed up: a claim must not
+        // silently disable discovery, which is why the source opts in explicitly.
+        boolean hasClaim = claimedMsisdn != null && !claimedMsisdn.isBlank();
+        CompletableFuture<SubscriberBinding> ask = hasClaim && backend.supportsClaimVerification()
+                ? backend.verifyClaim(imsi, claimedMsisdn)
+                : backend.lookup(imsi);
+        ask.completeOnTimeout(SubscriberBinding.unresolved(imsi, backend.name()),
                         remainingMs, TimeUnit.MILLISECONDS)
                 .thenAccept(binding -> {
                     if (binding != null && binding.resolved()) {

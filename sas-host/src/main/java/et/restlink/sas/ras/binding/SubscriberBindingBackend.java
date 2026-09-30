@@ -29,12 +29,41 @@ public interface SubscriberBindingBackend {
     boolean NO_INTERCONNECT_BINDING = true;
 
     /**
-     * Resolve one subscriber.
+     * Resolve one subscriber by its IMSI.
      *
      * @param imsi the identity proved by the EAP exchange
      * @return a resolved or unresolved binding, or a failed future on a transport error
      */
     CompletableFuture<SubscriberBinding> lookup(String imsi);
+
+    /**
+     * Optional second question, for sources that are driven by the <b>number</b> rather
+     * than the IMSI — MAP {@code SendIMSI} being the case in point: it answers
+     * "which IMSI owns this MSISDN?", so it can only confirm or deny a claim, never
+     * discover a number.
+     *
+     * <p>Only consulted when {@link #supportsClaimVerification()} is true. That flag
+     * matters: a source that discovers the number from the IMSI must still be asked
+     * {@link #lookup} even when the caller happens to have a claim, or a claim would
+     * silently disable discovery.</p>
+     *
+     * <p>Default: "this source cannot answer that", so the RA simply moves on. A source
+     * that implements it returns a <em>resolved</em> binding only when the network
+     * confirms the claimed number belongs to the proved IMSI; anything else is
+     * unresolved, which the caller must treat as a refusal.</p>
+     *
+     * @param provedImsi   the identity the EAP exchange proved
+     * @param claimedMsisdn the number the bank asserted
+     */
+    default boolean supportsClaimVerification() {
+        return false;
+    }
+
+    default CompletableFuture<SubscriberBinding> verifyClaim(String provedImsi,
+                                                             String claimedMsisdn) {
+        return CompletableFuture.completedFuture(
+                SubscriberBinding.unresolved(provedImsi, name() + "-no-claim-support"));
+    }
 
     /** Release the transport. Idempotent; must not leave a session in flight. */
     void stop();

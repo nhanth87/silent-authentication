@@ -19,44 +19,61 @@
   "protocols": { "map": true, "cap": false },
 
   // ── SCTP transport toward the home STP ──────────────────────────────────
+  //  backend netty_kernel = the JDK's jdk.sctp (kernel lksctp) dataplane. It is
+  //  the sanctioned lab/test fallback when the DPDK F-Stack sidecar socket is not
+  //  provisioned; production uses FSTACK_DPDK. Either way the signalling rides
+  //  SCTP — never TCP (RFC 4666 §3).
   "sctp": {
+    "backend": "netty_kernel",
     "connectDelay": 5000,
     "workerThreads": 4,
     "links": [
-      { "name": "SAS-STP-A", "local": "127.0.0.1:2905", "peer": "127.0.0.1:2906", "aspId": 1 }
+      { "name": "SAS-STP-A", "type": "client", "local": "127.0.0.1:2905", "peer": "127.0.0.1:2906", "aspId": 1 }
     ]
   },
 
   // ── M3UA ────────────────────────────────────────────────────────────────
+  //  Routes are keyed on (dpc, opc, si, sls) — the AS lookup is exact on the
+  //  service indicator, so each SSN the SAS sends on needs its own route.
   "m3ua": {
     "as": [
       { "name": "SAS-AS", "mode": "loadshare", "functionality": "as", "ipsp": "client",
         "routingContext": 0, "links": ["SAS-STP-A"] }
     ],
     "routes": [
-      { "to": { "dpc": 2, "opc": 1 }, "via": "SAS-AS" }
+      { "to": { "dpc": 2, "opc": 1, "si": 6 }, "via": "SAS-AS" },
+      { "to": { "dpc": 2, "opc": 1, "si": 3 }, "via": "SAS-AS" }
     ]
   },
 
   // ── SCCP ────────────────────────────────────────────────────────────────
+  //  Two service selectors, because the two entitlement legs use different SSNs:
+  //    SSN 6 = HLR       → sendAuthenticationInfo (SAI), provideSubscriberInfo (PSI)
+  //    SSN 3 = OAM      → sendImsi (TS 29.002 §8.1.x rides the network-management
+  //                       SSN, not the HLR one; a route for SI=6 only would fail
+  //                       with "No AS found for routing message ... si=3")
   "sccp": {
     "localPoints": [
       { "pc": 1, "networkIndicator": "national", "networkId": 0,
         "reachablePointCodes": [2] }
     ],
     "routing": [
-      // Outbound: any called GT (the HLR title) -> STP at PC 2, SSN 6 (HLR).
+      // Outbound: any called GT (the HLR title) -> STP at PC 2, HLR SSN.
       { "from": "local", "match": { "gt": "*" }, "to": { "pc": 2, "ssn": 6 }, "mask": "K" },
-      // Inbound: responses routed back to our local PC on SSN 6.
-      { "from": "remote", "match": { "gt": "*" }, "to": { "pc": 1, "ssn": 6 } }
+      // Outbound: the same for the OAM SSN (sendImsi).
+      { "from": "local", "match": { "gt": "*" }, "to": { "pc": 2, "ssn": 3 }, "mask": "K" },
+      // Inbound: responses routed back to our local PC on the SSN they arrived with.
+      { "from": "remote", "match": { "gt": "*" }, "to": { "pc": 1, "ssn": 6 } },
+      { "from": "remote", "match": { "gt": "*" }, "to": { "pc": 1, "ssn": 3 } }
     ]
   },
 
   // ── TCAP — dialog hygiene (H7/H11): bounded idle + invoke timers ────────
   "tcap": { "dialogIdleTimeout": 5000, "invokeTimeout": 2500, "maxDialogs": 1000 },
 
-  // ── services: SSN 6 = HLR service on this stack ─────────────────────────
+  // ── services: SSN 6 = HLR, SSN 3 = OAM on this stack ────────────────────
   "services": [
-    { "name": "hlr", "ssn": 6, "protocol": "map" }
+    { "name": "hlr", "ssn": 6, "protocol": "map" },
+    { "name": "oam", "ssn": 3, "protocol": "map" }
   ]
 }

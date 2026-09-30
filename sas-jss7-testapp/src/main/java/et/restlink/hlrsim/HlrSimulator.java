@@ -27,10 +27,16 @@ import org.restcomm.protocols.ss7.map.api.primitives.NetworkResource;
 import org.restcomm.protocols.ss7.map.api.primitives.NumberingPlan;
 import org.restcomm.protocols.ss7.map.api.service.mobility.MAPDialogMobility;
 import org.restcomm.protocols.ss7.map.api.service.mobility.MAPServiceMobilityListener;
+import org.restcomm.protocols.ss7.map.api.service.mobility.authentication.AuthenticationQuintuplet;
 import org.restcomm.protocols.ss7.map.api.service.mobility.authentication.AuthenticationSetList;
 import org.restcomm.protocols.ss7.map.api.service.mobility.authentication.AuthenticationTriplet;
+import org.restcomm.protocols.ss7.map.api.service.mobility.authentication.QuintupletList;
 import org.restcomm.protocols.ss7.map.api.service.mobility.authentication.SendAuthenticationInfoRequest;
 import org.restcomm.protocols.ss7.map.api.service.mobility.authentication.TripletList;
+import org.restcomm.protocols.ss7.map.api.service.oam.MAPDialogOam;
+import org.restcomm.protocols.ss7.map.api.service.oam.MAPServiceOamListener;
+import org.restcomm.protocols.ss7.map.api.service.oam.SendImsiRequest;
+import org.restcomm.protocols.ss7.map.api.service.oam.SendImsiResponse;
 import org.restcomm.protocols.ss7.map.api.service.mobility.subscriberInformation.AnyTimeInterrogationRequest;
 import org.restcomm.protocols.ss7.map.api.service.mobility.subscriberInformation.LocationInformation;
 import org.restcomm.protocols.ss7.map.api.service.mobility.subscriberInformation.ProvideSubscriberInfoRequest;
@@ -65,7 +71,8 @@ import java.util.ArrayList;
  * server role (routing context 0, matching sas ss7-sas.json), SCCP point code
  * 2 serving SSN 6 (HLR), bounded TCAP dialog timers like the SAS side.</p>
  */
-public final class HlrSimulator implements MAPServiceMobilityListener, MAPDialogListener {
+public final class HlrSimulator
+        implements MAPServiceMobilityListener, MAPServiceOamListener, MAPDialogListener {
 
     private static final Logger LOG = LogManager.getLogger(HlrSimulator.class);
 
@@ -73,6 +80,13 @@ public final class HlrSimulator implements MAPServiceMobilityListener, MAPDialog
     public static final int LOCAL_PC = 2;
     public static final int REMOTE_PC = 1;
     public static final int HLR_SSN = 6;
+
+    /**
+     * SSN 3 = OAM. TS 29.002 puts {@code sendImsi} on the network-management service
+     * selector, not on the HLR's — a simulator that answers only SSN 6 is blind to
+     * the number-to-IMSI query the entitlement service depends on.
+     */
+    public static final int OAM_SSN = 3;
 
     private final String host;
     private final int listenPort;
@@ -123,14 +137,23 @@ public final class HlrSimulator implements MAPServiceMobilityListener, MAPDialog
         b.append("        \"reachablePointCodes\": [").append(REMOTE_PC).append("] }\n");
         b.append("    ],\n");
         b.append("    \"routing\": [\n");
+        // Both service selectors are routed explicitly: sendAuthenticationInfo rides
+        // SSN 6 (HLR) while sendImsi rides SSN 3 (OAM). A rule without an SSN matches
+        // neither once the peer starts sending both.
         b.append("      { \"from\": \"remote\", \"match\": { \"gt\": \"*\" }, \"to\": { \"pc\": ")
-                .append(LOCAL_PC).append(" } },\n");
+                .append(LOCAL_PC).append(", \"ssn\": ").append(HLR_SSN).append(" } },\n");
+        b.append("      { \"from\": \"remote\", \"match\": { \"gt\": \"*\" }, \"to\": { \"pc\": ")
+                .append(LOCAL_PC).append(", \"ssn\": ").append(OAM_SSN).append(" } },\n");
         b.append("      { \"from\": \"local\",  \"match\": { \"gt\": \"*\" }, \"to\": { \"pc\": ")
-                .append(REMOTE_PC).append(" } }\n");
+                .append(REMOTE_PC).append(", \"ssn\": ").append(HLR_SSN).append(" } },\n");
+        b.append("      { \"from\": \"local\",  \"match\": { \"gt\": \"*\" }, \"to\": { \"pc\": ")
+                .append(REMOTE_PC).append(", \"ssn\": ").append(OAM_SSN).append(" } }\n");
         b.append("    ]\n");
         b.append("  },\n");
         b.append("  \"tcap\": { \"dialogIdleTimeout\": 5000, \"invokeTimeout\": 2500, \"maxDialogs\": 1000 },\n");
-        b.append("  \"services\": [ { \"name\": \"hlr\", \"ssn\": ").append(HLR_SSN).append(", \"protocol\": \"map\" } ]\n");
+        b.append("  \"services\": [ { \"name\": \"hlr\", \"ssn\": ").append(HLR_SSN)
+                .append(", \"protocol\": \"map\" }, { \"name\": \"oam\", \"ssn\": ")
+                .append(OAM_SSN).append(", \"protocol\": \"map\" } ]\n");
         b.append("}\n");
         return b.toString();
     }
@@ -145,9 +168,13 @@ public final class HlrSimulator implements MAPServiceMobilityListener, MAPDialog
             throw new IllegalStateException("jSS7 stack has no MAP provider");
         }
         mapProvider.getMAPServiceMobility().addMAPServiceListener(this);
-        // Inbound TC-BEGIN dialogs are delivered only to ACTIVATED services
-        // (MAPProviderImpl aborts dialogs for non-activated services).
+        mapProvider.getMAPServiceOam().addMAPServiceListener(this);
+        // This jSS7 fork requires an explicitly activated service: MAPStackImpl.start()
+        // brings up TCAP and the provider but never calls MAPServiceBase.activate(), so
+        // without this the stack answers an inbound SendIMSI with a TCAP abort
+        // ("ApplicationContextName of non activated MAPService is received").
         mapProvider.getMAPServiceMobility().activate();
+        mapProvider.getMAPServiceOam().activate();
         mapProvider.addMAPDialogListener(this);
         started = true;
         LOG.info("[hlr-sim] jSS7 server stack up — SCTP {}:{} (peer {}:{}), PC {}, SSN {}",
@@ -230,37 +257,144 @@ public final class HlrSimulator implements MAPServiceMobilityListener, MAPDialog
 
     // ---- inbound SAI -------------------------------------------------------
 
+    /**
+     * SAI (TS 29.002 sendAuthenticationInfo v3) — now serving a real <b>UMTS
+     * quintuplet</b> (RAND, RES, CK, IK, AUTN) instead of the GSM triplets the original
+     * lab used, because the TS.43 entitlement path is EAP-AKA and EAP-AKA needs CK/IK.
+     *
+     * <p>The vector is deterministic per (IMSI, RAND) so a scripted demo device can
+     * present the matching {@code RES} without holding a key — see
+     * {@link SimState#mintQuintuplet}. The GSM triplet path is kept for the SMS-era
+     * demo so nothing that relied on it breaks.</p>
+     */
     @Override
     public void onSendAuthenticationInfoRequest(SendAuthenticationInfoRequest req) {
         MAPDialogMobility dialog = req.getMAPDialog();
         long invokeId = req.getInvokeId();
         try {
-            int available = state.vectors();
-            if (available <= 0) {
-                MAPErrorMessage err = mapProvider.getMAPErrorMessageFactory()
-                        .createMAPErrorMessageSystemFailure(3, NetworkResource.hlr, null, null);
-                dialog.sendErrorComponent(invokeId, err);
-                dialog.close(false);
-                log.add(new MessageLog.Entry(Instant.now(), "IN", "sendAuthenticationInfo",
-                        dialog.getLocalDialogId(), "ERROR systemFailure", "vectors=0"));
+            String imsi = req.getImsi().getData();
+            SimState.Subscriber subscriber = state.byImsi(imsi).orElse(null);
+            if (subscriber == null) {
+                systemFailure(dialog, invokeId, "sendAuthenticationInfo", "unknown IMSI");
+                return;
+            }
+            if (!subscriber.attached()) {
+                systemFailure(dialog, invokeId, "sendAuthenticationInfo", "detached");
+                return;
+            }
+            if (state.vectors() <= 0) {
+                systemFailure(dialog, invokeId, "sendAuthenticationInfo", "vectors=0");
                 return;
             }
             int requested = Math.max(1, req.getNumberOfRequestedVectors());
-            int count = Math.min(requested, available);
+            int count = Math.min(requested, state.vectors());
             var pf = mapProvider.getMAPParameterFactory();
-            ArrayList<AuthenticationTriplet> triplets = new ArrayList<>(count);
+
+            ArrayList<AuthenticationQuintuplet> quintuplets = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
-                triplets.add(pf.createAuthenticationTriplet(randomBytes(16), randomBytes(4), randomBytes(8)));
+                byte[][] q = state.mintQuintuplet(subscriber, randomBytes(16));
+                quintuplets.add(pf.createAuthenticationQuintuplet(
+                        q[0],   // RAND
+                        q[1],   // RES
+                        q[2],   // CK
+                        q[3],   // IK
+                        q[4])); // AUTN
             }
-            TripletList list = pf.createTripletList(triplets);
-            AuthenticationSetList sets = pf.createAuthenticationSetList(list);
+            AuthenticationSetList sets = pf.createAuthenticationSetList(
+                    pf.createQuintupletList(quintuplets));
             dialog.addSendAuthenticationInfoResponse(invokeId, sets, null, null, null);
             dialog.close(false);
             log.add(new MessageLog.Entry(Instant.now(), "OUT", "sendAuthenticationInfo",
-                    dialog.getLocalDialogId(), "ReturnResultLast", count + " triplet(s)"));
+                    dialog.getLocalDialogId(), "ReturnResultLast",
+                    count + " quintuplet(s) imsi=" + mask(imsi)));
         } catch (MAPException e) {
             LOG.warn("[hlr-sim] failed answering sendAuthenticationInfo", e);
         }
+    }
+
+    // ---- inbound SendIMSI --------------------------------------------------
+
+    /**
+     * {@code SendIMSI} (TS 29.002, {@code service.mobility.oam}) — the number → IMSI
+     * direction. This is what the entitlement service uses to check a claimed MSISDN
+     * against the IMSI an EAP exchange proved.
+     *
+     * <p>Deliberately <b>not</b> SRI-SM: with SMS Home Routing enabled SRI-SM answers
+     * with a correlation ID or a routing proxy, not a number, so binding on it produces
+     * a spurious match (plan §3.3).</p>
+     */
+    @Override
+    public void onSendImsiRequest(SendImsiRequest req) {
+        MAPDialogOam dialog = (MAPDialogOam) req.getMAPDialog();
+        long invokeId = req.getInvokeId();
+        try {
+            ISDNAddressString requested = req.getMsisdn();
+            String msisdn = requested == null ? "" : requested.getAddress();
+            SimState.Subscriber subscriber = state.byMsisdn(msisdn).orElse(null);
+            if (subscriber == null) {
+                systemFailure(req.getMAPDialog(), invokeId, "sendImsi", "unknown MSISDN");
+                return;
+            }
+            var pf = mapProvider.getMAPParameterFactory();
+            dialog.addSendImsiResponse(invokeId, pf.createIMSI(subscriber.imsi()));
+            dialog.close(false);
+            log.add(new MessageLog.Entry(Instant.now(), "OUT", "sendImsi",
+                    dialog.getLocalDialogId(), "ReturnResultLast",
+                    "msisdn=" + msisdn + " imsi=" + mask(subscriber.imsi())));
+        } catch (MAPException e) {
+            LOG.warn("[hlr-sim] failed answering sendImsi", e);
+        }
+    }
+
+    @Override
+    public void onSendImsiResponse(SendImsiResponse r) {
+        // This simulator is the HLR: it originates SendIMSI, never answers one.
+    }
+
+    // ---- remaining OAM operations: logged and dropped ------------------------
+    //
+    // SendIMSI is the only OAM op the entitlement lab needs. Everything else the OAM
+    // service can deliver here is trace/activation management, which this simulator has
+    // no business answering — same treatment as ATI: log it, drop it, never act on it.
+    // (MAPServiceOamListener only has four methods, two of which are the _Oam trace
+    // variants named in this fork.)
+    @Override
+    public void onActivateTraceModeRequest_Oam(
+            org.restcomm.protocols.ss7.map.api.service.oam.ActivateTraceModeRequest_Oam req) {
+        drop("activateTraceMode");
+    }
+
+    @Override
+    public void onActivateTraceModeResponse_Oam(
+            org.restcomm.protocols.ss7.map.api.service.oam.ActivateTraceModeResponse_Oam r) {
+        // client side
+    }
+
+    private void drop(String op) {
+        log.add(new MessageLog.Entry(Instant.now(), "IN", op, 0L, "DROPPED", "not simulated"));
+    }
+
+    /** TS 29.002 has no absentSubscriber for these ops, so systemFailure is the mapping. */
+    private void systemFailure(org.restcomm.protocols.ss7.map.api.MAPDialog dialog,
+                              long invokeId, String op, String reason) {
+        try {
+            MAPErrorMessage err = mapProvider.getMAPErrorMessageFactory()
+                    .createMAPErrorMessageSystemFailure(3, NetworkResource.hlr, null, null);
+            dialog.sendErrorComponent(invokeId, err);
+            dialog.close(false);
+            log.add(new MessageLog.Entry(Instant.now(), "IN", op,
+                    dialog.getLocalDialogId(), "ERROR systemFailure", reason));
+        } catch (MAPException e) {
+            LOG.warn("[hlr-sim] failed sending errorComponent for {}", op, e);
+        }
+    }
+
+    /** Never log a full IMSI. */
+    private static String mask(String imsi) {
+        if (imsi == null || imsi.length() < 6) {
+            return "***";
+        }
+        return imsi.substring(0, 3) + "****" + imsi.substring(imsi.length() - 2);
     }
 
     private byte[] randomBytes(int len) {

@@ -998,6 +998,42 @@ answer `unresolved` by design, so the export path stays reachable and the lab lo
 
 **Gate:** SAI dialog works, SQN increments; SAR / UDR / SendIMSI each complete in < 2s; binding priority order enforced.
 
+### Phase 1d: EntitlementSbb + `/ts43` Endpoint + FSM (6–7 days) — **SHIPPED in the lab**
+
+> **Outcome (lab).** Implemented and **proven end-to-end against a running HLR simulator**
+> (`scripts/ts43-lab-demo.sh`): `GET /ts43/challenge` → MAP **SAI** quintuplet →
+> `EAP-Request/AKA-Challenge` → `POST /ts43/respond` (`AT_MAC` + `AT_RES` verified by the
+> server's own `EapAkaServer`) → MAP **SendIMSI** → entitlement token → `/entitlement/exchange`
+> returns the network-confirmed MSISDN. Negative paths observed live: `AT_MAC mismatch` for a
+> different SIM, `no outstanding challenge` for a replayed/spent Challenge, unknown IMSI ⇒ no
+> vector. `mvn -o test` 205 (sas-host) green; gates 34/34; `preflight --selftest` 24/24.
+>
+> **What the implementation established, beyond the plan's list:**
+> - `EntitlementSbb` + `Ts43RequestEvent` + `Ts43Resource` live as specified; the REST layer
+>   owns no state (H24 `slee_boundary` passes with the SBB as the only EAP-state holder), and
+>   `EntitlementSessions` wipes on every path and expires lazily at 45 s — no timer thread.
+> - **One jSS7 stack, not two.** `Jss7MapAuthVectorBackend` and `MapSendImsiBinding` as
+>   standalone stacks were *deleted*: two stacks in one host collide on the same SCTP local
+>   port and the loser silently never gets an association. The vector source is folded into
+>   `Jss7MapVerifierBackend` (`AuthVectorBackend`) and SendIMSI receives that stack's
+>   `MAPProvider`. Same rule the SWx path already followed.
+> - **`SendIMSI` rides SSN 3 (OAM), not the HLR's SSN 6** (TS 29.002). `ss7-sas.json` and the
+>   HLR simulator now route/service both selectors; without the SSN-3 route the operation
+>   fails with `No AS found for routing message ... si=3`. `imsiRetrievalContext` exists in AC
+>   **version 2 only** — requesting version 3 returns null and NPEs inside `addSendImsiRequest`.
+> - This jSS7 fork requires an **explicit `MAPService*.activate()`** after stack start; neither
+>   the SAS nor the simulator did it, so every dialog failed closed with a misleading error.
+> - SendIMSI is a *number-driven* source, so the binding contract gained an explicit
+>   `supportsClaimVerification()` opt-in (a claim must not silently disable discovery sources).
+> - **Portability (Shape R) held**: `/ts43`, the FSM names and the token format expose no
+>   "SAS holds CK/IK" — the SBB takes an `AuthVector` from an RA and returns a token, so the
+>   R-flip stays a transport change.
+> - Still open into 1e: EAP-AKA' (needs **AK**, which MAP SAI cannot deliver — the lab card
+>   refuses an `AT_KDF` Challenge rather than faking the KDF), `AT_AUTS` resync against a real
+>   AuC, Milenage/SQN in the simulator, and a real UE instead of the lab SIM
+>   (`LabSimAkaCard`, whose label-derived vector is the single documented fiction; the EAP math
+>   is the library's, and `LabSimAkaCardTest` proves both ends agree).
+
 ### Phase 1d: EntitlementSbb + `/ts43` Endpoint + FSM (6–7 days) — **unblocked (D6 = Shape S)**
 
 **Deliverable:** `EntitlementSbb`, `Ts43Resource`, FSM, timeouts, key zeroization.

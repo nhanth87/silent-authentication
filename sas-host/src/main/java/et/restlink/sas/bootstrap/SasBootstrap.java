@@ -11,14 +11,19 @@ import com.microjainslee.api.ActivityContextInterface;
 import com.microjainslee.core.MicroSleeContainer;
 import com.microjainslee.core.SimpleSbbLocalObject;
 
+import et.restlink.sas.api.SasEntitlementEngine;
 import et.restlink.sas.api.SasVerifyEngine;
 import et.restlink.sas.config.SasAdminRuntimeConfig;
 import et.restlink.sas.config.SasTransportConfig;
+import et.restlink.sas.coordinator.EntitlementCoordinator;
+import et.restlink.sas.coordinator.EntitlementSessions;
 import et.restlink.sas.coordinator.VerifyCoordinator;
+import et.restlink.sas.events.Ts43RequestEvent;
 import et.restlink.sas.events.VerifyRequestEvent;
 import et.restlink.sas.fsm.AssurancePolicy;
 import et.restlink.sas.fsm.SasTimeouts;
 import et.restlink.sas.fsm.VerificationFsm;
+import et.restlink.sas.model.Ts43Result;
 import et.restlink.sas.model.VerifyResult;
 import et.restlink.sas.ras.mapverifier.InMemoryMapVerifierBackend;
 import et.restlink.sas.ras.mapverifier.Jss7MapVerifierBackend;
@@ -40,6 +45,7 @@ import et.restlink.sas.ras.s6averifier.S6aVerifierResourceAdaptor;
 import et.restlink.sas.ras.authvector.AuthVectorBackend;
 import et.restlink.sas.ras.binding.SubscriberBindingRaEndpoint;
 import et.restlink.sas.ras.binding.SubscriberBindingResourceAdaptor;
+import et.restlink.sas.ras.binding.backend.MapSendImsiBinding;
 import et.restlink.sas.ras.authvector.AuthVectorRaEndpoint;
 import et.restlink.sas.ras.authvector.AuthVectorResourceAdaptor;
 import et.restlink.sas.ras.authvector.InMemoryAuthVectorBackend;
@@ -48,6 +54,9 @@ import et.restlink.sas.ras.swxverifier.InMemorySwxVerifierBackend;
 import et.restlink.sas.ras.swxverifier.SwxVerifierBackend;
 import et.restlink.sas.ras.swxverifier.SwxVerifierRaEndpoint;
 import et.restlink.sas.ras.swxverifier.SwxVerifierResourceAdaptor;
+import et.restlink.sas.entitlement.EntitlementConfig;
+import et.restlink.sas.entitlement.EntitlementTokenService;
+import et.restlink.sas.sbbs.EntitlementSbb;
 import et.restlink.sas.sbbs.VerifySbb;
 
 import io.quarkus.runtime.StartupEvent;
@@ -69,7 +78,7 @@ import java.util.concurrent.CompletableFuture;
  * and expose a synchronous {@link #submit} bridge for the CAMARA REST surface.
  */
 @ApplicationScoped
-public class SasBootstrap implements SasVerifyEngine {
+public class SasBootstrap implements SasVerifyEngine, SasEntitlementEngine {
 
     private static final Logger LOG = LogManager.getLogger(SasBootstrap.class);
 
@@ -85,6 +94,18 @@ public class SasBootstrap implements SasVerifyEngine {
     @Inject
     SasAdminRuntimeConfig adminRuntimeConfig;
 
+    @Inject
+    EntitlementCoordinator entitlementCoordinator;
+
+    @Inject
+    EntitlementSessions entitlementSessions;
+
+    @Inject
+    EntitlementTokenService entitlementTokens;
+
+    @Inject
+    EntitlementConfig entitlementConfig;
+
     private volatile AssurancePolicy policy;
     private volatile VerificationFsm fsm;
 
@@ -95,6 +116,7 @@ public class SasBootstrap implements SasVerifyEngine {
     private volatile SwxVerifierRaEndpoint swxVerifierEndpoint;
     private volatile AuthVectorRaEndpoint authVectorEndpoint;
     private volatile SubscriberBindingRaEndpoint subscriberBindingEndpoint;
+    private volatile MapSendImsiBinding mapSendImsiBinding;
     private volatile Jss7MapVerifierBackend jss7MapBackend;
     private volatile CorsacS6aVerifierBackend corsacS6aBackend;
     private volatile CorsacSwxVerifierBackend corsacSwxBackend;
@@ -269,7 +291,20 @@ public class SasBootstrap implements SasVerifyEngine {
      */
     private void wireAuthVectorRa() {
         AuthVectorBackend backend;
-        if (transportConfig.useCorsacAuthVector()) {
+        if (transportConfig.useMapAuthVector()) {
+            // MAP SAI against the operator's own HLR (2G/3G leg). Reuses the verifier's
+            // stack, so there is still one association to the HLR.
+            if (jss7MapBackend == null) {
+                // The MAP verifier doubles as the auth-vector source: one stack, one
+                // association to the HLR, one listener.
+                jss7MapBackend = new Jss7MapVerifierBackend(
+                        java.nio.file.Path.of(transportConfig.jss7ConfigPath()),
+                        transportConfig.jss7HlrGt(), transportConfig.jss7LocalGt());
+                jss7MapBackend.start();
+            }
+            backend = jss7MapBackend;
+            LOG.info("[SAS] auth-vector transport = MAP SAI (TS 29.002)");
+        } else if (transportConfig.useCorsacAuthVector()) {
             if (corsacSwxBackend == null) {
                 corsacSwxBackend = new CorsacSwxVerifierBackend(transportConfig);
                 try {
@@ -301,6 +336,27 @@ public class SasBootstrap implements SasVerifyEngine {
      */
     private void wireSubscriberBindingRa() {
         SubscriberBindingResourceAdaptor ra = new SubscriberBindingResourceAdaptor();
+        if (transportConfig.bindingSourceOrder() != null
+                && transportConfig.bindingSourceOrder().contains("map-smi")
+                && transportConfig.jss7ConfigPath() != null
+                && !transportConfig.jss7ConfigPath().isBlank()) {
+            // The binding RA asks the source order what it wants; a number-driven source
+            // (MAP SendIMSI) plugs in here and answers a claim question, not a lookup.
+            // It rides the MAP stack this process already runs — one stack, one SCTP
+            // association to the HLR, whatever else asked for MAP first.
+            if (jss7MapBackend == null) {
+                jss7MapBackend = new Jss7MapVerifierBackend(
+                        java.nio.file.Path.of(transportConfig.jss7ConfigPath()),
+                        transportConfig.jss7HlrGt(), transportConfig.jss7LocalGt());
+                jss7MapBackend.start();
+            }
+            MapSendImsiBinding smi = new MapSendImsiBinding(jss7MapBackend.mapProvider(),
+                    transportConfig.jss7HlrGt(), transportConfig.jss7LocalGt());
+            smi.start();
+            mapSendImsiBinding = smi;
+            ra.addBackend("map-smi", smi);
+            LOG.info("[SAS] binding source map-smi = MAP SendIMSI (TS 29.002, shared stack)");
+        }
         SubscriberBindingRaEndpoint endpoint = new SubscriberBindingRaEndpoint(ra);
         java.util.List<String> accepted = endpoint.configureSources(bindingSourceOrder());
         container.registerRa(endpoint, endpoint);
@@ -315,12 +371,18 @@ public class SasBootstrap implements SasVerifyEngine {
 
     private void registerSbbTypes() {
         container.registerSbbType(VerifySbb.class, () -> new VerifySbb(coordinator, fsm));
-        LOG.info("SBB types registered");
+        // The only SBB allowed to terminate EAP-AKA (D6/Shape S). It receives the
+        // vector and the number binding through RA commands — never from REST.
+        container.registerSbbType(EntitlementSbb.class, () -> new EntitlementSbb(
+                entitlementCoordinator, entitlementSessions, entitlementTokens, entitlementConfig));
+        LOG.info("SBB types registered: VerifySbb, EntitlementSbb");
     }
 
     private void mapEventToSbb() {
         container.mapEventToSbb(VerifyRequestEvent.class, "VerifySbb");
-        LOG.info("Event→SBB mapping bound: VerifyRequestEvent → VerifySbb");
+        container.mapEventToSbb(Ts43RequestEvent.class, "EntitlementSbb");
+        LOG.info("Event→SBB mapping bound: VerifyRequestEvent → VerifySbb, "
+                + "Ts43RequestEvent → EntitlementSbb");
     }
 
     /**
@@ -343,6 +405,48 @@ public class SasBootstrap implements SasVerifyEngine {
         container.attach(reqId, lo);
         container.routeEvent(evt, aci);
         return future;
+    }
+
+    /**
+     * Synchronous bridge from the {@code /ts43} REST surface into the SLEE event
+     * router — the entitlement counterpart of {@link #submit(VerifyRequestEvent)}.
+     *
+     * <p>Both TS.43 hops share one activity key (the {@code reqId}), so the
+     * {@code RESPOND} hop lands on the entity that already holds the EAP state.</p>
+     */
+    @Override
+    public CompletableFuture<Ts43Result> submitTs43(Ts43RequestEvent evt) {
+        String reqId = evt.reqId();
+        Ts43RequestEvent.Phase phase = evt.phase();
+        Ts43Result cached = entitlementCoordinator.cached(reqId, phase,
+                System.currentTimeMillis());
+        if (cached != null) {
+            return CompletableFuture.completedFuture(cached);
+        }
+        if (entitlementCoordinator.isInFlight(reqId, phase)) {
+            return entitlementCoordinator.register(reqId, phase);
+        }
+        CompletableFuture<Ts43Result> future = entitlementCoordinator.register(reqId, phase);
+        ActivityContextInterface aci = container.createActivityContext(reqId);
+        SimpleSbbLocalObject lo = container.acquireEntity(reqId, EntitlementSbb.class);
+        container.attach(reqId, lo);
+        container.routeEvent(evt, aci);
+        return future;
+    }
+
+    /**
+     * Release the TS.43 activity: the SBB entity, the recorded hop answers and the
+     * EAP state. Wiping happens inside {@link EntitlementSessions#discard} — an
+     * abandoned Challenge must never stay usable.
+     */
+    @Override
+    public void releaseTs43(String reqId) {
+        try {
+            container.releaseEntity(reqId);
+        } catch (RuntimeException re) {
+            LOG.debug("releaseTs43({}) — {}", reqId, re.toString());
+        }
+        entitlementCoordinator.forgetActivity(reqId);
     }
 
     /** Release the per-request SBB entity after the terminal result is read. */

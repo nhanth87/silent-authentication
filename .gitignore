@@ -26,3 +26,13 @@ xcuserdata/
 
 # pitch decks — presentation artifacts, not source; kept out of the repo
 slides/
+
+# jSS7 stack state files — the MAP/SCTP/M3UA/SCCP/TCAP layers persist XML into CWD
+# on start (that is how the stack reloads). They are lab runtime state, never source,
+# and they are written wherever the process was started, so ignore them by name.
+*-m3ua_*.xml
+*-sccp_*.xml
+*-sctp_*.xml
+*-tcap_*.xml
+*-map_*.xml
+M3ua_*.xml

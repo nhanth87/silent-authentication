@@ -64,6 +64,8 @@ public final class ControlWebServer {
                 case "/state" -> state(exchange, method);
                 case "/health" -> health(exchange, method);
                 case "/messages" -> messages(exchange, method);
+                case "/subscribers" -> subscribers(exchange, method);
+                case "/expected-res" -> expectedRes(exchange, method);
                 default -> respond(exchange, 404, "application/json",
                         "{\"error\":\"not found: " + Json.escape(path) + "\"}");
             }
@@ -104,6 +106,72 @@ public final class ControlWebServer {
             hlr.state().setVectors(number.intValue());
         }
         respond(exchange, 200, "application/json", stateJson());
+    }
+
+    /** The IMSI <-> MSISDN table, so a demo script can pick a subscriber. */
+    private void subscribers(HttpExchange exchange, String method) throws IOException {
+        requireMethod(method, "GET");
+        StringBuilder out = new StringBuilder("{\"subscribers\":[");
+        boolean first = true;
+        for (et.restlink.hlrsim.SimState.Subscriber s : hlr.state().all()) {
+            if (!first) {
+                out.append(',');
+            }
+            first = false;
+            out.append("{\"imsi\":\"").append(Json.escape(s.imsi()))
+                    .append("\",\"msisdn\":\"").append(Json.escape(s.msisdn()))
+                    .append("\",\"attached\":").append(s.attached())
+                    .append(",\"vectors\":").append(s.vectors()).append('}');
+        }
+        out.append("],\"issuedVectors\":").append(hlr.state().issuedCount()).append('}');
+        respond(exchange, 200, "application/json", out.toString());
+    }
+
+    /**
+     * LAB-ONLY backdoor: the {@code RES} a demo device must present for a given
+     * {@code RAND}. A real UE computes this inside the SIM from K and never exposes it;
+     * this endpoint exists so the demo can drive the EAP exchange without a SIM, and it
+     * is labelled as such in the response and in the README.
+     */
+    private void expectedRes(HttpExchange exchange, String method) throws IOException {
+        requireMethod(method, "GET");
+        Map<String, String> query = queryParams(exchange.getRequestURI().getRawQuery());
+        String imsi = query.get("imsi");
+        String randHex = query.get("rand");
+        if (imsi == null || randHex == null) {
+            throw new BadRequest("imsi and rand are required");
+        }
+        byte[] rand;
+        try {
+            rand = java.util.HexFormat.of().parseHex(randHex.trim().replace(" ", ""));
+        } catch (IllegalArgumentException e) {
+            throw new BadRequest("rand must be hex");
+        }
+        byte[] res = hlr.state().expectedRes(imsi, rand).orElse(null);
+        if (res == null) {
+            respond(exchange, 404, "application/json",
+                    "{\"error\":\"unknown subscriber\",\"labOnly\":true}");
+            return;
+        }
+        respond(exchange, 200, "application/json",
+                "{\"labOnly\":true,\"note\":\"a real UE computes RES inside the SIM\""
+                        + ",\"res\":\"" + java.util.HexFormat.of().formatHex(res) + "\"}");
+    }
+
+    private static Map<String, String> queryParams(String rawQuery) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return out;
+        }
+        for (String pair : rawQuery.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            out.put(java.net.URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8),
+                    java.net.URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8));
+        }
+        return out;
     }
 
     private String stateJson() {

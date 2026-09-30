@@ -174,6 +174,65 @@ If `sas.transport.jss7.config` is blank the bootstrap logs a warning and falls b
 to the in-memory backend (fail-closed — a misconfiguration never silently opens a
 signalling path).
 
+## TS.43 entitlement — `/ts43` and the MAP legs
+
+D6 **Shape S**: this service is the one surface allowed to terminate EAP-AKA (RFC
+4187 / RFC 9048) against vectors it fetches from the operator's own HLR. `/verify`
+stays read-only.
+
+```
+GET  /ts43/challenge?imsi=&msisdn=   →  {"reqId":..,"outcome":"CHALLENGE","challenge":"<base64 EAP-Request>"}
+POST /ts43/respond  {reqId, imsi, msisdn, response}
+                                    →  {"outcome":"SUCCESS","token":..,"expiresIn":..}
+                                    →  {"code":"EAP_FAILED","message":"AT_MAC mismatch"} …
+```
+
+The REST layer owns **no state**: it mints the `reqId`, submits a
+`Ts43RequestEvent` and awaits. Both hops share one activity, and `EntitlementSbb`
+(inside the container) holds the EAP state, drives the network legs and mints the
+token — gate H24 (`slee_boundary`) fails the build if that inverts.
+
+Flow inside the SBB:
+
+| Step | Leg | Fail-closed behaviour |
+|---|---|---|
+| fetch vector | MAP **SAI** (`sas.transport.authvector=jss7`) | GSM triplet answer ⇒ refusal, never a downgrade |
+| Challenge | `EapAkaServer.buildChallenge` | — |
+| verify | `AT_MAC` first, then `AT_RES` (RFC 4187 §10.15) | bad MAC ⇒ `AT_MAC mismatch`, no signalling dialog at all |
+| confirm number | MAP **SendIMSI** (`sas.binding.source-order=map-smi`) | unresolved/mismatch ⇒ no token |
+| mint token | `EntitlementTokenService` | — |
+
+Every exit path wipes the key material (`EapAkaServer.wipe()`), and a Challenge is
+single-use: a replayed `RESPOND` finds no session.
+
+### Properties
+
+| Property | Values | Meaning |
+|---|---|---|
+| `sas.transport.authvector` | `memory` (default) / `jss7` | where EAP vectors come from |
+| `sas.binding.source-order` | `db` (default) / `map-smi,…` | how the proved IMSI becomes a number |
+| `sas.entitlement.hmac-secret` | — | required to sign entitlement tokens |
+
+MAP SendIMSI is a **number-driven** source: it answers "which IMSI owns this
+MSISDN?", so it can only confirm a claim and never discover a number. It opts in
+explicitly (`supportsClaimVerification()`), because a claim must not silently
+disable the discovery sources (`sh-udr`, `swx-sar`).
+
+### One stack, one association
+
+Both MAP legs ride **one** jSS7 stack. Two stacks in one host collide on the same
+SCTP local port and the loser never gets an association — a failure that only
+surfaces later as `No AS found for routing message` on the one operation it lost.
+`ss7-sas.json` therefore carries routes for **both** service selectors (SSN 6 HLR,
+SSN 3 OAM) and the SAS activates the MAP services explicitly after start (this jSS7
+fork does not do it for you).
+
+### Run it
+
+```bash
+./scripts/ts43-lab-demo.sh    # see sas-jss7-testapp/README.md for the two processes
+```
+
 ## License
 
 Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).

@@ -96,6 +96,16 @@
       <artifactId>map-impl</artifactId>
       <version>${jss7.version}</version>
     </dependency>
+    <!-- Kernel-SCTP dataplane (NETTY_KERNEL / JDK jdk.sctp). Without it on the runtime
+         classpath Ss7StackBuilder cannot instantiate any SCTP backend — ss7-config only
+         ships the F-Stack one — so the whole MAP transport fails at boot with
+         "Cannot load SCTP backend NETTY_KERNEL". Lab/test fallback; production runs
+         FSTACK_DPDK. Either way the SS7 link is SCTP, never TCP (RFC 4666 §3). -->
+    <dependency>
+      <groupId>org.mobicents.protocols.sctp</groupId>
+      <artifactId>sctp-impl</artifactId>
+      <version>2.27.32</version>
+    </dependency>
 
     <!-- P2: real Diameter S6a / SWx transport (corsac-diameter) -->
     <dependency>

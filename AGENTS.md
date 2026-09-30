@@ -66,8 +66,28 @@ QUARKUS_PROFILE=prod dist/run.sh             # prod — env vars from applicatio
 
 # Lab signalling simulators (standalone; run AFTER building them)
 java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar   # HSS/AAA/Gx :3868
-java -jar sas-jss7-testapp/target/sas-jss7-testapp.jar           # HLR sim SCTP :2906, ctrl :8087
+java --add-modules jdk.sctp -jar sas-jss7-testapp/target/sas-jss7-testapp.jar  # HLR sim SCTP :2906, ctrl :8087
+```
 
+**TS.43 entitlement demo (the one-command demo).** With the HLR simulator and a MAP
+lab dist up, the whole chain — UE → `/ts43` → MAP SAI/SendIMSI → HLR sim → entitlement
+token → CAMARA `/verify` — is one script:
+
+```bash
+./scripts/ts43-lab-demo.sh
+```
+
+Start the SAS for it with the MAP transports (see `sas-host/README.md` §TS.43):
+
+```bash
+./scripts/package-dist.sh
+(cd dist && SAS_TRANSPORT_MAP=jss7 SAS_TRANSPORT_AUTHVECTOR=jss7 \
+   SAS_BINDING_SOURCE_ORDER=map-smi \
+   SAS_TRANSPORT_JSS7_CONFIG=$PWD/../sas-host/src/main/resources/ss7-sas.json \
+   SAS_ENTITLEMENT_HMAC_SECRET=lab-demo ./run.sh)
+```
+
+```bash
 # Gates — run after any contract/design/deployment change (order matters: harness first)
 python3 harness/run_hardness.py              # 34/34 gates H1–H24, exit 0 = pass
 python3 harness/run_hardness.py --mutations  # H24 slee_boundary mutation self-test — 10/10
@@ -131,7 +151,14 @@ IP:port:ts  ──[Resolver]──►  MSISDN/IMSI  ──[Verifier]──►  a
 - **EAP-AKA termination** — operator 3GPP AAA, **except** on the entitlement service
   `POST /ts43`, where Restlink is the EAP server under an operator-granted vector-grade AuC
   access agreement (D6 decided, Shape S). No other surface may terminate EAP-AKA or consume
-  auth vectors; `/verify` stays read-only. Shape R retained as production fallback — see
+  auth vectors; `/verify` stays read-only.
+- **One jSS7 stack per host** — the MAP verifier, the EAP auth-vector source and the
+  SendIMSI binding share ONE stack. Two stacks collide on the same SCTP local port and the
+  loser never gets an association (`No AS found for routing message ... si=3`).
+- **MAP SSN** — SAI/PSI ride SSN 6 (HLR); `SendIMSI` rides **SSN 3 (OAM)**
+  (TS 29.002). `ss7-sas.json` routes both, and `MAPService*.activate()` must be called
+  after stack start — this jSS7 fork does not activate services itself.
+  Shape R retained as production fallback — see
   `docs/design/entitlement-core-nw-plan-2.md` §2.1.1–§2.1.2 and the gate that must
   eventually assert this boundary (H25).
 

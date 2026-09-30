@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -156,6 +157,75 @@ class SubscriberBindingResourceAdaptorTest {
         SubscriberBinding binding = bad.join();
         assertFalse(binding.resolved(), "a mismatched claim must not resolve");
         assertEquals("mismatch", binding.source());
+    }
+
+    /**
+     * A claim-only source (MAP {@code SendIMSI} answers "which IMSI owns this number?",
+     * not "what number is this IMSI?") must be asked the claim question — and must
+     * <em>opt in</em> to it, or a discovery source would silently stop being asked.
+     */
+    @Test
+    @DisplayName("A number-driven source answers the claim question, and only when it opts in")
+    void claimDrivenSourceIsAskedTheClaimQuestion() {
+        AtomicReference<String> asked = new AtomicReference<>();
+
+        SubscriberBindingResourceAdaptor ra = active();
+        ra.addBackend("map-smi", new SubscriberBindingBackend() {
+            @Override
+            public boolean supportsClaimVerification() {
+                return true;
+            }
+
+            @Override
+            public CompletableFuture<SubscriberBinding> lookup(String imsi) {
+                asked.set("lookup");
+                return CompletableFuture.completedFuture(
+                        SubscriberBinding.unresolved(imsi, "map-smi-number-driven"));
+            }
+
+            @Override
+            public CompletableFuture<SubscriberBinding> verifyClaim(String imsi, String msisdn) {
+                asked.set("verifyClaim:" + msisdn);
+                return CompletableFuture.completedFuture(
+                        SubscriberBinding.resolved(imsi, msisdn, "map-smi"));
+            }
+
+            @Override
+            public void stop() {
+            }
+
+            @Override
+            public String name() {
+                return "map-smi";
+            }
+        });
+        ra.setSourceOrder("map-smi");
+
+        CompletableFuture<SubscriberBinding> reply = new CompletableFuture<>();
+        ra.lookup(new LookupBindingCommand("r-claim", IMSI, NUMBER, reply));
+        assertEquals("verifyClaim:" + NUMBER, asked.get(),
+                "with a claim the source must be asked to confirm it");
+        assertTrue(reply.join().resolved());
+
+        // Without a claim there is nothing to confirm, so the RA asks for discovery —
+        // which this source cannot do, and says so instead of guessing.
+        CompletableFuture<SubscriberBinding> noClaim = new CompletableFuture<>();
+        ra.lookup(new LookupBindingCommand("r-noclaim", IMSI, null, noClaim));
+        assertEquals("lookup", asked.get());
+        assertFalse(noClaim.join().resolved());
+    }
+
+    @Test
+    @DisplayName("A discovery source is still asked for the number even when a claim exists")
+    void discoverySourceIsNotShortCircuitedByAClaim() {
+        SubscriberBindingResourceAdaptor ra = active();
+        ra.addBackend("sh-udr", answer("sh-udr", NUMBER));
+        ra.setSourceOrder("sh-udr");
+
+        CompletableFuture<SubscriberBinding> reply = new CompletableFuture<>();
+        ra.lookup(new LookupBindingCommand("r-disc", IMSI, NUMBER, reply));
+        assertTrue(reply.join().resolved(),
+                "a claim must not disable discovery on a source that does discovery");
     }
 
     @Test

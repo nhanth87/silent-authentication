@@ -37,6 +37,13 @@ public class SasTransportConfig {
     String swxTransport;
 
     /**
+     * {@code true} when the auth-vector transport is MAP SAI against the own HLR.
+     */
+    public boolean useMapAuthVector() {
+        return "jss7".equalsIgnoreCase(authVectorTransport) || "map".equalsIgnoreCase(authVectorTransport);
+    }
+
+    /**
      * Auth-vector source for the entitlement service (D6 Shape S): {@code memory}
      * (lab only, PRO-30 refuses it in prod) or {@code corsac}, which reuses the
      * existing SWx link rather than opening a second Diameter association.

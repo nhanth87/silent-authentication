@@ -9,6 +9,8 @@ package et.restlink.sas.ras.mapverifier;
 
 import et.restlink.sas.fsm.SasTimeouts;
 import et.restlink.sas.model.AccessTech;
+import et.restlink.sas.ras.authvector.AuthVector;
+import et.restlink.sas.ras.authvector.AuthVectorBackend;
 import et.restlink.sas.model.FallbackReason;
 import et.restlink.sas.model.VerificationEvidence;
 
@@ -109,7 +111,8 @@ import java.util.concurrent.TimeoutException;
  * </ul>
  */
 public final class Jss7MapVerifierBackend
-        implements MapVerifierBackend, MAPServiceMobilityListener, MAPDialogListener {
+        implements MapVerifierBackend, AuthVectorBackend,
+        MAPServiceMobilityListener, MAPDialogListener {
 
     private static final Logger LOG = LogManager.getLogger(Jss7MapVerifierBackend.class);
 
@@ -126,6 +129,14 @@ public final class Jss7MapVerifierBackend
 
     private final Map<Long, CompletableFuture<VerificationEvidence>> psiPending = new ConcurrentHashMap<>();
     private final Map<Long, CompletableFuture<Boolean>> saiPending = new ConcurrentHashMap<>();
+
+    /**
+     * Entitlement-path SAI exchanges (Phase 1b/1c). Kept apart from {@link #saiPending}
+     * so a vector request and a freshness probe on the same dialog can never complete
+     * each other's future.
+     */
+    private final Map<Long, CompletableFuture<AuthVector>> vectorPending =
+            new ConcurrentHashMap<>();
 
     public Jss7MapVerifierBackend(Path configPath, String hlrGt, String localGt) {
         this.configPath = configPath;
@@ -145,6 +156,11 @@ public final class Jss7MapVerifierBackend
             }
             mapProvider.getMAPServiceMobility().addMAPServiceListener(this);
             mapProvider.addMAPDialogListener(this);
+            // This jSS7 fork gates dialog creation on an explicitly activated
+            // service: MAPStackImpl.start() brings up TCAP and the provider but never
+            // calls MAPServiceBase.activate(), so without this every createNewDialog
+            // throws "MAPServiceMobility is not activated".
+            mapProvider.getMAPServiceMobility().activate();
             started = true;
             LOG.info("[map-verifier] jSS7 stack started — HLR GT={} (PSI+SAI, no ATI)", hlrGt);
         } catch (Exception e) {
@@ -160,6 +176,13 @@ public final class Jss7MapVerifierBackend
         psiPending.clear();
         saiPending.values().forEach(f -> f.complete(Boolean.FALSE));
         saiPending.clear();
+        vectorPending.values().forEach(f -> f.completeExceptionally(
+                new IllegalStateException("MAP stack stopped")));
+        vectorPending.clear();
+        if (mapProvider != null) {
+            mapProvider.getMAPServiceMobility().deactivate();
+            mapProvider = null;
+        }
         if (stack != null) {
             stack.stop();
             stack = null;
@@ -169,6 +192,22 @@ public final class Jss7MapVerifierBackend
 
     public boolean isStarted() {
         return started;
+    }
+
+    /**
+     * The live MAP provider, so other transports in this process can share
+     * <b>one</b> jSS7 stack instead of dialling the same HLR twice.
+     *
+     * <p>Not a convenience: two stacks on one host collide on the SCTP local port,
+     * and the second association never comes up, which shows up much later as
+     * "No AS found for routing message" on exactly one operation. The entitlement
+     * service therefore rides this stack — the same reasoning that made the SWx
+     * auth-vector source share the corsac link.</p>
+     *
+     * @return the provider, or {@code null} before {@link #start()}
+     */
+    public MAPProvider mapProvider() {
+        return mapProvider;
     }
 
     @Override
@@ -251,6 +290,115 @@ public final class Jss7MapVerifierBackend
         }
     }
 
+    // ---- AuthVectorBackend (the TS.43 entitlement path, same stack) ------------
+    //
+    // The entitlement service needs the vector, not a boolean. It reuses this stack,
+    // this listener and this TCAP dialog machinery rather than opening a second
+    // association to the same HLR.
+
+    /** AMF used when reconstructing AUTN; the lab HLR does not supply one. */
+    private static final byte[] LAB_AMF = {(byte) 0x80, (byte) 0x00};
+
+    @Override
+    public CompletableFuture<AuthVector> fetch(String imsi, String scheme) {
+        return requestVector(imsi, scheme, null, null);
+    }
+
+    @Override
+    public CompletableFuture<AuthVector> resync(String imsi, String scheme,
+                                                byte[] rand, byte[] auts) {
+        return requestVector(imsi, scheme, rand, auts);
+    }
+
+    @Override
+    public String name() {
+        return "map-sai";
+    }
+
+    private CompletableFuture<AuthVector> requestVector(String imsi, String scheme,
+                                                        byte[] resyncRand, byte[] auts) {
+        if (!started || mapProvider == null) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException("MAP transport is not started"));
+        }
+        if (imsi == null || imsi.isBlank()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("IMSI is required"));
+        }
+        if (!AuthVector.EAP_AKA.equals(scheme) && !AuthVector.EAP_AKA_PRIME.equals(scheme)) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("unsupported AKA scheme: " + scheme));
+        }
+        CompletableFuture<AuthVector> out = new CompletableFuture<>();
+        MAPDialogMobility dialog = null;
+        try {
+            dialog = openDialog(MAPApplicationContextName.infoRetrievalContext);
+            vectorPending.put(dialog.getLocalDialogId(), out);
+            IMSI imsiParam = mapProvider.getMAPParameterFactory().createIMSI(imsi);
+            if (auts != null) {
+                // RFC 4187 §4.4: resync carries RAND||AUTS in the re-synchronisation info.
+                var resync = mapProvider.getMAPParameterFactory()
+                        .createReSynchronisationInfo(resyncRand, auts);
+                dialog.addSendAuthenticationInfoRequest(imsiParam, 1, false, true, resync,
+                        null, null, null, null, false, false);
+            } else {
+                dialog.addSendAuthenticationInfoRequest(imsiParam, 1, false, true, null,
+                        null, null, null, null, false, false);
+            }
+            dialog.send();
+            LOG.info("[auth-vector] SAI sent imsi={} scheme={} resync={}",
+                    maskIdentity(imsi), scheme, auts != null);
+        } catch (Exception e) {
+            if (dialog != null) {
+                vectorPending.remove(dialog.getLocalDialogId());
+            }
+            LOG.warn("[auth-vector] SAI send failed imsi={}", maskIdentity(imsi), e);
+            out.completeExceptionally(e);
+            return out;
+        }
+        out.orTimeout(SasTimeouts.MAP_MS, TimeUnit.MILLISECONDS)
+                .exceptionally(error -> {
+                    LOG.warn("[auth-vector] SAI did not complete — no vector", error);
+                    return null;
+                });
+        return out;
+    }
+
+    /** Quintuplet-only, fail-closed. */
+    private AuthVector toAuthVector(SendAuthenticationInfoResponse resp) {
+        var sets = resp.getAuthenticationSetList();
+        var quintuplets = sets == null ? null : sets.getQuintupletList();
+        var list = quintuplets == null ? null : quintuplets.getAuthenticationQuintuplets();
+        if (list == null || list.isEmpty()) {
+            if (sets != null && sets.getTripletList() != null) {
+                throw new IllegalStateException(
+                        "HLR returned GSM triplets; EAP-AKA needs a UMTS quintuplet");
+            }
+            throw new IllegalStateException("SAI carried no authentication set (fail-closed)");
+        }
+        var q = list.get(0);
+        byte[] rand = q.getRand();
+        byte[] res = q.getXres();
+        byte[] ck = q.getCk();
+        byte[] ik = q.getIk();
+        if (rand == null || rand.length != 16 || res == null || res.length < 8) {
+            throw new IllegalStateException("SAI quintuplet is malformed");
+        }
+        // The lab HLR does not put AUTN on the wire; reconstruct a consistent one from
+        // RAND + a fixed AMF so the challenge round-trips inside the run. A real AuC sets
+        // AMF/SQN, and the AT_AUTS resync path stays untested until one is in the loop.
+        byte[] autn = new byte[16];
+        System.arraycopy(rand, 0, autn, 0, 8);
+        System.arraycopy(LAB_AMF, 0, autn, 8, LAB_AMF.length);
+        return new AuthVector(rand, autn, res, ck, ik, AuthVector.EAP_AKA);
+    }
+
+    private static String maskIdentity(String imsi) {
+        if (imsi == null || imsi.length() < 6) {
+            return "***";
+        }
+        return imsi.substring(0, 3) + "****" + imsi.substring(imsi.length() - 2);
+    }
+
     private MAPDialogMobility openDialog(MAPApplicationContextName ctxName) throws MAPException {
         MAPApplicationContext ctx = MAPApplicationContext.getInstance(ctxName,
                 MAPApplicationContextVersion.version3);
@@ -261,10 +409,19 @@ public final class Jss7MapVerifierBackend
     }
 
     private SccpAddress gtAddress(String digits) {
+        return gtAddress(digits, HLR_SSN);
+    }
+
+    /**
+     * @param ssn service selector for the endpoint — 6 (HLR) for PSI/SAI, 3 (OAM)
+     *            for sendImsi. Sending on the wrong SSN is a routing failure, not a
+     *            cosmetic mismatch.
+     */
+    public static SccpAddress gtAddress(String digits, int ssn) {
         ParameterFactoryImpl pf = new ParameterFactoryImpl();
         GlobalTitle gt = pf.createGlobalTitle(digits, 0, NumberingPlan.ISDN_TELEPHONY,
                 BCDEvenEncodingScheme.INSTANCE, NatureOfAddress.INTERNATIONAL);
-        return pf.createSccpAddress(ROUTING, gt, 0, HLR_SSN);
+        return pf.createSccpAddress(ROUTING, gt, 0, ssn);
     }
 
     private void abortDialog(MAPDialog dialog) {
@@ -309,15 +466,27 @@ public final class Jss7MapVerifierBackend
     public void onSendAuthenticationInfoResponse(SendAuthenticationInfoResponse resp) {
         MAPDialog dialog = resp.getMAPDialog();
         Long dialogId = dialog.getLocalDialogId();
+        CompletableFuture<AuthVector> vectorFuture = vectorPending.get(dialogId);
         CompletableFuture<Boolean> future = saiPending.get(dialogId);
-        if (future == null) {
+        if (vectorFuture == null && future == null) {
             return;
         }
         try {
             boolean fresh = resp.getAuthenticationSetList() != null
                     || resp.getEpsAuthenticationSetList() != null;
             dialog.release();
-            future.complete(fresh);
+            if (vectorFuture != null) {
+                // Entitlement path: hand the vector over, or refuse. A GSM triplet set
+                // cannot ground EAP-AKA, so it is a refusal and never a downgrade.
+                try {
+                    vectorFuture.complete(toAuthVector(resp));
+                } catch (RuntimeException e) {
+                    vectorFuture.completeExceptionally(e);
+                }
+            }
+            if (future != null) {
+                future.complete(fresh);
+            }
         } catch (Exception e) {
             future.complete(Boolean.FALSE);
         }
