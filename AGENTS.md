@@ -92,7 +92,7 @@ Start the SAS for it with the MAP transports (see `sas-host/README.md` §TS.43):
 python3 harness/run_hardness.py              # 34/34 gates H1–H24, exit 0 = pass
 python3 harness/run_hardness.py --mutations  # H24 slee_boundary mutation self-test — 10/10
 python3 harness/preflight_prod.py            # prod-profile verdict for THIS env (exit = #fails)
-python3 harness/preflight_prod.py --selftest # 23/23 mutation scenarios detected
+python3 harness/preflight_prod.py --selftest # 24/24 mutation scenarios detected
 
 # Artifacts
 python3 proposal/scripts/build_proposal_docx.py

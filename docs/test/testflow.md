@@ -4,7 +4,9 @@ Date: 2026-08-23 · Updated: 2026-09-11 (CAMARA `/camara` aliases, strict reques
 `x-correlator` validation/echo; GSMA mock ↔ local compare §0d; CAMARA ICM OAuth Phase 3 manual runbook §0e; dist demo path §0b verified end-to-end;
 bẫy `quarkus.config.locations` thắng `-D` sysprops; build profile flag, 3 testapp
 instances incl. Gx, SIM-swap fail-closed on the corsac S6a leg; TS.43 = operator REST CAMARA NV + Sh UDR; SWx leg = operator AAA↔HSS;
-CDR bền cho SimSwap + OTP: `dist/logs/sas.cdr`, DB history và admin merge)
+CDR bền cho SimSwap + OTP: `dist/logs/sas.cdr`, DB history và admin merge;
+**TS.43 entitlement live path** — `/ts43` EAP-AKA với vector qua **MAP SAI** và số qua
+**MAP SendIMSI** trên SSN 3, demo 1 lệnh `scripts/ts43-lab-demo.sh` §0f)
 Scope: web → `POST /verify` → SAS → `sas-diameter-testapp`
 
 > CAMARA alignment: primary endpoints are under `/number-verification/v2` and the
@@ -1083,6 +1085,136 @@ pkill -f "$PWD/dist/quarkus-run.jar" || true
 pgrep -f "$PWD/dist/quarkus-run.jar" || echo 'SAS stopped'
 ```
 
+## 0f. TS.43 entitlement — EAP-AKA qua MAP (verified 2026-10-01)
+
+Track **này khác** §2–§4: không có Diameter. SAS tự là EAP server (D6 **Shape S**), lấy
+vector từ **HLR qua MAP `sendAuthenticationInfo`** (SSN 6) và xác nhận số bằng **MAP
+`sendImsi`** (SSN 3 — TS 29.002 đặt `sendImsi` trên SSN OAM, *không* phải SSN HLR).
+
+```
+UE (curl + lab card)        SAS :8085                    HLR simulator (jSS7) :2906 / :8087
+  GET /ts43/challenge  ────► EntitlementSbb
+                              │ SAI ─────────────────────► sendAuthenticationInfo
+                              │◄───────────────────────── UMTS quintuplet (RAND,RES,CK,IK,AUTN)
+  ◄── EAP-Request/AKA-Challenge (AT_RAND‖AT_AUTN)
+  POST /ts43/respond  ────► AT_MAC → AT_RES (RFC 4187 §10.15)
+                              │ SendIMSI ─────────────────► sendImsi
+                              │◄───────────────────────── IMSI của số
+  ◄── entitlement token
+  POST /entitlement/exchange ► số mà core network đã xác nhận
+  POST /number-verification/v2/verify (CAMARA NV)
+```
+
+### 0f.1 Build + 2 tiến trình
+
+```bash
+export JAVA_HOME="$HOME/.local/share/mise/installs/java/zulu-25"; export PATH="$JAVA_HOME/bin:$PATH"
+cd sas-jss7-testapp && /usr/bin/mvn -o -q package -DskipTests && cd ..   # simulator (standalone build)
+
+# (1) HLR simulator — SCTP :2906, control UI :8087
+java --add-modules jdk.sctp -jar sas-jss7-testapp/target/sas-jss7-testapp.jar \
+     --listen-port 2906 --peer-port 2905 --http-port 8087
+
+# (2) SAS — dist + MAP transports
+./scripts/package-dist.sh
+(cd dist && SAS_TRANSPORT_MAP=jss7 \
+          SAS_TRANSPORT_AUTHVECTOR=jss7 \
+          SAS_BINDING_SOURCE_ORDER=map-smi \
+          SAS_TRANSPORT_JSS7_CONFIG=$PWD/../sas-host/src/main/resources/ss7-sas.json \
+          SAS_ENTITLEMENT_HMAC_SECRET=lab-demo \
+          ./run.sh)                      # lab profile, :8085
+```
+
+Log phải có (nếu không, xem §8):
+
+```
+[SAS] auth-vector transport = MAP SAI (TS 29.002)
+[SAS] binding source map-smi = MAP SendIMSI (TS 29.002, shared stack)
+[map-verifier] jSS7 stack started — HLR GT=251911000000 (PSI+SAI, no ATI)
+```
+
+### 0f.2 Chạy demo (1 lệnh)
+
+```bash
+./scripts/ts43-lab-demo.sh
+```
+
+Kết quả đã verify (2026-10-01):
+
+```
+── UE → SAS    GET /ts43/challenge      reqId=ts43-…  challenge=AQEAKRcB…
+── HLR sim     /subscribers             {"subscribers":[{"imsi":"655010000000001","msisdn":"+251911111111",…}]}
+── UE          EAP-Response             AgEAMhcLE…AT_MAC + AT_RES
+── UE → SAS    POST /ts43/respond       token=eyJtc2lzZG4iOiIrMjUxOTExMTExMTEx…
+── bank        /entitlement/exchange    {"msisdn":"+251911111111","imsi":"655010000000001","eapMethod":"EAP-AKA","valid":true}
+── bank        /number-verification/v2/verify   {"devicePhoneNumberVerified":false}
+```
+
+`false` ở bước CAMARA là **đúng** (fail-closed): CAMARA NV resolve theo bearer cellular
+`IP:port → MSISDN`, demo này không có tuple đó (§4 ① mới có). Có tuple thật thì CAMARA
+trả `true`.
+
+### 0f.3 Xem MAP message trên wire
+
+```bash
+curl -s http://127.0.0.1:8087/messages | python3 -m json.tool   # simulator: SAI rồi SendIMSI
+grep -E 'auth-vector|binding|ts43' dist/logs/*.log              # SAS: 1 dialog / stage
+```
+
+Kỳ vọng mỗi lần demo tạo đúng 2 dialog, theo thứ tự:
+
+```
+OUT sendAuthenticationInfo | ReturnResultLast | 1 quintuplet(s) imsi=655****01
+OUT sendImsi                | ReturnResultLast | msisdn=251911111111 imsi=655****01
+```
+
+### 0f.4 Fail-closed (chạy tay, đều đã verify)
+
+```bash
+# (a) SIM khác trả lời → MAC fail, KHÔNG mở dialog MAP nào
+CH=$(curl -s 'http://127.0.0.1:8085/ts43/challenge?imsi=655010000000001&msisdn=%2B251911111111' \
+     | sed -n 's/.*"challenge":"\([^"]*\)".*/\1/p')
+java -cp sas-entitlement/target/classes et.restlink.sas.entitlement.lab.LabSimCardMain \
+     655010000000002 "$CH"      # card của IMSI khác
+# POST /ts43/respond với response đó → {"code":"EAP_FAILED","message":"AT_MAC mismatch"}
+
+# (b) replay/spent Challenge
+# POST /ts43/respond với reqId mới → {"code":"EAP_FAILED","message":"no outstanding challenge for this reqId"}
+
+# (c) IMSI lạ → không có vector
+curl -s 'http://127.0.0.1:8085/ts43/challenge?imsi=655010000009999&msisdn=%2B251911111111'
+# → {"code":"ENTITLEMENT_UNAVAILABLE","message":"no authentication vector available"}
+
+# (d) claim một số HLR không biết → EAP OK, SỐ bị từ chối (không có token)
+./scripts/ts43-lab-demo.sh http://127.0.0.1:8085 http://127.0.0.1:8087 \
+        655010000000001 +251900000000
+# → {"code":"EAP_FAILED","message":"network did not confirm the claimed number"}
+#   simulator log: sendAuthenticationInfo OK, rồi sendImsi ERROR systemFailure / unknown MSISDN
+#   ⇒ chứng minh chân ELASTIC: EAP thành công KHÔNG đủ, số phải được network xác nhận.
+
+# (e) starve SAI → chết ngay ở chân Challenge, không có token nào
+curl -X POST -d '{"vectors":0}' http://127.0.0.1:8087/state
+./scripts/ts43-lab-demo.sh
+# → !! no challenge: {"message":"no authentication vector available","code":"ENTITLEMENT_UNAVAILABLE"}
+curl -X POST -d '{"vectors":1}' http://127.0.0.1:8087/state
+
+# (f) detach → HLR từ chối SAI (và cả SendIMSI), fail-closed tương tự (e)
+curl -X POST -d '{"attached":false}' http://127.0.0.1:8087/state
+./scripts/ts43-lab-demo.sh        # → no authentication vector available
+curl -X POST -d '{"attached":true}' http://127.0.0.1:8087/state
+```
+
+### 0f.5 Test tự động cho track này
+
+```bash
+mvn -o test -pl sas-host -am \
+    -Dtest='EntitlementSessionsTest,LabSimAkaCardTest,SubscriberBindingResourceAdaptorTest'
+```
+
+`LabSimAkaCardTest` là bằng chứng quan trọng nhất: nó đóng vòng lặp bằng chính
+`EapAkaServer` của server, nên demo chỉ chạy được khi hai đầu thật sự thống nhất về
+MAC coverage của RFC 4187.
+
 ## 1. Build
 
 ```bash
@@ -1333,6 +1465,33 @@ plaintext, nội dung SMS, raw MSISDN/IMSI. OTP chỉ ghi `authenticationId`,
 `messageChars`, delivery/result; SimSwap ghi `action`, `maxAgeHours`, `swapped`,
 `evidence=ABSENT` khi fail-closed.
 
+### ⑨ TS.43 entitlement qua MAP (Shape S) — EAP-AKA thật, không cần Diameter
+
+Scenario riêng của track này, chạy **không** với 3 instance §2 (S6a/SWx/Gx). Xem
+runbook đầy đủ §0f.
+
+```bash
+# happy path — token + số do core network xác nhận
+./scripts/ts43-lab-demo.sh
+# /entitlement/exchange → {"msisdn":"+251911111111","valid":true}
+
+# fail-closed: IMSI lạ không có vector
+curl -s 'http://127.0.0.1:8085/ts43/challenge?imsi=655010000009999&msisdn=%2B251911111111'
+# → ENTITLEMENT_UNAVAILABLE / no authentication vector available
+```
+
+Bảng kỳ vọng riêng (không dùng ma trận §6 vì nó giả định corsac):
+
+| Input | Kết quả |
+|---|---|
+| IMSI + số đúng, vector có | `SUCCESS` + token; HLR log SAI **rồi** SendIMSI |
+| SIM khác trả lời | `AT_MAC mismatch`, **không** có dialog MAP thứ hai |
+| `RESPOND` lặp lại / reqId mới | `no outstanding challenge for this reqId` |
+| IMSI không có trong HLR | `no authentication vector available` |
+| claim số HLR không biết (`+251900000000`) | EAP OK, `network did not confirm the claimed number` — **không** có token |
+| `vectors=0` (starve SAI) | chết ở Challenge: `no authentication vector available` |
+| `attached=false` | HLR trả `systemFailure` ⇒ `no authentication vector available` |
+
 ## 4b. Money-loop — operator Auth Server (CAMARA CIBA)
 
 Đây là **lớp sản phẩm kiếm tiền**: SAS cấp token user-bound (bind số điện thoại vào
@@ -1417,11 +1576,19 @@ command, session-id, result-code, AVP chính (`user=… rat=EUTRAN`, `vectors=N`
 ## 7. Kiểm thử khác trong tree
 
 ```bash
-mvn -o -B test -Dquarkus.profile=lab                  # từ repo root: 528 tests trên 3 module (JUnit 5, không cần mạng)
+mvn -o -B test -Dquarkus.profile=lab                  # từ repo root: 608 tests (api 333 / entitlement 70 / host 205), không cần mạng
 python3 harness/run_hardness.py          # 34/34 gates (H1–H24)
 python3 harness/preflight_prod.py        # verdict for THIS env (exit = số check fail)
-python3 harness/preflight_prod.py --selftest   # 23/23 kịch bản cấu hình sai bị bắt
+python3 harness/preflight_prod.py --selftest   # 24/24 kịch bản cấu hình sai bị bắt
+
+# Track TS.43 (§0f) — cần HLR simulator + SAS MAP dist đang chạy
+./scripts/ts43-lab-demo.sh               # EAP-AKA + MAP SAI + MAP SendIMSI + token
+mvn -o test -pl sas-host -am -Dtest='EntitlementSessionsTest,LabSimAkaCardTest'
 ```
+
+`mvn -o test` phải xanh **trước khi** smoke lab: 608 test, trong đó
+`LabSimAkaCardTest` chứng minh client và server dùng chung cách tính `AT_MAC` của
+RFC 4187 (K_at = SHA-1(Identity|IK|CK) → FIPS 186-2 PRF → HMAC-SHA-1-128).
 
 ## 8. Lỗi thường gặp
 
@@ -1445,4 +1612,13 @@ python3 harness/preflight_prod.py --selftest   # 23/23 kịch bản cấu hình 
 | Không thấy `dist/logs/sas.cdr` | chạy jar trực tiếp mà không set `-Dsas.log.dir`; appender fallback về `target/logs/sas.cdr` | dùng `dist/run.sh`, hoặc kiểm tra `target/logs/sas.cdr` |
 | Không thấy dòng CDR trên console | logger `SAS_CDR` được route `additivity=false` vào file CSV, không phải console | đọc `dist/logs/sas.cdr` hoặc `/admin/cdr` |
 | `/admin/cdr` thiếu lịch sử cũ | `sas.cdr.db.enabled=false`, DB lab bị xóa, hoặc process chưa persist xong | bật DB CDR, giữ `dist/data/`, chờ flusher ghi; file CSV vẫn là bản durable |
+| `/ts43/challenge` trả `no authentication vector available` mà log có `[auth-vector] SAI sent` | simulator chưa trả SAA, hoặc service MAP chưa `activate()` (xem dòng kế) | xem `curl -s :8087/messages`; nếu im lặng thì kiểm tra dòng `activate()` bên dưới |
+| `[binding] SendIMSI send failed … No AS found for routing message … si=3` | `ss7-sas.json` chỉ route SSN 6; `sendImsi` đi trên **SSN 3 (OAM)** | thêm route + service `ssn: 3` cho cả SAS và simulator |
+| `Ss7ConfigException: Cannot load SCTP backend NETTY_KERNEL` | thiếu `org.mobicents.protocols.sctp:sctp-impl` trên runtime classpath | đã thêm vào `sas-host/pom.xml`; rebuild `dist` |
+| `Ss7ConfigException: F-Stack sidecar socket missing: data/sctp-fstack.sock` | config còn mặc định DPDK/F-Stack | thêm `"backend": "netty_kernel"` vào block `sctp` của `ss7-sas.json` |
+| `MAPException: Cannot create MAPDialog… is not activated` | fork jSS7 này **không** tự activate service sau `start()` | `MAPServiceMobility/Oam.activate()` sau khi start (SAS và simulator đã có) |
+| `NullPointerException … mapApplicationContext is null` trong `addSendImsiRequest` | hỏi AC `version3` cho `imsiRetrievalContext`, context này **chỉ có version 2** | dùng `MAPApplicationContextVersion.version2` |
+| `/ts43/respond` trả `network did not confirm the claimed number` | SendIMSI là nguồn **theo số**: chỉ xác nhận được claim, không tự tìm số | cần `msisdn` trong request; nếu không có nguồn discovery (`sh-udr`, `swx-sar`) thì đúng là phải fail-closed |
+| Hai stack MAP trong một JVM, chỉ một chân hoạt động | tranh cùng SCTP local port (`2905`); stack thua không có association | dùng **một** stack: `Jss7MapVerifierBackend` + `MapSendImsiBinding` dùng chung `MAPProvider` |
+| HLR simulator không nhận gì khi chạy từ repo root | jSS7 ghi file state `*.xml` vào CWD | chạy từ thư mục riêng, hoặc dọn `*-sccp_*.xml` (đã gitignore) |
 | Log `[cdr-db] persist failed ... Unique index` | dùng lại cùng `x-correlator` trong DB CDR (`correlation_id` UNIQUE) | đổi `x-correlator` mới cho mỗi lần gọi, hoặc reset lab DB khi smoke lại |
