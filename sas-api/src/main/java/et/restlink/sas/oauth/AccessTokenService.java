@@ -84,6 +84,7 @@ public class AccessTokenService {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record TokenPayload(
             String iss,
+            String aud,
             String sub,
             @JsonProperty("phone_number") String phoneNumber,
             @JsonProperty("client_id") String clientId,
@@ -143,6 +144,7 @@ public class AccessTokenService {
         long nowSec = currentEpochSeconds();
         TokenPayload payload = new TokenPayload(
                 issuer(),
+                audience(),
                 msisdn,
                 msisdn,
                 clientId,
@@ -165,6 +167,7 @@ public class AccessTokenService {
         long nowSec = currentEpochSeconds();
         TokenPayload payload = new TokenPayload(
                 issuer(),
+                audience(),
                 null,
                 null,
                 clientId,
@@ -252,6 +255,10 @@ public class AccessTokenService {
 
     public String issuer() {
         return config == null ? ISSUER : config.issuer();
+    }
+
+    private String audience() {
+        return config == null ? null : config.accessTokenAudience().orElse(null);
     }
 
     /** Registers a jti as consumed (single-use enforcement at /verify). */

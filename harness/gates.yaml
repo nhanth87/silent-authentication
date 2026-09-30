@@ -435,10 +435,14 @@ gates:
     title: TS.43 entitlement flow stays signed and attested
     spec: ["TS 33.402", "GSMA TS.43", "CAMARA NV v2.1.0"]
     clause: EAP-AKA SWm/SWx + entitlement token single-use
-    rule: unsigned entitlement tokens or /issue without AAA attestation must block deploy
+    rule: >-
+      on the entitlement server (sas-ecs) the legacy HMAC token format, unencrypted
+      operator tokens or /issue without AAA attestation must block deploy
     check: preflight
     expect:
-      scenarios: ["unsigned entitlement tokens", "attestation off"]
+      service: ecs
+      scenarios: ["unsigned entitlement tokens", "unencrypted operator tokens",
+                  "attestation off"]
 
   - id: H20
     title: admin surface and persistence leave the lab
@@ -470,7 +474,7 @@ gates:
       cellular: ["GS_2G3G", "LTE", "NR"]
       non_cellular: ["WIFI"]
       sources:
-        - sas-api/src/main/java/et/restlink/sas/model/AccessTech.java
+        - sas-common/src/main/java/et/restlink/sas/model/AccessTech.java
         - sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
         - ue-sdk/src/main/java/et/restlink/uesdk/AccessTech.java
         - ue-sdk-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
@@ -515,6 +519,7 @@ gates:
         - "LICENSES/AGPL-3.0.txt"
       readmes:
         - sas-host/README.md
+        - sas-ecs-host/README.md
         - sas-jss7-testapp/README.md
         - sas-diameter-testapp/README.md
         - ue-sdk/README.md
@@ -557,14 +562,17 @@ gates:
       a stale entry fails the gate as hard as new debt
     check: slee_boundary
     expect:
-      runtime_modules: ["sas-api", "sas-entitlement", "sas-host"]
+      runtime_modules: ["sas-common", "sas-token", "sas-transport", "sas-api",
+                        "sas-entitlement", "sas-host", "sas-ecs-host"]
       exempt_path_parts: ["/ras/"]
       import_rules:
         - label: "SLEE container touched outside the bootstrap seam"
           exempt: []
           imports: ["com.microjainslee.core."]
+          # One seam per binary: sas-camara (SasBootstrap) and sas-ecs (EcsBootstrap).
           only_in:
             - sas-host/src/main/java/et/restlink/sas/bootstrap/SasBootstrap.java
+            - sas-ecs-host/src/main/java/et/restlink/sas/bootstrap/EcsBootstrap.java
         - label: "signalling transport imported outside an RA"
           imports: ["com.mobius.", "org.restcomm.", "io.netty."]
           only_in:
@@ -587,7 +595,103 @@ gates:
           only_in:
             - sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
             - sas-api/src/main/java/et/restlink/sas/oauth/AuthorizationRequestService.java
-      poms: ["pom.xml", "sas-api/pom.xml", "sas-entitlement/pom.xml", "sas-host/pom.xml"]
+      poms: ["pom.xml", "sas-common/pom.xml", "sas-token/pom.xml", "sas-transport/pom.xml",
+             "sas-api/pom.xml", "sas-entitlement/pom.xml", "sas-host/pom.xml",
+             "sas-ecs-host/pom.xml"]
       pinned_group: "com.microjainslee"
       pin_property: '${microjainslee.version}'
 
+
+  - id: H25
+    title: two binaries, one trust boundary — CAMARA server and entitlement server never share code paths
+    spec: ["GSMA TS.43", "CAMARA ICM", "TS 29.002", "TS 29.273", "FS.11", "RFC 7516"]
+    clause: >-
+      sas-camara and sas-ecs meet only through the operator token (sas-token);
+      entitlement signalling uses SAI/SendIMSI (MAP) or MAR/SAR (SWx) only
+    rule: >-
+      no module of one binary depends on or imports the other's code; shared libraries
+      import neither side; the entitlement path never imports ATI, SRI-SM or S6a AIR, and
+      never passes AKA key material to a log call
+    check: entitlement_split
+    expect:
+      pom_forbidden:
+        - pom: sas-host/pom.xml
+          artifacts: ["sas-entitlement", "sas-ecs-host"]
+          why: the CAMARA server must deploy without the entitlement server (operator ECS mode)
+        - pom: sas-api/pom.xml
+          artifacts: ["sas-entitlement", "sas-ecs-host", "sas-host"]
+          why: the CAMARA library knows operator tokens only through sas-token
+        - pom: sas-ecs-host/pom.xml
+          artifacts: ["sas-api", "sas-host"]
+          why: the entitlement server must not expose or embed a CAMARA endpoint
+        - pom: sas-entitlement/pom.xml
+          artifacts: ["sas-api", "sas-host", "sas-ecs-host"]
+          why: the entitlement library depends on sas-common and sas-token only
+        - pom: sas-token/pom.xml
+          artifacts: ["sas-api", "sas-entitlement", "sas-host", "sas-ecs-host", "sas-transport"]
+          why: the shared token profile is a leaf library
+      import_forbidden:
+        - paths: ["sas-entitlement/src/main", "sas-ecs-host/src/main"]
+          prefixes: ["et.restlink.sas.oauth.", "et.restlink.sas.camara.",
+                     "et.restlink.sas.simswap.", "et.restlink.sas.otpsms.",
+                     "et.restlink.sas.ras.resolver.", "et.restlink.sas.sbbs.VerifySbb",
+                     "et.restlink.sas.api.VerifyResource", "et.restlink.sas.api.SasVerifyEngine"]
+          why: CAMARA code reached from the entitlement server
+        - paths: ["sas-api/src/main", "sas-host/src/main"]
+          prefixes: ["et.restlink.sas.entitlement.", "et.restlink.sas.events.Ts43",
+                     "et.restlink.sas.model.Ts43", "et.restlink.sas.api.SasEntitlementEngine",
+                     "et.restlink.sas.api.Ts43Resource", "et.restlink.sas.sbbs.EntitlementSbb"]
+          why: entitlement-server code reached from the CAMARA server
+        - paths: ["sas-common/src/main", "sas-token/src/main", "sas-transport/src/main"]
+          prefixes: ["et.restlink.sas.oauth.", "et.restlink.sas.camara.",
+                     "et.restlink.sas.entitlement.", "et.restlink.sas.api.",
+                     "et.restlink.sas.simswap.", "et.restlink.sas.otpsms."]
+          why: a shared library imports one binary's surface
+      pattern_forbidden:
+        - paths: ["sas-transport/src/main/java/et/restlink/sas/ras/authvector",
+                  "sas-transport/src/main/java/et/restlink/sas/ras/binding",
+                  "sas-ecs-host/src/main", "sas-entitlement/src/main"]
+          pattern: '^import\s+[\w.]*\.(AnyTimeInterrogation\w*|SendRoutingInfoForSM\w*|AuthenticationInformationRequest|AuthenticationInformationAnswer);'
+          why: ATI (FS.11 Cat 1), SRI-SM (Home Routing correlation IDs) and S6a AIR are banned on the entitlement path
+        - paths: ["sas-ecs-host/src/main", "sas-entitlement/src/main",
+                  "sas-transport/src/main/java/et/restlink/sas/ras/authvector"]
+          pattern: 'LOG\.\w+\([^;]*\.(ck|ik|xres|kAut|kEncr|msk|emsk|autn|rand)\(\)'
+          why: AKA key material passed to a log call
+      required:
+        - file: sas-ecs-host/src/main/java/et/restlink/sas/bootstrap/EcsBootstrap.java
+          pattern: 'implements SasEntitlementEngine'
+          why: the entitlement server owns the /ts43 → SLEE bridge
+        - file: sas-host/src/main/java/et/restlink/sas/bootstrap/SasBootstrap.java
+          pattern: 'implements SasVerifyEngine \{'
+          why: the CAMARA seam no longer implements the entitlement engine
+
+  - id: H26
+    title: the entitlement server's prod profile admits a real deployment and refuses lab crypto
+    spec: ["GSMA TS.43", "TS 33.402", "RFC 7516", "RFC 7518"]
+    clause: sas-ecs prod profile
+    rule: >-
+      a provisioned sas-ecs passes; fabricated auth vectors, the committed lab encryption
+      key, a private key in the recipient slot or no IMSI->MSISDN source block deploy
+    check: preflight
+    expect:
+      service: ecs
+      baseline: true
+      scenarios: ["lab auth vector source", "lab recipient key",
+                  "private key configured as recipient", "no binding source",
+                  "ephemeral ECS signing key"]
+
+  - id: H27
+    title: the CAMARA authorization server signs ES256 and trusts only encrypted operator tokens
+    spec: ["CAMARA ICM", "RFC 9068", "RFC 7515", "RFC 7516", "RFC 8725", "OIDC Core §8.1"]
+    clause: sas-camara OAuth AS + resource server + operator-token trust
+    rule: >-
+      HS256 bearer tokens, an ephemeral AS key, a resource server not pinned to this AS,
+      unauthenticated OAuth clients, the lab decryption key, plain-HTTP issuer JWKS or
+      unencrypted operator tokens block deploy
+    check: preflight
+    expect:
+      service: camara
+      scenarios: ["HS256 bearer tokens re-enabled", "ephemeral AS signing key",
+                  "resource server not pinned to this AS", "OAuth client auth off",
+                  "lab operator-token decryption key", "plain-HTTP issuer JWKS",
+                  "operator tokens not encrypted"]

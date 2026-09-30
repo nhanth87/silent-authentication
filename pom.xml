@@ -8,9 +8,11 @@
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>sas-core</name>
-  <description>Silent Auth SAS multi-module: CAMARA northbound (sas-api),
-    TS.43/Wi-Fi entitlement track (sas-entitlement), runnable composition app
-    (sas-host). Fail-closed Resolver -&gt; Verifier -&gt; Policy.</description>
+  <description>Silent Auth SAS multi-module. Two runnable micro-jainslee binaries:
+    sas-host (sas-camara: CAMARA NV / SIM Swap / OTP-SMS + OAuth AS) and sas-ecs-host
+    (sas-ecs: GSMA TS.43 entitlement server, EAP-AKA over MAP/Diameter). Shared
+    libraries: sas-common, sas-token (operator token profile), sas-transport (MAP/SWx
+    RAs); CAMARA library sas-api; entitlement library sas-entitlement.</description>
 
   <licenses>
     <license>
@@ -34,6 +36,7 @@
     <module>sas-api</module>
     <module>sas-entitlement</module>
     <module>sas-host</module>
+    <module>sas-ecs-host</module>
   </modules>
 
   <properties>

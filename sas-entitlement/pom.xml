@@ -10,14 +10,24 @@
   </parent>
   <artifactId>sas-entitlement</artifactId>
   <name>sas-core :: sas-entitlement</name>
-  <description>TS.43/Wi-Fi entitlement track: signed entitlement tokens,
-    EAP-AKA operator-token support and the CDI IdentityAnchor adapter over the
-    sas-api port.</description>
+  <description>Entitlement-server library (packaged by sas-ecs-host): the EAP-AKA /
+    EAP-AKA' wire + key-derivation code, the /ts43 and /entitlement surfaces, and the
+    operator-token issuer (sas-token profile, published at /jwks.json). Depends on
+    sas-common and sas-token only — never on the CAMARA library.</description>
 
   <dependencies>
     <dependency>
       <groupId>et.restlink</groupId>
-      <artifactId>sas-api</artifactId>
+      <artifactId>sas-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>et.restlink</groupId>
+      <artifactId>sas-token</artifactId>
+    </dependency>
+    <!-- Ts43RequestEvent is a SLEE event (compile-only API). -->
+    <dependency>
+      <groupId>com.microjainslee</groupId>
+      <artifactId>jainslee-api</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>

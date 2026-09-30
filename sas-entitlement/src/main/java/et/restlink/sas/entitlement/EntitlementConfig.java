@@ -55,6 +55,68 @@ public class EntitlementConfig {
     @ConfigProperty(name = "sas.entitlement.issue-attestation-required", defaultValue = "false")
     boolean issueAttestationRequired;
 
+    /**
+     * Token format: {@code operator-jwe} (the split-deployment profile — ES256 JWS in an
+     * ECDH-ES/A256GCM JWE, verifiable by any CAMARA server that trusts this ECS) or the
+     * legacy single-binary {@code hmac}.
+     */
+    @ConfigProperty(name = "sas.entitlement.token-format", defaultValue = "hmac")
+    String tokenFormat;
+
+    /** This entitlement server's issuer identifier ({@code iss}). */
+    @ConfigProperty(name = "sas.ecs.issuer")
+    java.util.Optional<String> ecsIssuer;
+
+    /** Private P-256 JWK the ECS signs operator tokens with. Prod: from the secret store. */
+    @ConfigProperty(name = "sas.ecs.signing-jwk")
+    java.util.Optional<String> ecsSigningJwk;
+
+    /** Lab only: mint a random signing key per process when none is configured. */
+    @ConfigProperty(name = "sas.ecs.allow-ephemeral-signing-key", defaultValue = "false")
+    boolean allowEphemeralSigningKey;
+
+    /** The CAMARA server the tokens are for ({@code aud}). */
+    @ConfigProperty(name = "sas.ecs.token.audience")
+    java.util.Optional<String> tokenAudience;
+
+    /** The CAMARA server's public P-256 encryption JWK ({@code use=enc}). */
+    @ConfigProperty(name = "sas.ecs.token.recipient-enc-jwk")
+    java.util.Optional<String> recipientEncJwk;
+
+    /** Lab only: emit a bare JWS when no recipient key is configured. */
+    @ConfigProperty(name = "sas.ecs.token.allow-unencrypted", defaultValue = "false")
+    boolean allowUnencrypted;
+
+    public boolean operatorJweFormat() {
+        return "operator-jwe".equalsIgnoreCase(tokenFormat == null ? "" : tokenFormat.trim());
+    }
+
+    public String ecsIssuer() {
+        return ecsIssuer == null ? "" : ecsIssuer.orElse("").trim();
+    }
+
+    public java.util.Optional<String> ecsSigningJwk() {
+        return ecsSigningJwk == null ? java.util.Optional.empty()
+                : ecsSigningJwk.filter(v -> !v.isBlank());
+    }
+
+    public boolean allowEphemeralSigningKey() {
+        return allowEphemeralSigningKey;
+    }
+
+    public String tokenAudience() {
+        return tokenAudience == null ? "" : tokenAudience.orElse("").trim();
+    }
+
+    public java.util.Optional<String> recipientEncJwk() {
+        return recipientEncJwk == null ? java.util.Optional.empty()
+                : recipientEncJwk.filter(v -> !v.isBlank());
+    }
+
+    public boolean allowUnencrypted() {
+        return allowUnencrypted;
+    }
+
     public boolean enabled() {
         return enabled;
     }

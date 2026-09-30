@@ -1,17 +1,38 @@
 #!/usr/bin/env bash
-# Assemble the Silent Auth SAS dist (Quarkus fast-jar, non-uber).
+# Assemble a Silent Auth dist (Quarkus fast-jar, non-uber) for one of the two binaries.
 # Mirrors gmlc-microjainslee build/package-jvm-harness.sh for a plain JVM app
-# (no F-Stack / native sidecar). Usage: ./scripts/package-dist.sh
-# Env: SAS_DIST_DIR (default <repo>/dist), JAVA_HOME (JDK 25), MVN_OPTS.
+# (no F-Stack / native sidecar).
+#
+# Usage: ./scripts/package-dist.sh [camara|ecs|all]      (default: camara)
+#   camara → sas-host     (CAMARA APIs + OAuth AS, :8085)   → $SAS_DIST_DIR     (default dist/)
+#   ecs    → sas-ecs-host (TS.43 entitlement server, :8095) → $SAS_ECS_DIST_DIR (default dist-ecs/)
+# Env: SAS_DIST_DIR, SAS_ECS_DIST_DIR, JAVA_HOME (JDK 25), MVN_OPTS.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$REPO_DIR"
-HOST_DIR="$REPO_DIR/sas-host"
-DIST_ROOT="${SAS_DIST_DIR:-${DIST_DIR:-$REPO_DIR/dist}}"
+SERVICE="${1:-camara}"
+if [[ "$SERVICE" == "all" ]]; then
+  "$0" camara && SAS_SKIP_BUILD=1 "$0" ecs
+  exit $?
+fi
+case "$SERVICE" in
+  camara)
+    HOST_DIR="$REPO_DIR/sas-host"
+    DIST_ROOT="${SAS_DIST_DIR:-${DIST_DIR:-$REPO_DIR/dist}}"
+    APP_JAR_NAME="sas-host-app.jar"
+    SS7_JSON="ss7-sas.json"
+    HAS_UI=1 ;;
+  ecs)
+    HOST_DIR="$REPO_DIR/sas-ecs-host"
+    DIST_ROOT="${SAS_ECS_DIST_DIR:-$REPO_DIR/dist-ecs}"
+    APP_JAR_NAME="sas-ecs-host-app.jar"
+    SS7_JSON="ss7-ecs.json"
+    HAS_UI=0 ;;
+  *) echo "usage: $0 [camara|ecs|all]" >&2; exit 2 ;;
+esac
 MVN_OPTS="${MVN_OPTS:--B -ntp}"
-APP_JAR_NAME="sas-host-app.jar"
 
 resolve_java25() {
   local cand ver
@@ -56,9 +77,11 @@ echo "Packaging Quarkus fast-jar (non-uber) → ${DIST_ROOT}"
 # Build with the LAB profile so build-time-fixed properties (quarkus.datasource
 # .db-kind) bake H2, matching run.sh's lab default. A PostgreSQL production
 # artifact must be repackaged with -Dquarkus.profile=prod (db-kind is build-time).
-# shellcheck disable=SC2086
-mvn ${MVN_OPTS} package -Dquarkus.package.jar.type=fast-jar -Dquarkus.profile=lab \
-  -Dquarkus.build.skip=false -Dmaven.test.skip=true
+if [[ -z "${SAS_SKIP_BUILD:-}" ]]; then
+  # shellcheck disable=SC2086
+  mvn ${MVN_OPTS} package -Dquarkus.package.jar.type=fast-jar -Dquarkus.profile=lab \
+    -Dquarkus.build.skip=false -Dmaven.test.skip=true
+fi
 
 QA="$HOST_DIR/target/quarkus-app"
 if [[ ! -f "$QA/quarkus-run.jar" ]]; then
@@ -95,31 +118,37 @@ dat_path.write_bytes(data.replace(old_enc, new_enc, 1))
 print(f"  rewritten quarkus-application.dat: {old} → {new}")
 PY
 
-mkdir -p "${DIST_ROOT}/app/html"
-cp -a "${HOST_DIR}/app/html/." "${DIST_ROOT}/app/html/"
+if [[ "$HAS_UI" == 1 ]]; then
+  mkdir -p "${DIST_ROOT}/app/html"
+  cp -a "${HOST_DIR}/app/html/." "${DIST_ROOT}/app/html/"
+fi
 
 install_config "${HOST_DIR}/src/main/resources/application.properties" \
   "${DIST_ROOT}/configs/application.properties"
 install_config "${HOST_DIR}/src/main/resources/application-prod.properties" \
   "${DIST_ROOT}/configs/application-prod.properties"
-install_config "${HOST_DIR}/src/main/resources/ss7-sas.json" \
-  "${DIST_ROOT}/configs/ss7-sas.json"
+install_config "${HOST_DIR}/src/main/resources/${SS7_JSON}" \
+  "${DIST_ROOT}/configs/${SS7_JSON}"
 
 cp -f "${SCRIPT_DIR}/run.sh" "${DIST_ROOT}/run.sh"
 chmod +x "${DIST_ROOT}/run.sh"
 cp -f "${SCRIPT_DIR}/dist-README.md" "${DIST_ROOT}/README.md"
 
 printf 'jvm-fastjar\n' > "${DIST_ROOT}/.dist-kind"
+printf '%s\n' "$SERVICE" > "${DIST_ROOT}/.service"
+printf '%s\n' "$APP_JAR_NAME" > "${DIST_ROOT}/.app-jar"
 BAKED_KIND="$(grep -E '^quarkus\.datasource\.db-kind=' \
   "${DIST_ROOT}/configs/application.properties" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]' || true)"
 printf '%s\n' "${BAKED_KIND:-unknown}" > "${DIST_ROOT}/.baked-db-kind"
 
 missing=0
-for req in run.sh README.md quarkus-run.jar "${APP_JAR_NAME}" \
-  configs/application.properties configs/application-prod.properties app/html/admin/index.html; do
+REQUIRED=(run.sh README.md quarkus-run.jar "${APP_JAR_NAME}"
+  configs/application.properties configs/application-prod.properties)
+[[ "$HAS_UI" == 1 ]] && REQUIRED+=(app/html/admin/index.html)
+for req in "${REQUIRED[@]}"; do
   if [[ ! -e "${DIST_ROOT}/${req}" ]]; then echo "error: package incomplete — missing ${req}" >&2; missing=1; fi
 done
-if find "${DIST_ROOT}/app" -type f -name '*.jar' 2>/dev/null | grep -q .; then
+if [[ -d "${DIST_ROOT}/app" ]] && find "${DIST_ROOT}/app" -type f -name '*.jar' 2>/dev/null | grep -q .; then
   echo "error: jars must not live under app/ (UI-only)" >&2; missing=1
 fi
 if [[ ! -d "${DIST_ROOT}/lib/main" || ! -d "${DIST_ROOT}/quarkus" ]]; then
@@ -127,5 +156,5 @@ if [[ ! -d "${DIST_ROOT}/lib/main" || ! -d "${DIST_ROOT}/quarkus" ]]; then
 fi
 [[ "$missing" -eq 0 ]] || exit 1
 
-echo "Dist ready: ${DIST_ROOT} (fast-jar + app/html + configs)"
+echo "Dist ready [${SERVICE}]: ${DIST_ROOT} (fast-jar + configs$([[ "$HAS_UI" == 1 ]] && echo ' + app/html'))"
 echo "  start:  cd ${DIST_ROOT} && ./run.sh"

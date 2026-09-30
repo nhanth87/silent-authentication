@@ -12,6 +12,7 @@ target/
 .build/
 node_modules/
 dist/
+dist-ecs/
 
 # local H2 databases / runtime data — contains UAT CDR + session rows
 *.mv.db

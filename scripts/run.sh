@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Silent Auth SAS — lab launcher for the Quarkus fast-jar dist.
+# Silent Auth — lab launcher for a Quarkus fast-jar dist (either binary).
 #
-# Lab defaults: in-memory transports, plain HTTP on :8085, H2 file DB under
-# data/. Production is the same launcher with QUARKUS_PROFILE=prod plus the
+# The dist knows which binary it is (.service / .app-jar, written by
+# scripts/package-dist.sh): sas-camara (CAMARA APIs + OAuth AS, :8085, H2 under data/)
+# or sas-ecs (TS.43 entitlement server, :8095, no database).
+# Lab defaults: in-memory transports, plain HTTP. Production is the same launcher with QUARKUS_PROFILE=prod plus the
 # env vars application-prod.properties demands — see
 # harness/preflight_prod.py (fail-closed: missing env vars refuse to boot).
 #
@@ -16,7 +18,7 @@ set -euo pipefail
 APP_HOME="$(cd "$(dirname "$0")" && pwd)"
 cd "$APP_HOME"
 
-APP_JAR="sas-host-app.jar"
+APP_JAR="$(cat "$APP_HOME/.app-jar" 2>/dev/null || echo sas-host-app.jar)"
 for required in quarkus-run.jar "$APP_JAR" configs/application.properties; do
   if [[ ! -f "$APP_HOME/$required" ]]; then
     echo "error: incomplete SAS dist; missing $required" >&2

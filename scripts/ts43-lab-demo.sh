@@ -22,12 +22,18 @@
 #   1. HLR simulator running:
 #        (cd sas-jss7-testapp && mvn -o package -DskipTests)
 #        java --add-modules jdk.sctp -jar sas-jss7-testapp/target/sas-jss7-testapp.jar
-#   2. SAS lab dist running with MAP transports:
-#        ./scripts/package-dist.sh
-#        (cd dist && SAS_TRANSPORT_MAP=jss7 SAS_TRANSPORT_AUTHVECTOR=jss7 \
-#           SAS_BINDING_SOURCE_ORDER=map-smi \
-#           SAS_TRANSPORT_JSS7_CONFIG=$PWD/../sas-host/src/main/resources/ss7-sas.json \
-#           SAS_ENTITLEMENT_HMAC_SECRET=lab-demo ./run.sh)
+#   2. The ENTITLEMENT SERVER (sas-ecs, :8095 — /ts43 no longer lives in sas-camara)
+#      running with MAP transports:
+#        ./scripts/package-dist.sh ecs
+#        (cd dist-ecs && SAS_TRANSPORT_AUTHVECTOR=map SAS_BINDING_SOURCE_ORDER=map-smi \
+#           SAS_TRANSPORT_JSS7_CONFIG=$PWD/configs/ss7-ecs.json ./run.sh)
+#      sas-ecs uses its own SCTP association (local port 2907, ss7-ecs.json); the HLR
+#      simulator must accept that peer. The token it returns is an operator token
+#      (JWE) that sas-camara accepts as operatortoken:<token>.
+#
+#   NOTE: the EAP-AKA wire codec is a known P1 blocker (see
+#   docs/design/sas-two-binary-architecture.md §9) — this demo exercises the lab card
+#   against the same codec, so it cannot prove interoperability with a real UE.
 #   3. This script (mvn-compiles the lab card on demand).
 #
 # Usage: scripts/ts43-lab-demo.sh [sas-base] [hlr-control-base] [imsi] [msisdn]
@@ -36,7 +42,7 @@ set -euo pipefail
 APP_HOME="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP_HOME"
 
-SAS="${1:-http://127.0.0.1:8085}"
+SAS="${1:-http://127.0.0.1:8095}"
 HLR="${2:-http://127.0.0.1:18087}"
 IMSI="${3:-655010000000001}"
 MSISDN="${4:-+251911111111}"

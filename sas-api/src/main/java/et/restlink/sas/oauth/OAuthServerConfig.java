@@ -66,6 +66,15 @@ public class OAuthServerConfig {
     @ConfigProperty(name = "sas.oauth.pairwise-secret")
     Optional<String> pairwiseSecret;
 
+    /** {@code aud} of issued access tokens (RFC 9068 §2.2): the CAMARA resource server id. */
+    @Inject
+    @ConfigProperty(name = "sas.oauth.access-token-audience")
+    Optional<String> accessTokenAudience;
+
+    public Optional<String> accessTokenAudience() {
+        return normalized(accessTokenAudience);
+    }
+
     public String signingAlg() {
         String alg = value(signingAlg, "HS256");
         return alg.toUpperCase(java.util.Locale.ROOT);

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Production preflight for the Silent Auth SAS — deployment gate (P-H1…P-H7).
 
-Reads sas-host/src/main/resources/application.properties overlaid with
-application-prod.properties (the Quarkus `prod` profile), expands
+Two binaries, two gates: `--service camara` (default) reads
+sas-host/src/main/resources/application.properties overlaid with
+application-prod.properties (the Quarkus `prod` profile); `--service ecs` does the
+same for sas-ecs-host (the TS.43 entitlement server); `--service all` runs both. It expands
 ${ENV_VAR} / ${ENV_VAR:default} against the real environment, and asserts the
 production security invariants BEFORE the JVM starts. The application code is
 already fail-closed (blank secret ⇒ reject all, unknown transport ⇒ memory), so
@@ -32,8 +34,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-BASE_PROPS = ROOT / "sas-host" / "src" / "main" / "resources" / "application.properties"
-PROD_PROPS = ROOT / "sas-host" / "src" / "main" / "resources" / "application-prod.properties"
+# `camara` = sas-host (sas-camara: CAMARA APIs + OAuth AS); `ecs` = sas-ecs-host
+# (sas-ecs: TS.43 entitlement server, EAP-AKA over MAP/Diameter).
+SERVICES = {
+    "camara": ROOT / "sas-host" / "src" / "main" / "resources",
+    "ecs": ROOT / "sas-ecs-host" / "src" / "main" / "resources",
+}
+BASE_PROPS = SERVICES["camara"] / "application.properties"
+PROD_PROPS = SERVICES["camara"] / "application-prod.properties"
 
 EXPR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}")
 
@@ -72,14 +80,47 @@ CRITICAL_KEYS = (
     "sas.transport.resolver",
     "sas.transport.jss7.config",
     "sas.transport.diameter.peer-host",
-    "sas.entitlement.require-signed",
-    "sas.entitlement.hmac-secret",
-    "sas.entitlement.issue-attestation-required",
-    "sas.entitlement.issue-attestation-secret",
-    "sas.oauth.secret",
+    "sas.security.accept-hs256",
+    "sas.oauth.signing-alg",
+    "sas.oauth.signing-jwk",
+    "sas.oauth.allow-ephemeral-signing-key",
+    "sas.oauth.access-token-audience",
+    "sas.oauth.require-client-auth",
+    "sas.oauth.clients-json",
+    "sas.oauth.pairwise-secret",
+    "sas.oauth.authorize.trust-src-header",
+    "sas.operator-token.issuers-json",
+    "sas.operator-token.decryption-jwk",
+    "sas.operator-token.require-encryption",
+    "sas.operator-token.allow-http-jwks",
     "sas.otp.enabled",
     "sas.otp.sms-delivery",
 )
+
+# sas-ecs: every key whose lab default would be unsafe in production.
+CRITICAL_KEYS_ECS = (
+    "quarkus.http.insecure-requests",
+    "quarkus.http.ssl.client-auth",
+    "quarkus.http.ssl.certificate.key-store-file",
+    "quarkus.http.ssl.certificate.key-store-password",
+    "sas.transport.authvector",
+    "sas.binding.source-order",
+    "sas.entitlement.token-format",
+    "sas.entitlement.require-signed",
+    "sas.entitlement.issue-attestation-required",
+    "sas.entitlement.issue-attestation-secret",
+    "sas.ecs.issuer",
+    "sas.ecs.signing-jwk",
+    "sas.ecs.allow-ephemeral-signing-key",
+    "sas.ecs.token.audience",
+    "sas.ecs.token.recipient-enc-jwk",
+    "sas.ecs.token.allow-unencrypted",
+    "sas.security.enforce-api-keys",
+    "sas.security.api-key",
+)
+
+# Key ids of the PUBLICLY KNOWN lab keys committed in the lab application.properties.
+LAB_KID_PREFIXES = ("lab-",)
 
 
 def parse_properties(path: Path) -> dict[str, str]:
@@ -120,11 +161,14 @@ class Profile:
     """Base properties overlaid with the prod profile, env-expanded."""
 
     def __init__(self, env: dict[str, str], check_files: bool = True,
-                 overrides: dict[str, str | None] | None = None):
+                 overrides: dict[str, str | None] | None = None, service: str = "camara"):
         self.env = env
         self.check_files = check_files
-        self.base = parse_properties(BASE_PROPS)
-        self.prod = parse_properties(PROD_PROPS)
+        self.service = service
+        self.base_path = SERVICES[service] / "application.properties"
+        self.prod_path = SERVICES[service] / "application-prod.properties"
+        self.base = parse_properties(self.base_path)
+        self.prod = parse_properties(self.prod_path) if self.prod_path.exists() else {}
         self.merged = {**self.base, **self.prod}
         for key, value in (overrides or {}).items():
             if value is None:
@@ -231,8 +275,8 @@ def build_checks(p: Profile) -> Report:
     r = Report()
 
     # --- gate integrity -----------------------------------------------------
-    r.add("PRO-01", "prod profile exists", PROD_PROPS.exists() and bool(p.prod),
-          f"missing {PROD_PROPS}")
+    r.add("PRO-01", "prod profile exists", p.prod_path.exists() and bool(p.prod),
+          f"missing {p.prod_path}")
     uncovered = [k for k in CRITICAL_KEYS if not p.defined_in_prod(k)]
     r.add("PRO-02", "prod profile overrides every lab-critical key", not uncovered,
           "still on lab defaults:\n" + "\n".join(uncovered))
@@ -244,13 +288,27 @@ def build_checks(p: Profile) -> Report:
           p.get("sas.security.token-validation-enabled") == "true",
           "sas.security.token-validation-enabled must be true; false keeps the P0 "
           "behaviour (identity = body phoneNumber) and is not a production mode")
-    ok, why = secret(p, "sas.security.hmac-secret")
-    r.add("PRO-05", "JWT signing secret provisioned out-of-band", ok, why)
+    hs256 = p.get("sas.security.accept-hs256", "true") == "true"
+    if hs256:
+        ok, why = secret(p, "sas.security.hmac-secret")
+    else:
+        ok, why = True, "HS256 bearer tokens refused; no shared secret to provision"
+    r.add("PRO-05", "no weak shared bearer-token secret", ok, why)
 
     issuer = p.get("sas.security.expected-issuer")
     audience = p.get("sas.security.expected-audience")
-    r.add("PRO-06", "iss/aud pinned", bool(issuer) and bool(audience) and issuer != audience,
-          f"issuer={issuer!r} audience={audience!r} (both required, must differ)")
+    notes = []
+    if not (issuer and audience and issuer != audience):
+        notes.append(f"issuer={issuer!r} audience={audience!r} (both required, must differ)")
+    if not hs256:
+        # ES256 tokens come from THIS Authorization Server: the resource server must pin
+        # its issuer and the audience the AS stamps, or every token is rejected.
+        as_issuer = p.get("sas.oauth.public-base-url").rstrip("/")
+        if issuer.rstrip("/") != as_issuer:
+            notes.append(f"expected-issuer {issuer!r} != sas.oauth.public-base-url {as_issuer!r}")
+        if audience != p.get("sas.oauth.access-token-audience"):
+            notes.append("expected-audience != sas.oauth.access-token-audience")
+    r.add("PRO-06", "iss/aud pinned", not notes, "\n".join(notes))
 
     scopes = p.get("sas.security.required-scopes")
     r.add("PRO-07", "global scope gate empty (per-endpoint scopes do the work)", not scopes,
@@ -429,30 +487,18 @@ def build_checks(p: Profile) -> Report:
     r.add("PRO-21", f"resolver feed ({resolver or 'unset'}) is authenticated", not notes,
           "\n".join(notes))
 
-    # --- TS.43 entitlement / auth server / persistence ----------------------
-    ttl = _int(p, "sas.entitlement.token-ttl-seconds", 0)
-    ok_h, why_h = secret(p, "sas.entitlement.hmac-secret")
+    # --- auth server signing key (ES256) --------------------------------------
+    # (PRO-22/23 — entitlement tokens and /issue attestation — are sas-ecs checks now.)
     notes = []
-    if p.get("sas.entitlement.require-signed") != "true":
-        notes.append("sas.entitlement.require-signed must stay true (unsigned tokens = anyone "
-                     "can claim any MSISDN over Wi-Fi)")
-    if not ok_h:
-        notes.append(why_h)
-    if not 0 < ttl <= 300:
-        notes.append(f"entitlement TTL {ttl}s breaks the CAMARA single-use <=300s ceiling")
-    r.add("PRO-22", "TS.43 entitlement tokens signed within CAMARA TTL", not notes,
-          "\n".join(notes))
-
-    ok, why = secret(p, "sas.entitlement.issue-attestation-secret")
-    r.add("PRO-23", "/entitlement/issue requires AAA attestation",
-          p.get("sas.entitlement.issue-attestation-required") == "true" and ok,
-          why if not ok else
-          ("sas.entitlement.issue-attestation-required must be true"
-           if p.get("sas.entitlement.issue-attestation-required") != "true" else
-           "attestation required + MAC secret provisioned"))
-
-    ok, why = secret(p, "sas.oauth.secret")
-    r.add("PRO-24", "operator auth-server signing secret", ok, why)
+    if p.get("sas.oauth.signing-alg").upper() != "ES256":
+        notes.append("sas.oauth.signing-alg must be ES256 (asymmetric, JWKS-verifiable)")
+    if p.get("sas.oauth.allow-ephemeral-signing-key") == "true":
+        notes.append("ephemeral signing key allowed — tokens die on restart; lab only")
+    ok_k, why_k = jwk_secret(p, "sas.oauth.signing-jwk", "sig")
+    if not ok_k:
+        notes.append(why_k)
+    r.add("PRO-24", "authorization-server ES256 signing key provisioned", not notes,
+          "\n".join(notes) if notes else why_k)
 
     db_kind = p.get("quarkus.datasource.db-kind")
     jdbc = p.get("quarkus.datasource.jdbc.url")
@@ -484,6 +530,229 @@ def build_checks(p: Profile) -> Report:
           p.get("sas.api.assurance-detail-enabled", "false") != "true",
           "sas.api.assurance-detail-enabled=true leaks internal evidence to bank clients; "
           "it must stay opt-in per request")
+    return r
+
+
+def jwk_secret(p: Profile, key: str, use: str) -> tuple[bool, str]:
+    """A private P-256 JWK from the environment, never a committed lab key."""
+    if not p.defined_in_prod(key):
+        return False, f"{key} is not set by the prod profile"
+    if not p.env_sourced(key):
+        return False, f"{key} must come from the environment/secret store, not a literal"
+    return jwk_value_ok(p.get(key), key, use, private=True)
+
+
+def jwk_value_ok(raw: str, key: str, use: str, private: bool) -> tuple[bool, str]:
+    if not raw:
+        return False, f"{key} unresolved — required environment variable missing"
+    try:
+        jwk = json.loads(raw)
+    except ValueError:
+        return False, f"{key} is not JSON"
+    if not isinstance(jwk, dict) or jwk.get("kty") != "EC" or jwk.get("crv") != "P-256" \
+            or not jwk.get("x") or not jwk.get("y"):
+        return False, f"{key} is not a P-256 EC JWK"
+    if private and not jwk.get("d"):
+        return False, f"{key} has no private part (d)"
+    if not private and jwk.get("d"):
+        return False, f"{key} carries a private part — configure the PUBLIC key only"
+    if jwk.get("use") not in (None, use):
+        return False, f"{key} use={jwk.get('use')!r}, expected {use!r}"
+    kid = str(jwk.get("kid") or "")
+    if kid.startswith(LAB_KID_PREFIXES):
+        return False, f"{key} is the publicly known LAB key (kid {kid})"
+    return True, f"{key} ok (P-256, kid={kid or 'thumbprint'})"
+
+
+def _json_list(raw: str, field: str) -> list | None:
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return None
+    items = doc.get(field) if isinstance(doc, dict) else doc
+    return items if isinstance(items, list) else None
+
+
+def oauth_checks(p: Profile) -> Report:
+    """PRO-31..33 — the CAMARA Authorization Server and the operator-token trust."""
+    r = Report()
+    notes = []
+    if p.get("sas.oauth.require-client-auth") != "true":
+        notes.append("sas.oauth.require-client-auth must be true (private_key_jwt, CAMARA ICM)")
+    if not p.env_sourced("sas.oauth.clients-json"):
+        notes.append("sas.oauth.clients-json must come from the environment")
+    else:
+        clients = _json_list(p.get("sas.oauth.clients-json") or "null", "clients")
+        if not clients:
+            notes.append("no OAuth client registered (or clients-json is not valid JSON)")
+        for c in clients or []:
+            cid = c.get("client_id", "?")
+            if c.get("token_endpoint_auth_method", "private_key_jwt") != "private_key_jwt":
+                notes.append(f"client {cid}: auth method must be private_key_jwt")
+            if not (c.get("jwks") or {}).get("keys"):
+                notes.append(f"client {cid}: no jwks to verify its client assertions")
+            for uri in c.get("redirect_uris") or []:
+                if not str(uri).startswith("https://"):
+                    notes.append(f"client {cid}: redirect_uri {uri!r} is not https")
+    ok, why = secret(p, "sas.oauth.pairwise-secret")
+    if not ok:
+        notes.append(why)
+    if not p.raw("sas.oauth.authorize.trust-src-header"):
+        notes.append("sas.oauth.authorize.trust-src-header must be decided explicitly")
+    r.add("PRO-31", "OAuth clients authenticate (private_key_jwt); ID subjects pairwise",
+          not notes, "\n".join(notes))
+
+    notes = []
+    if p.get("sas.operator-token.enabled", "true") == "true":
+        raw = p.get("sas.operator-token.issuers-json")
+        if not p.env_sourced("sas.operator-token.issuers-json") or not raw:
+            notes.append("sas.operator-token.issuers-json must come from the environment")
+        else:
+            issuers = _json_list(raw, "issuers")
+            if not issuers:
+                notes.append("no trusted entitlement-server issuer (or invalid JSON)")
+            for it in issuers or []:
+                iss = str(it.get("issuer", ""))
+                if not iss.startswith("https://"):
+                    notes.append(f"issuer {iss!r} is not https")
+                uri = it.get("jwks_uri")
+                if uri and not str(uri).startswith("https://"):
+                    notes.append(f"issuer {iss}: jwks_uri {uri!r} is not https")
+                if not uri and not (it.get("jwks") or {}).get("keys"):
+                    notes.append(f"issuer {iss}: neither jwks_uri nor inline jwks")
+        ok, why = jwk_secret(p, "sas.operator-token.decryption-jwk", "enc")
+        if not ok:
+            notes.append(why)
+        if p.get("sas.operator-token.require-encryption", "true") != "true":
+            notes.append("operator tokens must be encrypted (the MSISDN crosses the device)")
+        if p.get("sas.operator-token.allow-http-jwks", "false") == "true":
+            notes.append("plain-HTTP jwks_uri allowed — a MITM could swap the issuer keys")
+        if p.get("sas.operator-token.header-enabled", "false") == "true":
+            notes.append("X-Sas-Operator-Token header path is a lab helper; keep it off")
+    r.add("PRO-32", "operator tokens: trusted HTTPS issuers, encrypted, own decryption key",
+          not notes, "\n".join(notes))
+
+    r.add("PRO-33", "resource server accepts only ES256 tokens from this AS",
+          p.get("sas.security.accept-hs256", "true") == "false",
+          "sas.security.accept-hs256 must be false in prod: an HS256 secret lets anyone "
+          "holding it mint CAMARA access tokens")
+    return r
+
+
+def ecs_checks(p: Profile) -> Report:
+    """sas-ecs production profile: transport, signalling, operator tokens, machine auth."""
+    r = Report()
+    r.add("PRO-01", "prod profile exists", p.prod_path.exists() and bool(p.prod),
+          f"missing {p.prod_path}")
+    uncovered = [k for k in CRITICAL_KEYS_ECS if not p.defined_in_prod(k)]
+    r.add("PRO-02", "prod profile overrides every lab-critical key", not uncovered,
+          "still on lab defaults:\n" + "\n".join(uncovered))
+    miss = p.missing_env()
+    r.add("PRO-03", "no unresolved required environment variable", not miss, "\n".join(miss))
+
+    notes = []
+    if p.get("sas.security.enforce-api-keys") != "true":
+        notes.append("sas.security.enforce-api-keys must be true (/entitlement/issue|exchange)")
+    ok, why = secret(p, "sas.security.api-key")
+    if not ok:
+        notes.append(why)
+    r.add("PRO-08", "machine endpoints require API keys", not notes, "\n".join(notes))
+
+    r.add("PRO-11", "cleartext HTTP disabled",
+          p.get("quarkus.http.insecure-requests") == "disabled",
+          f"quarkus.http.insecure-requests={p.get('quarkus.http.insecure-requests')!r}")
+    notes = []
+    if not p.env_sourced("quarkus.http.ssl.certificate.key-store-file"):
+        notes.append("keystore path must be env-supplied")
+    elif p.check_files:
+        f_ok, f_why = file_ok(p.get("quarkus.http.ssl.certificate.key-store-file"))
+        if not f_ok:
+            notes.append(f"keystore: {f_why}")
+    if len(p.get("quarkus.http.ssl.certificate.key-store-password")) < 8:
+        notes.append("keystore password must be env-supplied and >=8 chars")
+    r.add("PRO-12", "TLS keystore provisioned", not notes, "\n".join(notes))
+    client_auth = p.get("quarkus.http.ssl.client-auth")
+    r.add("PRO-13", "TLS client-auth decided (device-facing: request; AAA-only: required)",
+          client_auth in ("request", "required"),
+          f"quarkus.http.ssl.client-auth={client_auth!r}")
+
+    source = (p.get("sas.transport.authvector") or "").strip().lower()
+    order = [t.strip() for t in (p.get("sas.binding.source-order") or "").split(",") if t.strip()]
+    uses_map = source in ("map", "jss7") or "map-smi" in order
+    notes = []
+    if uses_map:
+        cfg = p.get("sas.transport.jss7.config")
+        if not cfg:
+            notes.append("MAP in use but sas.transport.jss7.config unresolved")
+        elif p.check_files:
+            f_ok, f_why = file_ok(cfg)
+            if not f_ok:
+                notes.append(f"jss7 config: {f_why}")
+        hlr, local = p.get("sas.transport.jss7.hlr-gt"), p.get("sas.transport.jss7.local-gt")
+        if not (hlr.isdigit() and local.isdigit()) or hlr == local:
+            notes.append(f"GTs must be distinct digits (hlr-gt={hlr!r} local-gt={local!r})")
+        if hlr == "251911000000" or local in ("251911999999", "251911999998"):
+            notes.append("lab GT defaults still in effect")
+    r.add("PRO-18", "MAP stack configured when MAP is used (SAI / SendIMSI, own HLR)",
+          not notes, "\n".join(notes) if notes else f"MAP in use: {uses_map}")
+
+    notes = []
+    if source == "corsac":
+        peer = p.get("sas.transport.diameter.peer-host")
+        if not peer or any(peer.startswith(pre) or peer == pre for pre in LOOPBACK):
+            notes.append(f"SWx peer {peer!r} is unset or loopback")
+        for key in ("origin-host", "realm", "destination-host", "destination-realm"):
+            v = p.get(f"sas.transport.diameter.{key}")
+            if not v or v in ("ecs.restlink.et", "hss.restlink.et", "restlink.et"):
+                notes.append(f"sas.transport.diameter.{key}={v!r} is unset or the lab identity")
+    r.add("PRO-19", "Diameter SWx identity/peer are the operator's own (when SWx is used)",
+          not notes, "\n".join(notes) if notes else f"SWx in use: {source == 'corsac'}")
+
+    notes = []
+    if p.get("sas.entitlement.token-format") != "operator-jwe":
+        notes.append("sas.entitlement.token-format must be operator-jwe (split deployment)")
+    ttl = _int(p, "sas.entitlement.token-ttl-seconds", 0)
+    if not 0 < ttl <= 300:
+        notes.append(f"token TTL {ttl}s breaks the CAMARA single-use <=300s ceiling")
+    if p.get("sas.entitlement.require-signed") != "true":
+        notes.append("sas.entitlement.require-signed must stay true")
+    for key in ("sas.ecs.issuer", "sas.ecs.token.audience"):
+        if not p.get(key).startswith("https://"):
+            notes.append(f"{key}={p.get(key)!r} must be an https identifier")
+    if p.get("sas.ecs.allow-ephemeral-signing-key") == "true":
+        notes.append("ephemeral ECS signing key — lab only")
+    if p.get("sas.ecs.token.allow-unencrypted") == "true":
+        notes.append("unencrypted operator tokens would expose the MSISDN to the device/app")
+    ok, why = jwk_secret(p, "sas.ecs.signing-jwk", "sig")
+    if not ok:
+        notes.append(why)
+    rk = "sas.ecs.token.recipient-enc-jwk"
+    if not p.env_sourced(rk):
+        notes.append(f"{rk} must come from the environment")
+    else:
+        ok, why = jwk_value_ok(p.get(rk), rk, "enc", private=False)
+        if not ok:
+            notes.append(why)
+    r.add("PRO-22", "operator tokens signed (ES256) and encrypted to CAMARA within TTL",
+          not notes, "\n".join(notes))
+
+    ok, why = secret(p, "sas.entitlement.issue-attestation-secret")
+    r.add("PRO-23", "/entitlement/issue requires AAA attestation",
+          p.get("sas.entitlement.issue-attestation-required") == "true" and ok,
+          why if not ok else "attestation required + MAC secret provisioned")
+
+    notes = []
+    live = "map-smi" in order
+    db_path = p.get("sas.binding.subscriber-db-path")
+    db_export = "db" in order and bool(db_path)
+    if not (live or db_export):
+        notes.append("no usable IMSI->MSISDN source: add map-smi (MAP SendIMSI) or a "
+                     "subscriber-db export — every EAP success would then fail closed")
+    if db_export and p.check_files:
+        f_ok, f_why = file_ok(db_path)
+        if not f_ok:
+            notes.append(f"subscriber export: {f_why}")
+    r.add("PRO-34", "a real IMSI->MSISDN binding source is wired", not notes, "\n".join(notes))
     return r
 
 
@@ -551,6 +820,13 @@ def auth_vector_check(p: Profile) -> Report:
     notes: list[str] = []
     source = (p.get("sas.transport.authvector") or "").strip().lower()
     entitlement_on = (p.get("sas.entitlement.enabled") or "true").strip().lower() == "true"
+    if p.service == "ecs":
+        ok = source in ("map", "jss7", "corsac")
+        r.add("PRO-30", "entitlement auth vectors come from the operator, not the lab", ok,
+              f"sas.transport.authvector={source or 'unset'} — legal in prod: map (MAP SAI, "
+              "own HLR) | corsac (Diameter SWx MAR, own HSS); memory fabricates vectors that "
+              "would 'authenticate' anyone")
+        return r
     notes.append(f"sas.transport.authvector={source or 'unset'} "
                  f"(entitlement.enabled={entitlement_on})")
 
@@ -580,12 +856,16 @@ def auth_vector_check(p: Profile) -> Report:
 
 
 def run(env: dict[str, str], overrides: dict[str, str | None] | None = None,
-        check_files: bool = True) -> Report:
-    profile = Profile(env, check_files=check_files, overrides=overrides)
+        check_files: bool = True, service: str = "camara") -> Report:
+    profile = Profile(env, check_files=check_files, overrides=overrides, service=service)
+    if service == "ecs":
+        report = ecs_checks(profile)
+        report.rows.extend(auth_vector_check(profile).rows)
+        return report
     report = build_checks(profile)
+    report.rows.extend(oauth_checks(profile).rows)
     report.rows.extend(quota_tenant_check(profile).rows)
     report.rows.extend(otp_surface_check(profile).rows)
-    report.rows.extend(auth_vector_check(profile).rows)
     return report
 
 
@@ -614,6 +894,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     ap.add_argument("--selftest", action="store_true",
                     help="run the gate against synthetic good/bad deployments")
+    ap.add_argument("--service", choices=("camara", "ecs", "all"), default="camara",
+                    help="which binary's prod profile to gate (default camara)")
     args = ap.parse_args(argv[1:])
 
     if args.selftest:
@@ -623,8 +905,13 @@ def main(argv: list[str]) -> int:
     for pair in args.set or []:
         key, _, value = pair.partition("=")
         overrides[key.strip()] = value
-    report = run(_parse_env_args(args.env), overrides=overrides,
-                 check_files=not args.no_file_checks)
+    services = ("camara", "ecs") if args.service == "all" else (args.service,)
+    report = Report()
+    for svc in services:
+        part = run(_parse_env_args(args.env), overrides=overrides,
+                   check_files=not args.no_file_checks, service=svc)
+        for row in part.rows:
+            report.rows.append(dict(row, id=f"{svc}:{row['id']}") if len(services) > 1 else row)
 
     fails = report.failures()
     if args.json:
@@ -649,6 +936,19 @@ def main(argv: list[str]) -> int:
 # selftest — proves the gate bites, without a JVM or a network
 # ---------------------------------------------------------------------------
 
+_JWK_XY = {"kty": "EC", "crv": "P-256",
+           "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+           "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"}
+_D = "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI"
+
+
+def _jwk(kid: str, use: str, private: bool) -> str:
+    jwk = dict(_JWK_XY, kid=kid, use=use)
+    if private:
+        jwk["d"] = _D
+    return json.dumps(jwk)
+
+
 def _good_deployment(tmp: Path) -> dict[str, str]:
     keystore = tmp / "sas-keystore.p12"
     keystore.write_bytes(b"not-a-real-keystore")
@@ -659,6 +959,7 @@ def _good_deployment(tmp: Path) -> dict[str, str]:
                                  "M3UA": {"asp": "sas-asp"}}), encoding="utf-8")
     cgnat = tmp / "cgnat-bindings.csv"
     cgnat.write_text("ts,msisdn,ip,port\n", encoding="utf-8")
+    client_jwk = json.loads(_jwk("cobalt-2026", "sig", False))
     return {
         "SAS_TLS_KEYSTORE": str(keystore),
         "SAS_TLS_KEYSTORE_PASSWORD": "keystore-passphrase-long-enough",
@@ -666,8 +967,18 @@ def _good_deployment(tmp: Path) -> dict[str, str]:
         "SAS_TLS_TRUSTSTORE": str(truststore),
         "SAS_TLS_TRUSTSTORE_PASSWORD": "truststore-passphrase-long",
         "SAS_SECURITY_HMAC_SECRET": "c0balt-issuer-hmac-secret-32chars-x",
-        "SAS_SECURITY_ISSUER": "https://sso.cobalt.bank",
-        "SAS_SECURITY_AUDIENCE": "sas.restlink.et",
+        "SAS_SECURITY_ISSUER": "https://camara.et-network.net",
+        "SAS_SECURITY_AUDIENCE": "https://camara.et-network.net/camara",
+        "SAS_OAUTH_PUBLIC_BASE_URL": "https://camara.et-network.net",
+        "SAS_OAUTH_SIGNING_JWK": _jwk("camara-sig-2026-10", "sig", True),
+        "SAS_OAUTH_PAIRWISE_SECRET": "pairwise-subject-secret-32-chars-xx",
+        "SAS_OAUTH_CLIENTS_JSON": json.dumps({"clients": [{
+            "client_id": "cobalt", "token_endpoint_auth_method": "private_key_jwt",
+            "jwks": {"keys": [client_jwk]}, "redirect_uris": ["https://cobalt.bank/cb"]}]}),
+        "SAS_OPERATOR_TOKEN_ISSUERS_JSON": json.dumps({"issuers": [{
+            "issuer": "https://ecs.et-network.net",
+            "jwks_uri": "https://ecs.et-network.net/jwks.json"}]}),
+        "SAS_OPERATOR_TOKEN_DECRYPTION_JWK": _jwk("camara-enc-2026-10", "enc", True),
         "SAS_TENANT_API_KEYS": "cobalt=ck_live_01f0e4b9a7c2d8a43b6e9157,hibret=ck_live_9a4b1e7d0f5c43a2986b715e",
         "SAS_ADMIN_KEY": "sas-admin-2f9c47be13ad86e0c5f7",
         "SAS_ADMIN_SESSION_HMAC_SECRET": "rotated-admin-session-hmac-64-chars-aaaa",
@@ -682,9 +993,6 @@ def _good_deployment(tmp: Path) -> dict[str, str]:
         "SAS_DIAMETER_REALM": "et-network.net",
         "SAS_DIAMETER_DESTINATION_HOST": "hss01.et-network.net",
         "SAS_DIAMETER_DESTINATION_REALM": "et-network.net",
-        "SAS_ENTITLEMENT_HMAC_SECRET": "entitlement-hmac-secret-32chars-ab",
-        "SAS_ENTITLEMENT_ATTESTATION_SECRET": "aaa-attestation-shared-secret-32chr",
-        "SAS_OAUTH_SECRET": "auth-server-signing-secret-32chars",
         "SAS_DB_JDBC_URL": "jdbc:postgresql://db01.et-network.net:5432/sas",
         "SAS_DB_USER": "sas_app",
         "SAS_DB_PASSWORD": "db-passphrase-long-enough",
@@ -692,53 +1000,113 @@ def _good_deployment(tmp: Path) -> dict[str, str]:
     }
 
 
-MUTATIONS: list[tuple[str, dict, set[str]]] = [
-    ("auth off", {"sas.security.token-validation-enabled": "false"}, {"PRO-04"}),
-    ("api-key enforcement off", {"sas.security.enforce-api-keys": "false"}, {"PRO-08"}),
-    ("cleartext HTTP allowed", {"quarkus.http.insecure-requests": "enabled"}, {"PRO-11"}),
-    ("mTLS off", {"quarkus.http.ssl.client-auth": "none"}, {"PRO-13"}),
-    ("lab admin key", {"sas.admin.key": "change-me"}, {"PRO-14"}),
-    ("insecure cookies", {"sas.admin.cookie-secure": "false"}, {"PRO-16"}),
-    ("memory transport", {"sas.transport.resolver": "memory"}, {"PRO-17"}),
-    ("loopback Diameter peer", {"sas.transport.diameter.peer-host": "127.0.0.1"}, {"PRO-20"}),
-    ("missing jss7 stack file", {"sas.transport.jss7.config": "/nope/ss7.json"}, {"PRO-18"}),
-    ("unsigned entitlement tokens", {"sas.entitlement.require-signed": "false"}, {"PRO-22"}),
-    ("attestation off", {"sas.entitlement.issue-attestation-required": "false"}, {"PRO-23"}),
-    ("H2 lab database", {"quarkus.datasource.db-kind": "h2",
-                         "quarkus.datasource.jdbc.url": "jdbc:h2:file:./data/sas-db"}, {"PRO-25"}),
-    ("lab keystore path", {"quarkus.http.ssl.certificate.key-store-file":
-                           "src/main/resources/keystore.jks"}, {"PRO-12"}),
-    ("over-pinned scope", {"sas.security.required-scopes": "number-verification:verify"},
-     {"PRO-07"}),
-    ("duplicate tenant key", {"sas.tenants.api-keys": "cobalt=demo-key"}, {"PRO-09"}),
-    ("quota for unknown tenant", {"sas.tenants.quota.northbank": "1000"}, {"PRO-28"}),
-    ("key dropped from profile", {"sas.security.hmac-secret": None}, {"PRO-02", "PRO-05"}),
-    ("secret too short", {"SAS_OAUTH_SECRET": "abc"}, {"PRO-24"}),
-    ("secret env var unset", {"SAS_OAUTH_SECRET": ""}, {"PRO-03", "PRO-24"}),
-    ("assurance detail on", {"sas.api.assurance-detail-enabled": "true"}, {"PRO-27"}),
-    ("relative log dir", {"SAS_LOG_DIR": "logs"}, {"PRO-26"}),
-    ("lab auth vector source", {"sas.transport.authvector": "memory"}, {"PRO-30"}),
-    ("lab OTP SMS sender", {"sas.otp.enabled": "true", "sas.otp.sms-delivery": "log"},
-     {"PRO-29"}),
-]
+def _good_ecs_deployment(tmp: Path) -> dict[str, str]:
+    keystore = tmp / "ecs-keystore.p12"
+    keystore.write_bytes(b"not-a-real-keystore")
+    truststore = tmp / "ecs-truststore.p12"
+    truststore.write_bytes(b"not-a-real-truststore")
+    stack = tmp / "ss7-ecs.json"
+    stack.write_text(json.dumps({"stackName": "ecs-ss7"}), encoding="utf-8")
+    return {
+        "ECS_TLS_KEYSTORE": str(keystore),
+        "ECS_TLS_KEYSTORE_PASSWORD": "keystore-passphrase-long-enough",
+        "ECS_TLS_KEYSTORE_KEY_PASSWORD": "key-passphrase-long-enough",
+        "ECS_TLS_TRUSTSTORE": str(truststore),
+        "ECS_TLS_TRUSTSTORE_PASSWORD": "truststore-passphrase-long",
+        "ECS_TRANSPORT_AUTHVECTOR": "map",
+        "ECS_BINDING_SOURCE_ORDER": "map-smi,db",
+        "ECS_JSS7_CONFIG": str(stack),
+        "ECS_JSS7_HLR_GT": "251910000001",
+        "ECS_JSS7_LOCAL_GT": "251910000098",
+        "ECS_ATTESTATION_SECRET": "aaa-attestation-shared-secret-32chr",
+        "ECS_ISSUER": "https://ecs.et-network.net",
+        "ECS_SIGNING_JWK": _jwk("ecs-sig-2026-10", "sig", True),
+        "ECS_TOKEN_AUDIENCE": "https://camara.et-network.net",
+        "ECS_TOKEN_RECIPIENT_ENC_JWK": _jwk("camara-enc-2026-10", "enc", False),
+        "ECS_API_KEYS": "ecs-aaa-api-key-rotated-32-characters",
+        "ECS_LOG_DIR": "/var/log/sas-ecs",
+    }
 
 
-def verify(scenario: str | None = None) -> tuple[bool, str]:
+GOOD = {"camara": _good_deployment, "ecs": _good_ecs_deployment}
+
+MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
+    "camara": [
+        ("auth off", {"sas.security.token-validation-enabled": "false"}, {"PRO-04"}),
+        ("api-key enforcement off", {"sas.security.enforce-api-keys": "false"}, {"PRO-08"}),
+        ("cleartext HTTP allowed", {"quarkus.http.insecure-requests": "enabled"}, {"PRO-11"}),
+        ("mTLS off", {"quarkus.http.ssl.client-auth": "none"}, {"PRO-13"}),
+        ("lab admin key", {"sas.admin.key": "change-me"}, {"PRO-14"}),
+        ("insecure cookies", {"sas.admin.cookie-secure": "false"}, {"PRO-16"}),
+        ("memory transport", {"sas.transport.resolver": "memory"}, {"PRO-17"}),
+        ("loopback Diameter peer", {"sas.transport.diameter.peer-host": "127.0.0.1"}, {"PRO-20"}),
+        ("missing jss7 stack file", {"sas.transport.jss7.config": "/nope/ss7.json"}, {"PRO-18"}),
+        ("H2 lab database", {"quarkus.datasource.db-kind": "h2",
+                             "quarkus.datasource.jdbc.url": "jdbc:h2:file:./data/sas-db"},
+         {"PRO-25"}),
+        ("lab keystore path", {"quarkus.http.ssl.certificate.key-store-file":
+                               "src/main/resources/keystore.jks"}, {"PRO-12"}),
+        ("over-pinned scope", {"sas.security.required-scopes": "number-verification:verify"},
+         {"PRO-07"}),
+        ("duplicate tenant key", {"sas.tenants.api-keys": "cobalt=demo-key"}, {"PRO-09"}),
+        ("quota for unknown tenant", {"sas.tenants.quota.northbank": "1000"}, {"PRO-28"}),
+        ("key dropped from profile", {"sas.oauth.signing-jwk": None}, {"PRO-02", "PRO-24"}),
+        ("secret too short", {"SAS_OAUTH_PAIRWISE_SECRET": "abc"}, {"PRO-31"}),
+        ("secret env var unset", {"SAS_OAUTH_PAIRWISE_SECRET": ""}, {"PRO-03", "PRO-31"}),
+        ("assurance detail on", {"sas.api.assurance-detail-enabled": "true"}, {"PRO-27"}),
+        ("relative log dir", {"SAS_LOG_DIR": "logs"}, {"PRO-26"}),
+        ("lab OTP SMS sender", {"sas.otp.enabled": "true", "sas.otp.sms-delivery": "log"},
+         {"PRO-29"}),
+        ("HS256 bearer tokens re-enabled", {"sas.security.accept-hs256": "true"}, {"PRO-33"}),
+        ("ephemeral AS signing key", {"sas.oauth.allow-ephemeral-signing-key": "true"},
+         {"PRO-24"}),
+        ("resource server not pinned to this AS", {"SAS_SECURITY_ISSUER": "https://idp.other"},
+         {"PRO-06"}),
+        ("OAuth client auth off", {"sas.oauth.require-client-auth": "false"}, {"PRO-31"}),
+        ("lab operator-token decryption key",
+         {"SAS_OPERATOR_TOKEN_DECRYPTION_JWK": _jwk("lab-camara-enc-x", "enc", True)},
+         {"PRO-32"}),
+        ("plain-HTTP issuer JWKS", {"sas.operator-token.allow-http-jwks": "true"}, {"PRO-32"}),
+        ("operator tokens not encrypted", {"sas.operator-token.require-encryption": "false"},
+         {"PRO-32"}),
+    ],
+    "ecs": [
+        ("lab auth vector source", {"ECS_TRANSPORT_AUTHVECTOR": "memory"}, {"PRO-30"}),
+        ("unencrypted operator tokens", {"sas.ecs.token.allow-unencrypted": "true"}, {"PRO-22"}),
+        ("unsigned entitlement tokens", {"sas.entitlement.token-format": "hmac"}, {"PRO-22"}),
+        ("attestation off", {"sas.entitlement.issue-attestation-required": "false"}, {"PRO-23"}),
+        ("lab recipient key",
+         {"ECS_TOKEN_RECIPIENT_ENC_JWK": _jwk("lab-camara-enc-x", "enc", False)}, {"PRO-22"}),
+        ("private key configured as recipient",
+         {"ECS_TOKEN_RECIPIENT_ENC_JWK": _jwk("camara-enc-2026-10", "enc", True)}, {"PRO-22"}),
+        ("ephemeral ECS signing key", {"sas.ecs.allow-ephemeral-signing-key": "true"},
+         {"PRO-22"}),
+        ("no binding source", {"ECS_BINDING_SOURCE_ORDER": "db"}, {"PRO-34"}),
+        ("ecs api keys off", {"sas.security.enforce-api-keys": "false"}, {"PRO-08"}),
+        ("ecs cleartext HTTP", {"quarkus.http.insecure-requests": "enabled"}, {"PRO-11"}),
+        ("ecs missing jss7 stack", {"ECS_JSS7_CONFIG": "/nope/ss7-ecs.json"}, {"PRO-18"}),
+        ("ecs signing key dropped", {"sas.ecs.signing-jwk": None}, {"PRO-02", "PRO-22"}),
+    ],
+}
+
+
+def verify(scenario: str | None = None, service: str = "camara") -> tuple[bool, str]:
     """Run one named mutation (or the baseline) and report whether it is caught.
 
     scenario=None → a fully provisioned prod deployment must pass every check.
     otherwise     → the named mutation must make its expected PRO ids fail.
-    Used by --selftest here and by the G-PROD gates in run_hardness.py.
+    Used by --selftest here and by the preflight gates in run_hardness.py.
     """
     with tempfile.TemporaryDirectory(prefix="sas-preflight-") as tmpdir:
-        env = _good_deployment(Path(tmpdir))
+        env = GOOD[service](Path(tmpdir))
         if scenario is None:
-            report = run(env)
+            report = run(env, service=service)
             bad = sorted(report.failed_ids())
             if bad:
-                return False, "baseline deployment should pass but failed: " + ", ".join(bad)
-            return True, f"complete prod deployment passes all {len(report.rows)} checks"
-        for name, overrides, expected in MUTATIONS:
+                return False, (f"[{service}] baseline deployment should pass but failed: "
+                               + ", ".join(bad))
+            return True, f"[{service}] complete prod deployment passes all {len(report.rows)} checks"
+        for name, overrides, expected in MUTATIONS[service]:
             if name != scenario:
                 continue
             mutation_env = dict(env)
@@ -748,26 +1116,28 @@ def verify(scenario: str | None = None) -> tuple[bool, str]:
                     mutation_env[key] = value
                 else:
                     overrides_only[key] = value
-            report = run(mutation_env, overrides=overrides_only)
+            report = run(mutation_env, overrides=overrides_only, service=service)
             caught = expected & report.failed_ids()
             ok = caught == expected
-            return ok, (f"{name}: expected {sorted(expected)} -> caught "
+            return ok, (f"[{service}] {name}: expected {sorted(expected)} -> caught "
                         f"{sorted(caught) or 'NOTHING'}")
-        return False, f"unknown scenario {scenario!r}"
+        return False, f"unknown {service} scenario {scenario!r}"
 
 
 def selftest() -> int:
     undetected = 0
+    total = 0
     print("== SAS production preflight — selftest ==")
-    scenarios: list[tuple[str | None, set[str]]] = [(None, set())]
-    scenarios += [(name, expected) for name, _, expected in MUTATIONS]
-    for name, _expected in scenarios:
-        ok, detail = verify(name)
-        if not ok:
-            undetected += 1
-        label = "baseline" if name is None else name
-        print(f"  [{'PASS' if ok else 'FAIL'}] {label.ljust(30)} {detail}")
-    print(f"\n== {len(scenarios) - undetected}/{len(scenarios)} scenarios detected ==")
+    for service in ("camara", "ecs"):
+        scenarios: list[str | None] = [None] + [name for name, _, _ in MUTATIONS[service]]
+        for name in scenarios:
+            total += 1
+            ok, detail = verify(name, service)
+            if not ok:
+                undetected += 1
+            label = f"{service}:" + ("baseline" if name is None else name)
+            print(f"  [{'PASS' if ok else 'FAIL'}] {label.ljust(44)} {detail}")
+    print(f"\n== {total - undetected}/{total} scenarios detected ==")
     return undetected
 
 

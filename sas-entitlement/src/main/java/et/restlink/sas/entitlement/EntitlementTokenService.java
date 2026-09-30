@@ -67,6 +67,14 @@ import java.util.concurrent.ConcurrentHashMap;
 @ApplicationScoped
 public class EntitlementTokenService {
 
+    /*
+     * Split-deployment profile (sas.entitlement.token-format=operator-jwe): the token is
+     * the sas-token OperatorToken — ES256 JWS signed by this ECS, encrypted to the CAMARA
+     * server (ECDH-ES/A256GCM). The CAMARA server verifies it offline from /jwks.json and
+     * keeps the authoritative single-use ledger; the map below only serves the legacy
+     * POST /entitlement/exchange redeem on this ECS.
+     */
+
     private static final Logger LOG = LogManager.getLogger(EntitlementTokenService.class);
     private static final String HMAC_ALGO = "HmacSHA256";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -106,6 +114,12 @@ public class EntitlementTokenService {
 
     @Inject
     EntitlementConfig config;
+
+    @Inject
+    EcsTokenKeys ecsKeys;
+
+    /** sha256(operator token) → record, for the ECS-local legacy exchange (single-use). */
+    private final Map<String, EntitlementRecord> operatorTokens = new ConcurrentHashMap<>();
 
     public record EntitlementRecord(
             String msisdn,
@@ -151,6 +165,9 @@ public class EntitlementTokenService {
             throw new IllegalArgumentException(
                     "unsupported eapMethod (allowed: " + EAP_AKA + ", " + EAP_AKA_PRIME + ")");
         }
+        if (config.operatorJweFormat()) {
+            return issueOperatorToken(msisdn, imsi, canonicalEap);
+        }
         String secret = config.hmacSecret();
         boolean requireSigned = config.requireSigned();
         if (secret == null || secret.isBlank()) {
@@ -173,6 +190,9 @@ public class EntitlementTokenService {
             return null;
         }
         evictExpired(System.currentTimeMillis());
+        if (isCompactJose(token)) {
+            return exchangeOperator(token);
+        }
         int dot = token.indexOf(PART_SEPARATOR);
         if (dot > 0 && token.indexOf(PART_SEPARATOR, dot + 1) < 0) {
             return exchangeSigned(token);
@@ -189,6 +209,10 @@ public class EntitlementTokenService {
             return false;
         }
         evictExpired(System.currentTimeMillis());
+        if (isCompactJose(token)) {
+            EntitlementRecord r = operatorTokens.get(sha256(token));
+            return r != null && System.currentTimeMillis() < r.expiresEpochMs();
+        }
         int dot = token.indexOf(PART_SEPARATOR);
         if (dot > 0 && token.indexOf(PART_SEPARATOR, dot + 1) < 0) {
             DecodedPayload p = verifySignedPayload(token);
@@ -209,7 +233,68 @@ public class EntitlementTokenService {
 
     /** Number of live tokens: unconsumed signed jtis plus legacy unsigned. */
     public int activeTokenCount() {
-        return issuedJtis.size() + unsignedTokens.size();
+        return issuedJtis.size() + unsignedTokens.size() + operatorTokens.size();
+    }
+
+    // ---- operator-token path (split deployment) ----
+
+    private String issueOperatorToken(String msisdn, String imsi, String eapMethod) {
+        String issuer = config.ecsIssuer();
+        String audience = config.tokenAudience();
+        if (issuer.isBlank() || audience.isBlank()) {
+            throw new IllegalStateException(
+                    "sas.ecs.issuer and sas.ecs.token.audience are required for operator tokens");
+        }
+        com.nimbusds.jose.jwk.ECKey signing = ecsKeys == null ? null
+                : ecsKeys.signingKey().orElse(null);
+        if (signing == null) {
+            throw new IllegalStateException("no ECS signing key — operator token refused");
+        }
+        com.nimbusds.jose.jwk.ECKey recipient = ecsKeys.recipientKey().orElse(null);
+        if (recipient == null && !config.allowUnencrypted()) {
+            throw new IllegalStateException(
+                    "no CAMARA encryption key (sas.ecs.token.recipient-enc-jwk) — refusing to "
+                            + "issue a token whose number would be readable in transit");
+        }
+        long ttl = config.tokenTtlSeconds();
+        String token = et.restlink.sas.token.OperatorToken.issue(issuer, audience, msisdn,
+                eapMethod, ttl, signing, recipient, java.time.Clock.systemUTC());
+        long now = System.currentTimeMillis();
+        operatorTokens.put(sha256(token),
+                new EntitlementRecord(msisdn, imsi, now, now + ttl * 1000L, eapMethod));
+        evictExpired(now);
+        LOG.info("Operator token issued for {} (eap={}, ttl={}s, encrypted={})",
+                maskMsisdn(msisdn), eapMethod, ttl, recipient != null);
+        return token;
+    }
+
+    private EntitlementRecord exchangeOperator(String token) {
+        EntitlementRecord r = operatorTokens.remove(sha256(token));
+        if (r == null) {
+            LOG.warn("Entitlement exchange: unknown or already-used operator token");
+            return null;
+        }
+        if (System.currentTimeMillis() >= r.expiresEpochMs()) {
+            LOG.warn("Entitlement exchange: operator token expired");
+            return null;
+        }
+        LOG.info("Operator token redeemed locally for {} (eap={})", maskMsisdn(r.msisdn()), r.eapMethod());
+        return r;
+    }
+
+    /** Three (JWS) or five (JWE) dot-separated parts: a compact JOSE object. */
+    static boolean isCompactJose(String token) {
+        int parts = token.split("\\.", -1).length;
+        return parts == 3 || parts == 5;
+    }
+
+    private static String sha256(String token) {
+        try {
+            byte[] d = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.US_ASCII));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(d);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     // ---- signed path ----
@@ -376,6 +461,7 @@ public class EntitlementTokenService {
         issuedJtis.values().removeIf(expSec -> nowSec > expSec);
         consumedJtis.values().removeIf(expSec -> nowSec > expSec);
         unsignedTokens.values().removeIf(r -> nowMs > r.expiresEpochMs());
+        operatorTokens.values().removeIf(r -> nowMs > r.expiresEpochMs());
     }
 
     private static String maskMsisdn(String msisdn) {

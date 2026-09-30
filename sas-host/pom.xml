@@ -18,14 +18,10 @@
     TS.43/Wi-Fi entitlement track (sas-entitlement).</description>
 
   <dependencies>
-    <!-- Composition: CAMARA northbound + entitlement track libraries. -->
+    <!-- sas-camara: CAMARA northbound + OAuth AS; the TS.43 entitlement server is sas-ecs-host. -->
     <dependency>
       <groupId>et.restlink</groupId>
       <artifactId>sas-api</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>et.restlink</groupId>
-      <artifactId>sas-entitlement</artifactId>
     </dependency>
     <dependency>
       <groupId>et.restlink</groupId>

@@ -116,7 +116,7 @@ def check_preflight(expect, contract):
 
     details = []
     for scenario in scenarios:
-        ok, detail = preflight_prod.verify(scenario)
+        ok, detail = preflight_prod.verify(scenario, expect.get("service", "camara"))
         details.append(detail)
         if not ok:
             return False, "; ".join(details)
@@ -418,6 +418,73 @@ def check_camara_contract(expect, contract):
                 if ok else "; ".join(problems))
 
 
+def check_entitlement_split(expect, contract):
+    """H25 — two binaries, one trust boundary, one entitlement signalling contract.
+
+    sas-camara (sas-host) and sas-ecs (sas-ecs-host) meet only through the operator
+    token (sas-token). If either side starts depending on the other's code, the split
+    is cosmetic: an operator that already runs its own ECS could no longer deploy the
+    CAMARA server alone, and a bug in one surface ships in both. The entitlement path
+    also carries hard 3GPP/GSMA bans (no ATI — FS.11 Cat 1; no SRI-SM — Home Routing
+    answers a correlation ID; no S6a AIR — wrong interface for non-3GPP access) and a
+    key-hygiene rule (AKA key material is never an argument to a log call).
+    """
+    root = HERE.parent
+    problems = []
+    imports_re = re.compile(r"^import\s+(?:static\s+)?([A-Za-z0-9_.]+);", re.M)
+
+    def sources(prefix_paths):
+        for rel in prefix_paths:
+            base = root / rel
+            if not base.exists():
+                problems.append(f"{rel}: missing")
+                continue
+            files = [base] if base.is_file() else sorted(base.rglob("*.java"))
+            for path in files:
+                relp = path.relative_to(root).as_posix()
+                if "/target/" in relp:
+                    continue
+                yield relp, path.read_text(encoding="utf-8")
+
+    for rule in expect.get("pom_forbidden", []):
+        pom = root / rule["pom"]
+        if not pom.exists():
+            problems.append(f"{rule['pom']}: missing")
+            continue
+        text = pom.read_text(encoding="utf-8")
+        for art in rule["artifacts"]:
+            if re.search(r"<artifactId>\s*" + re.escape(art) + r"\s*</artifactId>", text):
+                problems.append(f"{rule['pom']}: depends on {art} — {rule['why']}")
+
+    for rule in expect.get("import_forbidden", []):
+        prefixes = tuple(rule["prefixes"])
+        for rel, text in sources(rule["paths"]):
+            for imp in imports_re.findall(text):
+                if imp.startswith(prefixes):
+                    problems.append(f"{rel}: imports {imp} — {rule['why']}")
+                    break
+
+    for rule in expect.get("pattern_forbidden", []):
+        pat = re.compile(rule["pattern"], re.M)
+        for rel, text in sources(rule["paths"]):
+            m = pat.search(text)
+            if m:
+                line = text[:m.start()].count("\n") + 1
+                problems.append(f"{rel}:{line}: {m.group(0).strip()[:80]} — {rule['why']}")
+
+    for rule in expect.get("required", []):
+        path = root / rule["file"]
+        if not path.exists() or not re.search(rule["pattern"], path.read_text(encoding="utf-8")):
+            problems.append(f"{rule['file']}: expected /{rule['pattern']}/ — {rule['why']}")
+
+    if problems:
+        return False, "; ".join(problems[:6]) + (f" (+{len(problems) - 6} more)"
+                                                 if len(problems) > 6 else "")
+    return True, (f"binary split intact ({len(expect.get('pom_forbidden', []))} pom rules, "
+                  f"{len(expect.get('import_forbidden', []))} import rules, "
+                  f"{len(expect.get('pattern_forbidden', []))} signalling/key rules)")
+
+
 CHECKERS = {
     "mapping_present": check_mapping_present,
     "flag": check_flag,
@@ -427,6 +494,7 @@ CHECKERS = {
     "access_tech_parity": check_access_tech_parity,
     "license_parity": check_license_parity,
     "slee_boundary": check_slee_boundary,
+    "entitlement_split": check_entitlement_split,
 }
 
 # ---------------------------------------------------------------------------
@@ -496,12 +564,14 @@ def main(argv):
     if "--mutations" in argv:
         # Prove the H24 checker bites: inject one violation at a time, restore
         # afterwards, fail the run when any scenario escapes or the baseline fails.
+        # Same for H25 (entitlement_split): both self-tests must catch every scenario.
         try:
             import mut_slee_boundary
+            import mut_entitlement_split
         except ImportError as exc:  # pragma: no cover - must be next to this file
-            print(f"mut_slee_boundary.py unusable: {exc}", file=sys.stderr)
+            print(f"mutation self-test unusable: {exc}", file=sys.stderr)
             return 2
-        return mut_slee_boundary.main()
+        return mut_slee_boundary.main() + mut_entitlement_split.main()
 
     trace_arg = None
     for i, a in enumerate(argv):

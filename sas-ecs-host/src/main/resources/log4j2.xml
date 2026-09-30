@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <Appenders>
+        <Console name="console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5p %c{1} - %m%n"/>
+        </Console>
+        <RollingFile name="cdr"
+                     fileName="${sys:sas.log.dir:-target/logs}/ecs.cdr"
+                     filePattern="${sys:sas.log.dir:-target/logs}/ecs-%d{yyyy-MM-dd}-%i.cdr">
+            <PatternLayout pattern="%m%n"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy/>
+                <SizeBasedTriggeringPolicy size="50 MB"/>
+            </Policies>
+            <DefaultRolloverStrategy max="100"/>
+        </RollingFile>
+    </Appenders>
+    <Loggers>
+        <Logger name="com.mobius" level="INFO"/>
+        <Logger name="SAS_CDR" level="INFO" additivity="false">
+            <AppenderRef ref="cdr"/>
+        </Logger>
+        <Root level="INFO">
+            <AppenderRef ref="console"/>
+        </Root>
+    </Loggers>
+</Configuration>
