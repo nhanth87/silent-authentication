@@ -38,6 +38,8 @@ import et.restlink.sas.ras.s6averifier.S6aVerifierBackend;
 import et.restlink.sas.ras.s6averifier.S6aVerifierRaEndpoint;
 import et.restlink.sas.ras.s6averifier.S6aVerifierResourceAdaptor;
 import et.restlink.sas.ras.authvector.AuthVectorBackend;
+import et.restlink.sas.ras.binding.SubscriberBindingRaEndpoint;
+import et.restlink.sas.ras.binding.SubscriberBindingResourceAdaptor;
 import et.restlink.sas.ras.authvector.AuthVectorRaEndpoint;
 import et.restlink.sas.ras.authvector.AuthVectorResourceAdaptor;
 import et.restlink.sas.ras.authvector.InMemoryAuthVectorBackend;
@@ -92,6 +94,7 @@ public class SasBootstrap implements SasVerifyEngine {
     private volatile S6aVerifierRaEndpoint s6aVerifierEndpoint;
     private volatile SwxVerifierRaEndpoint swxVerifierEndpoint;
     private volatile AuthVectorRaEndpoint authVectorEndpoint;
+    private volatile SubscriberBindingRaEndpoint subscriberBindingEndpoint;
     private volatile Jss7MapVerifierBackend jss7MapBackend;
     private volatile CorsacS6aVerifierBackend corsacS6aBackend;
     private volatile CorsacSwxVerifierBackend corsacSwxBackend;
@@ -119,6 +122,7 @@ public class SasBootstrap implements SasVerifyEngine {
         wireS6aVerifierRa();
         wireSwxVerifierRa();
         wireAuthVectorRa();
+        wireSubscriberBindingRa();
         registerSbbTypes();
         mapEventToSbb();
         LOG.info("=== Silent Auth SAS ready — resolver={}ms map={}ms s6a={}ms swx={}ms total={}ms ===",
@@ -287,6 +291,26 @@ public class SasBootstrap implements SasVerifyEngine {
         authVectorEndpoint = new AuthVectorRaEndpoint(ra);
         container.registerRa(authVectorEndpoint, authVectorEndpoint);
         LOG.info("Auth vector RA wired (TS 29.273 MAR/MAA vectors, own HSS only)");
+    }
+
+    /**
+     * Subscriber-binding RA (Phase 1c): resolves the IMSI an EAP exchange proved into
+     * the number a bank claims. Source order comes from {@code sas.binding.source-order};
+     * a source that is configured but has no transport in this deployment answers
+     * "unresolved" so the walk continues to the next one.
+     */
+    private void wireSubscriberBindingRa() {
+        SubscriberBindingResourceAdaptor ra = new SubscriberBindingResourceAdaptor();
+        SubscriberBindingRaEndpoint endpoint = new SubscriberBindingRaEndpoint(ra);
+        java.util.List<String> accepted = endpoint.configureSources(bindingSourceOrder());
+        container.registerRa(endpoint, endpoint);
+        subscriberBindingEndpoint = endpoint;
+        LOG.info("Subscriber binding RA wired sources={}", accepted);
+    }
+
+    private String bindingSourceOrder() {
+        String order = transportConfig.bindingSourceOrder();
+        return (order == null || order.isBlank()) ? "db" : order;
     }
 
     private void registerSbbTypes() {

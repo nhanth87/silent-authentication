@@ -44,6 +44,16 @@ public class SasTransportConfig {
     @ConfigProperty(name = "sas.transport.authvector", defaultValue = "memory")
     String authVectorTransport;
 
+    /**
+     * IMSI → MSISDN source order for the entitlement service, comma separated.
+     * Legal tokens are validated by
+     * {@link et.restlink.sas.ras.binding.SubscriberBindingResourceAdaptor#LEGAL_SOURCES};
+     * anything else is dropped, so a typo can never let a stale export answer ahead of
+     * the network.
+     */
+    @ConfigProperty(name = "sas.binding.source-order", defaultValue = "db")
+    String bindingSourceOrder;
+
     /** Resolver source: memory (default), cgnat, radius, or sd (PCRF Gx probe). */
     @ConfigProperty(name = "sas.transport.resolver", defaultValue = "memory")
     String resolverTransport;
@@ -150,6 +160,11 @@ public class SasTransportConfig {
     /** True when the auth-vector transport is the real (shared) SWx client. */
     public boolean useCorsacAuthVector() {
         return "corsac".equalsIgnoreCase(authVectorTransport);
+    }
+
+    /** Configured IMSI → MSISDN source order. */
+    public String bindingSourceOrder() {
+        return bindingSourceOrder;
     }
 
     public boolean useCgnatResolver() {
