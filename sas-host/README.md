@@ -1,4 +1,10 @@
-# Silent Auth SAS — CAMARA `/verify` adapter (P0)
+# Silent Auth SAS — `sas-camara`: CAMARA APIs + OAuth Authorization Server
+
+> Since 2026-10-01 this module is **one of two binaries**. The TS.43 entitlement server
+> (`/ts43`, EAP-AKA, `/entitlement/*`) moved to [`sas-ecs-host`](../sas-ecs-host/README.md);
+> this binary accepts its operator tokens (JWS in JWE, verified via the issuer's JWKS,
+> single use via the `sas_operator_token_jti` ledger). Architecture:
+> [`docs/design/sas-two-binary-architecture.md`](../docs/design/sas-two-binary-architecture.md).
 
 The **P0** of the Silent Authentication implementation: a Quarkus + micro-jainslee
 application that implements the CAMARA NumberVerification `POST /verify` surface over
@@ -49,9 +55,10 @@ POST /verify { phoneNumber }            (CAMARA NV v2.1.0)
 > **Java 25 only** (root AGENTS.md). Use `mise` → `zulu-25`. R&D only — never production;
 > production USSD 7.3 builds use Mobicents SLEE master-era JARs.
 
-Multi-module build (mirrors the epc pattern): root aggregator `sas-core` →
-`sas-api` (CAMARA northbound) + `sas-entitlement` (TS.43/Wi-Fi track) +
-`sas-host` (this runnable composition app).
+Multi-module build: root aggregator `sas-core` → shared `sas-common`, `sas-token`,
+`sas-transport`; CAMARA library `sas-api`; this runnable app `sas-host` (**sas-camara**).
+The entitlement side (`sas-entitlement` + `sas-ecs-host`) is a separate binary — gate
+H25 forbids this module from depending on it.
 
 ```bash
 cd worktrees/silent-authentication/main
@@ -94,7 +101,7 @@ contracts asserted by `harness/gates.yaml` (H1–H14). H15–H21 additionally ga
 device-parity, license-parity and micro-jainslee boundary checks. Run from the tree root:
 
 ```bash
-python3 harness/run_hardness.py          # 34/34 pass (contract + deployment gates)
+python3 harness/run_hardness.py          # 37/37 pass (contract + deployment + split gates)
 python3 harness/preflight_prod.py        # prod-profile verdict for THIS environment
 python3 harness/preflight_prod.py --selftest   # prove the deployment gate bites
 ```
@@ -174,64 +181,20 @@ If `sas.transport.jss7.config` is blank the bootstrap logs a warning and falls b
 to the in-memory backend (fail-closed — a misconfiguration never silently opens a
 signalling path).
 
-## TS.43 entitlement — `/ts43` and the MAP legs
+## OAuth AS and operator tokens (CAMARA ICM)
 
-D6 **Shape S**: this service is the one surface allowed to terminate EAP-AKA (RFC
-4187 / RFC 9048) against vectors it fetches from the operator's own HLR. `/verify`
-stays read-only.
+| Surface | Notes |
+|---|---|
+| `GET /authorize` | Authorization Code + mandatory PKCE S256 — NV network authentication from the connection source (edge headers only with `sas.oauth.authorize.trust-src-header=true`) |
+| `POST /token` | `authorization_code`, CIBA, `client_credentials`, JWT bearer (`sub=tel:` / `operatortoken:`) |
+| `POST /bc-authorize` | CIBA; `login_hint=operatortoken:<token>` or the cellular tuple |
+| `GET /jwks.json` | ES256 signing key (`use=sig`) + operator-token encryption key (`use=enc`) |
 
-```
-GET  /ts43/challenge?imsi=&msisdn=   →  {"reqId":..,"outcome":"CHALLENGE","challenge":"<base64 EAP-Request>"}
-POST /ts43/respond  {reqId, imsi, msisdn, response}
-                                    →  {"outcome":"SUCCESS","token":..,"expiresIn":..}
-                                    →  {"code":"EAP_FAILED","message":"AT_MAC mismatch"} …
-```
-
-The REST layer owns **no state**: it mints the `reqId`, submits a
-`Ts43RequestEvent` and awaits. Both hops share one activity, and `EntitlementSbb`
-(inside the container) holds the EAP state, drives the network legs and mints the
-token — gate H24 (`slee_boundary`) fails the build if that inverts.
-
-Flow inside the SBB:
-
-| Step | Leg | Fail-closed behaviour |
-|---|---|---|
-| fetch vector | MAP **SAI** (`sas.transport.authvector=jss7`) | GSM triplet answer ⇒ refusal, never a downgrade |
-| Challenge | `EapAkaServer.buildChallenge` | — |
-| verify | `AT_MAC` first, then `AT_RES` (RFC 4187 §10.15) | bad MAC ⇒ `AT_MAC mismatch`, no signalling dialog at all |
-| confirm number | MAP **SendIMSI** (`sas.binding.source-order=map-smi`) | unresolved/mismatch ⇒ no token |
-| mint token | `EntitlementTokenService` | — |
-
-Every exit path wipes the key material (`EapAkaServer.wipe()`), and a Challenge is
-single-use: a replayed `RESPOND` finds no session.
-
-### Properties
-
-| Property | Values | Meaning |
-|---|---|---|
-| `sas.transport.authvector` | `memory` (default) / `jss7` | where EAP vectors come from |
-| `sas.binding.source-order` | `db` (default) / `map-smi,…` | how the proved IMSI becomes a number |
-| `sas.entitlement.hmac-secret` | — | required to sign entitlement tokens |
-
-MAP SendIMSI is a **number-driven** source: it answers "which IMSI owns this
-MSISDN?", so it can only confirm a claim and never discover a number. It opts in
-explicitly (`supportsClaimVerification()`), because a claim must not silently
-disable the discovery sources (`sh-udr`, `swx-sar`).
-
-### One stack, one association
-
-Both MAP legs ride **one** jSS7 stack. Two stacks in one host collide on the same
-SCTP local port and the loser never gets an association — a failure that only
-surfaces later as `No AS found for routing message` on the one operation it lost.
-`ss7-sas.json` therefore carries routes for **both** service selectors (SSN 6 HLR,
-SSN 3 OAM) and the SAS activates the MAP services explicitly after start (this jSS7
-fork does not do it for you).
-
-### Run it
-
-```bash
-./scripts/ts43-lab-demo.sh    # see sas-jss7-testapp/README.md for the two processes
-```
+Access tokens are ES256 `at+jwt` with `aud`; ID tokens carry a pairwise `sub`. Operator
+tokens from a trusted entitlement server (`sas.operator-token.issuers-json`) are decrypted
+with `sas.operator-token.decryption-jwk`, verified against the issuer's JWKS (fetched by
+`ras/optoken/HttpJwksKeySource`), and consumed once in the database ledger. End-to-end
+check of both binaries: `scripts/split-smoke.sh`.
 
 ## License
 

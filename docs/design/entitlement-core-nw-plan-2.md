@@ -1,5 +1,12 @@
 # TS.43 Entitlement Service ↔ Core Network Plan
 
+> **Update 2026-10-01 — deployment shape.** The entitlement service now runs as its own
+> binary, `sas-ecs` (`sas-ecs-host`), separate from the CAMARA server `sas-camara`
+> (`sas-host`); tokens between them follow the operator-token profile (ES256 JWS in an
+> ECDH-ES/A256GCM JWE, CAMARA-side single-use ledger). See
+> [`sas-two-binary-architecture.md`](sas-two-binary-architecture.md). The EAP-AKA wire
+> codec defects listed there in §9 are **still open** and block any real-handset test.
+
 **Scope:** Full TS.43 EAP-AKA/-' entitlement server integrated with MAP (SS7/SCTP) and Diameter (SWx/S6a) signalling. Replaces lab-only `EapAkaDemoPeer` with production-ready FSM, secure key handling, and network-based subscriber binding. Prerequisite for Phase 2 (Auth Code Flow) and Phase 3 (OTP SMS).
 
 > **Status: plan of record. D6 decided — Shape S** (§2.1.1): the entitlement service
@@ -816,14 +823,14 @@ java -jar sas-jss7-testapp/target/sas-jss7-testapp.jar &
 dist/run.sh &
 
 # Run test
-curl -v http://localhost:8085/ts43?vers=1&app=ei.et&EAP_ID=00$(printf '%X' 251910000001 | cut -c1-20)
+curl -v http://localhost:8095/ts43?vers=1&app=ei.et&EAP_ID=00$(printf '%X' 251910000001 | cut -c1-20)
 # → GET 200 with EAP-Request/AKA-Challenge
 #   extract AT_RAND, AT_AUTN
 
 # UE sim (mock or `ue-sdk` client) computes RES||MAC
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"eap-relay-packet":"<b64 of EAP-Response>"}' \
-  http://localhost:8085/ts43
+  http://localhost:8095/ts43
 
 # → 200 with entitlement token + EAP-Success
 

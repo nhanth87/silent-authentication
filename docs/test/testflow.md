@@ -1,5 +1,11 @@
 # Silent Auth SAS — E2E Test Flow
 
+> **2026-10-01:** `/ts43` and `/entitlement/*` are served by the entitlement server
+> binary **sas-ecs** on **:8095** (`./scripts/package-dist.sh ecs`, `dist-ecs/run.sh`);
+> CAMARA endpoints stay on **sas-camara :8085**. The token `/entitlement/issue` returns is
+> an operator token (JWE) that sas-camara accepts as `operatortoken:<token>`. Two-binary
+> check: `scripts/split-smoke.sh`. Architecture: `docs/design/sas-two-binary-architecture.md`.
+
 Date: 2026-08-23 · Updated: 2026-09-11 (CAMARA `/camara` aliases, strict request bodies,
 `x-correlator` validation/echo; GSMA mock ↔ local compare §0d; CAMARA ICM OAuth Phase 3 manual runbook §0e; dist demo path §0b verified end-to-end;
 bẫy `quarkus.config.locations` thắng `-D` sysprops; build profile flag, 3 testapp
@@ -174,7 +180,7 @@ curl -s -X POST http://127.0.0.1:8086/api/reset
 **Bước 12 — ④ TS.43 Wi-Fi: cấp operator token:**
 
 ```bash
-curl -s -X POST http://localhost:8085/entitlement/issue \
+curl -s -X POST http://localhost:8095/entitlement/issue \
   -H 'Content-Type: application/json' \
   -d '{"msisdn":"+251911111111","imsi":"655010000000001","eapMethod":"EAP-AKA"}'
 ```
@@ -397,7 +403,7 @@ curl -s -X POST http://127.0.0.1:8086/api/reset
 **Step 12 — ④ TS.43 Wi-Fi: issue operator token:**
 
 ```bash
-curl -s -X POST http://localhost:8085/entitlement/issue \
+curl -s -X POST http://localhost:8095/entitlement/issue \
   -H 'Content-Type: application/json' \
   -d '{"msisdn":"+251911111111","imsi":"655010000000001","eapMethod":"EAP-AKA"}'
 ```
@@ -1172,7 +1178,7 @@ OUT sendImsi                | ReturnResultLast | msisdn=251911111111 imsi=655***
 
 ```bash
 # (a) SIM khác trả lời → MAC fail, KHÔNG mở dialog MAP nào
-CH=$(curl -s 'http://127.0.0.1:8085/ts43/challenge?imsi=655010000000001&msisdn=%2B251911111111' \
+CH=$(curl -s 'http://127.0.0.1:8095/ts43/challenge?imsi=655010000000001&msisdn=%2B251911111111' \
      | sed -n 's/.*"challenge":"\([^"]*\)".*/\1/p')
 java -cp sas-entitlement/target/classes et.restlink.sas.entitlement.lab.LabSimCardMain \
      655010000000002 "$CH"      # card của IMSI khác
@@ -1182,7 +1188,7 @@ java -cp sas-entitlement/target/classes et.restlink.sas.entitlement.lab.LabSimCa
 # POST /ts43/respond với reqId mới → {"code":"EAP_FAILED","message":"no outstanding challenge for this reqId"}
 
 # (c) IMSI lạ → không có vector
-curl -s 'http://127.0.0.1:8085/ts43/challenge?imsi=655010000009999&msisdn=%2B251911111111'
+curl -s 'http://127.0.0.1:8095/ts43/challenge?imsi=655010000009999&msisdn=%2B251911111111'
 # → {"code":"ENTITLEMENT_UNAVAILABLE","message":"no authentication vector available"}
 
 # (d) claim một số HLR không biết → EAP OK, SỐ bị từ chối (không có token)
@@ -1353,7 +1359,7 @@ Reset về mặc định: `curl -X POST http://127.0.0.1:8086/api/reset`
 > Swap)** và freshness qua **Sh UDR/SNR** read-only.
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8085/entitlement/issue \
+TOKEN=$(curl -s -X POST http://localhost:8095/entitlement/issue \
   -H 'Content-Type: application/json' \
   -d '{"msisdn":"+251911111111","imsi":"655010000000001","eapMethod":"EAP-AKA"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
@@ -1476,7 +1482,7 @@ runbook đầy đủ §0f.
 # /entitlement/exchange → {"msisdn":"+251911111111","valid":true}
 
 # fail-closed: IMSI lạ không có vector
-curl -s 'http://127.0.0.1:8085/ts43/challenge?imsi=655010000009999&msisdn=%2B251911111111'
+curl -s 'http://127.0.0.1:8095/ts43/challenge?imsi=655010000009999&msisdn=%2B251911111111'
 # → ENTITLEMENT_UNAVAILABLE / no authentication vector available
 ```
 

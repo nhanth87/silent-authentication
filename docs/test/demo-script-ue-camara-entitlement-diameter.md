@@ -1,5 +1,11 @@
 # Demo Script — UE SDK → CAMARA `/verify` → Entitlement (TS.43) → S6a (cellular) + SWx (operator leg)
 
+> **2026-10-01:** `/ts43` and `/entitlement/*` are served by the entitlement server
+> binary **sas-ecs** on **:8095** (`./scripts/package-dist.sh ecs`, `dist-ecs/run.sh`);
+> CAMARA endpoints stay on **sas-camara :8085**. The token `/entitlement/issue` returns is
+> an operator token (JWE) that sas-camara accepts as `operatortoken:<token>`. Two-binary
+> check: `scripts/split-smoke.sh`. Architecture: `docs/design/sas-two-binary-architecture.md`.
+
 > Kịch bản demo đầu cuối cho Restlink Silent Auth (Ethiopia): từ **UE SDK** thu
 > session-tuple, qua northbound **CAMARA Number Verification**, qua track
 > **TS.43 entitlement** (Wi-Fi), xuống tận lớp **Diameter** signalling bằng
@@ -220,7 +226,7 @@ qua **operator REST (CAMARA NV / SIM Swap)** + freshness **Sh UDR/SNR**, không 
 ### 5.1 Cấp token tạm (thay cho EAP-AKA thật, trong lab gọi trực tiếp)
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8085/entitlement/issue \
+TOKEN=$(curl -s -X POST http://localhost:8095/entitlement/issue \
   -H 'Content-Type: application/json' \
   -d '{"msisdn":"+251911111111","imsi":"655010000000001","eapMethod":"EAP-AKA"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
@@ -268,7 +274,7 @@ curl -s -X POST http://localhost:8085/verify \
 ### 5.4 Đối soát định danh (exchange)
 
 ```bash
-curl -s -X POST http://localhost:8085/entitlement/exchange \
+curl -s -X POST http://localhost:8095/entitlement/exchange \
   -H 'Content-Type: application/json' \
   -d "{\"token\":\"$TOKEN\"}"
 # → {"msisdn":"+251911111111","imsi":"655010000000001","eapMethod":"EAP-AKA","valid":false}

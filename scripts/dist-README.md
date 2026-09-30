@@ -1,5 +1,15 @@
 # Restlink Silent Auth SAS — ship this folder
 
+This dist is one of two binaries — `.service` says which:
+
+| `.service` | Binary | Port (lab) | Built by |
+|---|---|---|---|
+| `camara` | **sas-camara** — CAMARA NV / SIM Swap / OTP-SMS + OAuth AS | 8085 | `./scripts/package-dist.sh camara` → `dist/` |
+| `ecs` | **sas-ecs** — TS.43 entitlement server (EAP-AKA over MAP/Diameter) | 8095 | `./scripts/package-dist.sh ecs` → `dist-ecs/` |
+
+`sas-ecs` has no admin UI (`app/`) and no database. The sections below describe the
+CAMARA dist; for sas-ecs see `sas-ecs-host/README.md` in the source tree.
+
 Self-contained Quarkus **fast-jar** runtime for the Silent Auth SAS
 (CAMARA NumberVerification `/verify` over Resolver → Verifier → Policy,
 fail-closed).

@@ -129,7 +129,7 @@ See [`docs/design/cellular-bearer-login.md`](docs/design/cellular-bearer-login.m
   the explicit list of what is still unproven (HSTS, live mTLS/SS7/Diameter UAT, key lifecycle).
 
 ```bash
-python3 harness/run_hardness.py     # 34/34 — design contract (H1–H14) + deployment (H15–H21)
+python3 harness/run_hardness.py     # 37/37 — design contract (H1–H14) + deployment (H15–H21, H26–H27) + boundaries (H22–H25)
                                     #       + device bearer-declaration parity (H22)
                                     #       + dual-license parity (H23)
                                     #       + micro-jainslee boundary (H24)

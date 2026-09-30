@@ -24,9 +24,13 @@ main/
 ├── docs/design/              ← SAS flow, unified architecture, cellular bearer login, TS.43
 ├── docs/research/            ← 3GPP/GSMA/CAMARA spec notes (SoT for harness gates)
 ├── proposal/                 ← formal DOCX chapters + build script
-├── sas-api/                  ← CAMARA northbound library (/verify, oauth, security)
-├── sas-entitlement/          ← TS.43/Wi-Fi entitlement track library
-├── sas-host/                 ← runnable Quarkus app (SLEE bootstrap, RAS, CDR, admin)
+├── sas-common/               ← shared kernel: model, SasTimeouts, API-key auth
+├── sas-token/                ← shared JOSE: ES256 JWS + operator token (JWS in JWE), Nimbus
+├── sas-transport/            ← shared RAs: MAP (jSS7, SCTP) + Diameter SWx, auth-vector, binding
+├── sas-api/                  ← CAMARA library (/verify, SIM Swap, OTP, OAuth AS, operator-token accept)
+├── sas-entitlement/          ← entitlement library (EAP-AKA, /ts43, /entitlement, token issuer)
+├── sas-host/                 ← BINARY sas-camara :8085 (SasBootstrap, resolver/S6a RAs, CDR, admin)
+├── sas-ecs-host/             ← BINARY sas-ecs :8095 (EcsBootstrap, EntitlementSbb) — TS.43 ECS
 ├── sas-diameter-testapp/     ← lab HSS/AAA/PCRF(Gx) Diameter simulator (corsac), :3868
 ├── sas-jss7-testapp/         ← lab home-HLR simulator (jSS7 coral-valley), SCTP :2906
 ├── ue-sdk/                   ← device-side tuple SDK (Java 25, JVM) — AccessTech, Connector
@@ -40,24 +44,31 @@ main/
 
 Build boundaries that are easy to get wrong:
 
-- Root aggregator builds **only** `sas-api` + `sas-entitlement` + `sas-host`.
+- **Two binaries** (plan of record: `docs/design/sas-two-binary-architecture.md`):
+  `sas-host` = **sas-camara** (CAMARA APIs + OAuth AS) and `sas-ecs-host` = **sas-ecs**
+  (TS.43 entitlement server, EAP-AKA over MAP/Diameter). They share `sas-common`,
+  `sas-token`, `sas-transport` and meet only through the operator token; gate **H25**
+  fails the build tree if either side depends on or imports the other.
+- Root aggregator builds the 7 modules above (`sas-common` … `sas-ecs-host`).
   The two test apps (`sas-diameter-testapp`, `sas-jss7-testapp`) and all `ue-sdk*`
   modules are **standalone builds** — `cd` in and build them individually.
-- `dist/`, `slides/`, `*/target/`, `sas-host/data/` are **gitignored local artifacts** —
+- `dist/`, `dist-ecs/`, `slides/`, `*/target/`, `sas-host/data/` are **gitignored local artifacts** —
   never commit them (also push-blockers, see `harness/preflight_prod.py` PRO-xx).
 
 ## 1. Commands
 
 ```bash
-# Full build + tests (JDK 25 via mise; modules: sas-api, sas-entitlement, sas-host)
+# Full build + tests (JDK 25 via mise; 7 modules, 647 tests)
 mvn -o test                                  # from repo root
-mvn -o test -pl sas-host -Dtest=ClassName    # single test class
+mvn -o test -pl sas-host -am -Dtest=ClassName -Dsurefire.failIfNoSpecifiedTests=false
 
-# Lab dist: package then run (Quarkus fast-jar, NEVER a fat jar)
-./scripts/package-dist.sh                    # assembles dist/ (SAS_DIST_DIR to override)
-dist/run.sh                                  # lab profile, plain HTTP :8085, H2 under data/
+# Lab dists: package then run (Quarkus fast-jar, NEVER a fat jar)
+./scripts/package-dist.sh [camara|ecs|all]   # camara → dist/ (:8085), ecs → dist-ecs/ (:8095)
+dist/run.sh                                  # sas-camara lab: plain HTTP :8085, H2 under data/
+dist-ecs/run.sh                              # sas-ecs lab: plain HTTP :8095, in-memory vectors
 QUARKUS_PROFILE=prod dist/run.sh             # prod — env vars from application-prod.properties;
                                              # preflight refuses a lab-shaped boot
+scripts/split-smoke.sh                       # both binaries end to end + pcap (no root; user netns)
 
 # UE SDKs
 (cd ue-sdk && mvn -o test) && (cd ue-sdk-android && mvn -o test)
@@ -69,30 +80,29 @@ java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar   # HSS/AAA/Gx :3
 java --add-modules jdk.sctp -jar sas-jss7-testapp/target/sas-jss7-testapp.jar  # HLR sim SCTP :2906, ctrl :8087
 ```
 
-**TS.43 entitlement demo (the one-command demo).** With the HLR simulator and a MAP
-lab dist up, the whole chain — UE → `/ts43` → MAP SAI/SendIMSI → HLR sim → entitlement
-token → CAMARA `/verify` — is one script:
+**TS.43 entitlement demo.** With the HLR simulator and the **sas-ecs** dist up with MAP
+transports, the chain UE → `/ts43` → MAP SAI/SendIMSI → HLR sim → operator token is one
+script. ⚠ The EAP-AKA wire codec is still a P1 blocker (architecture doc §9): the demo
+uses a lab card built on the same codec, so it does not prove handset interoperability.
 
 ```bash
 ./scripts/ts43-lab-demo.sh
 ```
 
-Start the SAS for it with the MAP transports (see `sas-host/README.md` §TS.43):
+Start sas-ecs for it with the MAP transports (own association, ss7-ecs.json):
 
 ```bash
-./scripts/package-dist.sh
-(cd dist && SAS_TRANSPORT_MAP=jss7 SAS_TRANSPORT_AUTHVECTOR=jss7 \
-   SAS_BINDING_SOURCE_ORDER=map-smi \
-   SAS_TRANSPORT_JSS7_CONFIG=$PWD/../sas-host/src/main/resources/ss7-sas.json \
-   SAS_ENTITLEMENT_HMAC_SECRET=lab-demo ./run.sh)
+./scripts/package-dist.sh ecs
+(cd dist-ecs && SAS_TRANSPORT_AUTHVECTOR=map SAS_BINDING_SOURCE_ORDER=map-smi \
+   SAS_TRANSPORT_JSS7_CONFIG=$PWD/configs/ss7-ecs.json ./run.sh)
 ```
 
 ```bash
 # Gates — run after any contract/design/deployment change (order matters: harness first)
-python3 harness/run_hardness.py              # 34/34 gates H1–H24, exit 0 = pass
-python3 harness/run_hardness.py --mutations  # H24 slee_boundary mutation self-test — 10/10
-python3 harness/preflight_prod.py            # prod-profile verdict for THIS env (exit = #fails)
-python3 harness/preflight_prod.py --selftest # 24/24 mutation scenarios detected
+python3 harness/run_hardness.py              # 37/37 gates H1–H27, exit 0 = pass
+python3 harness/run_hardness.py --mutations  # H24 10/10 + H25 9/9 mutation self-tests
+python3 harness/preflight_prod.py --service camara|ecs|all   # prod verdict for THIS env
+python3 harness/preflight_prod.py --selftest # 41/41 scenarios (camara + ecs baselines + mutations)
 
 # Artifacts
 python3 proposal/scripts/build_proposal_docx.py
@@ -229,13 +239,16 @@ GSMA index: `docs/research/gsma-fs-index.md`.
 
 ## 7. Hardness gate (installed)
 
-Gates in `harness/gates.yaml` (H1–H24), each anchored to a 3GPP clause / CAMARA contract.
+Gates in `harness/gates.yaml` (H1–H27), each anchored to a 3GPP clause / CAMARA contract.
 H1–H14 assert the documented design contract; **H15–H21** assert the deployment artifact
-via `preflight_prod.verify()` (29 `PRO-xx` static checks over `application.properties` +
-`application-prod.properties` + `${ENV}`); **H22** device bearer-declaration parity
-(checker `access_tech_parity`); **H23** dual-license parity (checker `license_parity`);
-**H24** micro-jainslee boundary (checker `slee_boundary`, mutation-checked via
-`harness/mut_slee_boundary.py`). Runner: `harness/run_hardness.py`.
+via `preflight_prod.verify(scenario, service)` (static `PRO-xx` checks over each binary's
+`application.properties` + `application-prod.properties` + `${ENV}`; H19 runs against
+sas-ecs); **H22** device bearer-declaration parity (checker `access_tech_parity`); **H23**
+dual-license parity (checker `license_parity`); **H24** micro-jainslee boundary (checker
+`slee_boundary`, mutation-checked via `harness/mut_slee_boundary.py`); **H25** two-binary
+split + entitlement signalling bans (checker `entitlement_split`, mutation-checked via
+`harness/mut_entitlement_split.py`); **H26** sas-ecs prod profile; **H27** sas-camara
+OAuth AS (ES256) + operator-token trust. Runner: `harness/run_hardness.py`.
 Spec text SoT: `docs/research/`.
 
 ### Device SDK / transport contract
@@ -287,8 +300,9 @@ is coded around the container**; enforced by `harness/gates.yaml` H24 →
 - All SAS runtime behaviour lives inside the micro-jainslee container: one
   container, RAs + SBBs. The HTTP/CAMARA layer only submits events and awaits the
   outcome — it never owns activity state, timers or signalling transports.
-- `com.microjainslee.core.*` is reachable from **one** seam only:
-  `sas-host/src/main/java/et/restlink/sas/bootstrap/SasBootstrap.java`. No raw
+- `com.microjainslee.core.*` is reachable from **one seam per binary** only:
+  `sas-host/.../bootstrap/SasBootstrap.java` (sas-camara) and
+  `sas-ecs-host/.../bootstrap/EcsBootstrap.java` (sas-ecs). No raw
   `javax.slee` / `jakarta.slee` API anywhere (a second SLEE container is forbidden).
 - No hand-rolled executors/thread pools, timers, sockets or HTTP clients outside
   `/ras/` (RA delegates = the transport seam and may own I/O). No direct
@@ -329,9 +343,26 @@ Open items (do not silently invent answers):
 - [x] CAMARA **ICM OAuth Phase 3** — `/bc-authorize` client-assertion binding,
       `private_key_jwt`, `/token` CIBA + `client_credentials` + JWT bearer
       (`sub=tel:<E.164>` / `operatortoken:<token>`), discovery/JWKS, and CAMARA scope
-      policy. H14 source-checks the grant/auth surface. Still open: authorization code,
-      refresh tokens, ID token, pseudonymous `sub`, and prod enforcement of
-      `sas.oauth.require-client-auth=true` + an env-sourced `sas.oauth.clients-json`.
+      policy. H14 source-checks the grant/auth surface.
+- [x] **CAMARA NV Authorization Code + PKCE, ES256 tokens (2026-10-01)** — `GET /authorize`
+      (exact redirect_uri, mandatory S256 PKCE, network authentication through the
+      Resolver on the connection source), `/token` `authorization_code`, ES256 `at+jwt`
+      access tokens with `aud`, pairwise ES256 ID tokens, JWKS publication, algorithm-
+      pinned resource server; prod enforces `require-client-auth=true` + env
+      `clients-json` (PRO-31) and refuses HS256 (PRO-33). Fixed: ES256 client
+      assertions were verified as DER. Still open: refresh tokens; shared store for
+      authorization codes / CIBA bindings (sticky LB until then).
+- [x] **Two binaries (2026-10-01)** — `sas-camara` (`sas-host`) and `sas-ecs`
+      (`sas-ecs-host`) on micro-jainslee + Java 25; operator token = ES256 JWS nested
+      in ECDH-ES/A256GCM JWE, verified by CAMARA via issuer JWKS, single use via the
+      durable `sas_operator_token_jti` ledger. Doc: `docs/design/sas-two-binary-architecture.md`.
+- [ ] **EAP-AKA wire codec is not RFC 4187** (P1 blocker — architecture doc §9): attribute
+      length units, Subtype/Reserved, reserved octets, AT_RES bit length, AT_AUTS 14,
+      AT_KDF 2 octets, fabricated attribute table, Challenge without AT_MAC, resync keys,
+      MK identity. The lab card shares the codec, so lab success proves nothing about
+      a real handset.
+- [ ] `/ts43` → GSMA TS.43 wire format + abuse controls (per-IMSI rate limit, no IMSI
+      existence oracle).
 - [x] **P2 real MAP transport** — `Jss7MapVerifierBackend` (jSS7 coral-valley) drives
       PSI + SAI dialogs against the own HLR/HSS, never ATI. Opt-in via
       `sas.transport.map=jss7` (sample config `sas-host/src/main/resources/ss7-sas.json`).
