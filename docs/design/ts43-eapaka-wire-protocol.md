@@ -243,7 +243,12 @@ Every stage is single-use and bounded; missing evidence never approves.
 Hard invariants (do not regress):
 
 - **Own HSS only** — SWx targets the operator HSS; no interconnect AAA (FS.11 Category 1).
-- **EAP-AKA terminates at the operator AAA**, never in SAS.
+- **EAP-AKA terminates at the operator AAA** — with one scoped exception (D6, decided):
+  the Restlink **entitlement service** (`POST /ts43`) terminates EAP-AKA itself as the EAP
+  server, under an operator-granted AuC access agreement. **No other surface** may terminate
+  EAP-AKA or consume authentication vectors; `/verify` keeps the read-only evidence path.
+  Shape R (relay to the operator AAA, TS.43 §2.8.1) is retained as the production fallback —
+  see [`entitlement-core-nw-plan-2.md`](entitlement-core-nw-plan-2.md) §2.1.2.
 - **Fail-closed** — empty MAA vector set, missing entitlement, sync-failure, stale AV ⇒ FALLBACK.
 - **Single-use** — token and attestation are both consume-once; the token is never refreshable.
 - **Privacy** — IMSI/MSISDN stay server-side; the device/app sees a boolean outcome only.

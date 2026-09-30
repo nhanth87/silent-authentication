@@ -128,6 +128,12 @@ IP:port:ts  ──[Resolver]──►  MSISDN/IMSI  ──[Verifier]──►  a
   `bindProcessToNetwork()` (process-wide, leaks).
 - **Privacy** — MSISDN/IMSI **never** returned to the mobile app (bank backend only).
 - **Spoofed GT** — trust only own HSS responses (FS.11 §3.3.4).
+- **EAP-AKA termination** — operator 3GPP AAA, **except** on the entitlement service
+  `POST /ts43`, where Restlink is the EAP server under an operator-granted vector-grade AuC
+  access agreement (D6 decided, Shape S). No other surface may terminate EAP-AKA or consume
+  auth vectors; `/verify` stays read-only. Shape R retained as production fallback — see
+  `docs/design/entitlement-core-nw-plan-2.md` §2.1.1–§2.1.2 and the gate that must
+  eventually assert this boundary (H25).
 
 ### SAS FSM + timeouts
 
@@ -154,7 +160,10 @@ vectors / SIM-swap freshness), SRI-SM (SMS routing). jSS7 (coral-valley):
 **LTE/5G — Diameter S6a:** ULR/ULA, NOR/NOA, PUR/PUA (FS.19) + read-only Sh
 UDR/SNR (TS 29.328/29.329). **No AIR/AIA / IDR/IDA on the verify path**: AIR consumes
 real EPS vectors and advances the AuC SQN (MAC-failure re-sync risk); IDR is an
-HSS→MME push, the wrong direction for a read query.
+HSS→MME push, the wrong direction for a read query. The **only** vector-consuming path is
+the entitlement service `POST /ts43` (D6/Shape S, `docs/design/entitlement-core-nw-plan-2.md`
+§2.1.1) and it is disjoint from `/verify`; Shape R (relay to the operator AAA) stays the
+retained production fallback (§2.1.2).
 
 **Unified architecture (two complementary strategies):** A — replace OTP (silent
 auth, app/identity layer); B — protect OTP (SMS Home Routing + SS7/Diameter/5G FW,
@@ -182,8 +191,14 @@ GSMA index: `docs/research/gsma-fs-index.md`.
 15. `docs/result_p1_reaudit.md` — **what is production-gated today** + what is still unproven
 16. `docs/design/cellular-bearer-login.md` — UE SDK bearer pinning platform matrix
 17. `docs/design/ts43-eapaka-wire-protocol.md` + `ts43-entitlement-integration-contract.md`
-18. `LICENSE.md` — dual license scope; every module README repeats both editions
-19. `README.md` — overview + build commands · `proposal/chapters/*` · `slides/`
+18. `docs/design/entitlement-core-nw-plan-2.md` — **plan of record** for the TS.43
+    entitlement service: EAP-AKA library, SWx/MAP vector paths, `/ts43` surface, FSM,
+    phases, H25/PRO-30..33. **D6 decided: Shape S** (SAS terminates EAP-AKA on `/ts43`
+    only, §2.1.1); **Shape R retained as the production fallback / pending issue** with
+    flip triggers R1–R5 (§2.1.2) — production must not boot before R1–R3 close
+    · `entitlement-core-network-plan.md` — the operator-facing ECS/relay contract
+19. `LICENSE.md` — dual license scope; every module README repeats both editions
+20. `README.md` — overview + build commands · `proposal/chapters/*` · `slides/`
 
 ## 7. Hardness gate (installed)
 
@@ -307,6 +322,14 @@ Open items (do not silently invent answers):
       Play Integrity / DeviceCheck attestation) so `accessTech` stops being a claim.
 - [ ] TS.43 entitlement server feasibility (Wi‑Fi path) — library + wire protocol
       designed (`sas-entitlement`, `docs/design/ts43-*.md`); operator-side feasibility open
+- [x] **D6 decided (Shape S)** — the entitlement service `POST /ts43` terminates EAP-AKA
+      itself under an operator-granted vector-grade AuC access agreement; `/verify` stays
+      read-only and no other surface may consume auth vectors. Record + rationale:
+      `docs/design/entitlement-core-nw-plan-2.md` §2.1.1
+- [ ] **PENDING — Shape R production fallback** (`entitlement-core-nw-plan-2.md` §2.1.2):
+      close R1 (operator refuses vector-grade AuC access), R2 (DER/EAP relay only), R3
+      (operator runs its own ECS) **in writing** before any production boot; the prod gate
+      must refuse an unresolved D2/D5 deploy. Blocks production, not the lab.
 - [ ] Strategy B product choice (SMS Router / SS7 FW vs jSS7-based)
 - [ ] Restlink pilot API contract for Ethiopian banks
 - [ ] **SAS admin dashboard** hardening — in progress in `sas-host/` (`sas-host/TODO.md`)

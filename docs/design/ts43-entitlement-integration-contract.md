@@ -13,7 +13,7 @@ Companion wire-level spec: [`ts43-eapaka-wire-protocol.md`](ts43-eapaka-wire-pro
 
 | Responsibility | Owner | Notes |
 |----------------|-------|-------|
-| SIM credential, EAP-AKA / EAP-AKA' termination | **Operator 3GPP AAA** | RFC 5448; never in SAS |
+| SIM credential, EAP-AKA / EAP-AKA' termination | **Operator 3GPP AAA** — except the Restlink entitlement service (`/ts43`), which terminates EAP-AKA itself under an operator-granted AuC access agreement (D6, Shape S) | RFC 5448; see [`entitlement-core-nw-plan-2.md`](entitlement-core-nw-plan-2.md) §2.1.1 |
 | Auth vectors + non-3GPP profile | **Operator HSS** | served over SWx (TS 29.273) |
 | EAP carriage over Wi-Fi (SWm / RADIUS) | **Operator** | untrusted/trusted WLAN |
 | Entitlement issuance + token mint | **Restlink SAS** | `/entitlement/issue` |
@@ -65,11 +65,27 @@ The operator agrees to expose, or already runs, a **3GPP AAA** that:
 - returns a **strict success/failure** outcome. Sync-failure, stale vectors, missing
   entitlement or timeout must surface as failure (fail-closed).
 
-The SAS does **not** implement an EAP-AKA peer in production; the lab
-`sas-diameter-testapp` and `EapAkaDemoPeer` exist only to emulate the operator AAA for a
-POC. The operator may choose to deploy a **TS.43 Entitlement Server** in front of the
-AAA (spec-recommended) or add the `/entitlement/issue` call directly to its AAA
-integration — from the SAS's perspective the contract is identical.
+**Amendment (D6, decided — Shape S):** Restlink's **entitlement service** *does* implement
+an EAP-AKA peer, on the `POST /ts43` surface only. That is a deliberate move of AKA
+verification into Restlink, and it depends on an operator-granted **vector-grade AuC access**
+agreement (SWx MAR returning CK/IK/XRES, or MAP SAI returning the quintuplet, with shared
+AuC SQN state). The lab `sas-diameter-testapp` and `EapAkaDemoPeer` still exist only to
+emulate the operator AAA for a POC.
+
+Two consequences the operator must accept in writing before production:
+
+1. **Vector access**: Restlink reads authentication vectors and manages AUTS resync. An
+   operator that declines this re-opens the decision — **Shape R** (Restlink relays EAP to
+   the operator AAA, GSMA TS.43 §2.8.1) is retained as the production fallback, with the
+   flip conditions listed in
+   [`entitlement-core-nw-plan-2.md`](entitlement-core-nw-plan-2.md) §2.1.2.
+2. **Scope discipline**: only `/ts43` may consume vectors. The `/verify` path keeps the
+   existing read-only, non-consuming evidence rules (`AGENTS.md` §5, gate H24).
+
+The operator may still choose to deploy a **TS.43 Entitlement Server** in front of
+the AAA (spec-recommended) or add the `/entitlement/issue` call directly to its AAA
+integration — from the SAS's perspective the `/issue` + `/verify` contract is identical
+either way; only the EAP leg differs.
 
 ---
 
@@ -163,7 +179,25 @@ None of these block the lab POC; they gate production UAT.
 
 ---
 
-## 10. Rollout checklist (proposal)
+## 10. What a real TS.43 ECS still needs
+
+This contract assumes the operator's AAA **pushes** to `/entitlement/issue`. A real GSMA
+TS.43 **Entitlement Configuration Server** instead owns a device-facing `GET`/`POST /`
+surface, version negotiation, notification registration, an entitlement document, and — the
+blocking leg — an **EAP-AKA relay from the ECS to the 3GPP AAA** (TS.43 §2.8.1) with the
+normative DER Result-Code → HTTP mapping. None of that exists yet.
+
+Gap analysis, target architecture, the ordered work plan (W1–W10) and the operator
+question list: [`entitlement-core-network-plan.md`](entitlement-core-network-plan.md).
+
+**Plan of record** for building it (EAP-AKA library, SWx/MAP vector paths, `/ts43` surface,
+FSM, phases, H25/PRO-30..33):
+[`entitlement-core-nw-plan-2.md`](entitlement-core-nw-plan-2.md). ⚠ That plan's **D6** (§2.1)
+proposes moving EAP-AKA termination into the SAS, which contradicts §1/§4 above and
+[`ts43-eapaka-wire-protocol.md`](ts43-eapaka-wire-protocol.md) §7. Until D6 is decided, this
+contract remains the governing statement of the boundary: **operator AAA terminates EAP-AKA**.
+
+## 11. Rollout checklist (proposal)
 
 1. Operator agrees to expose (or build) the 3GPP AAA + own-HSS SWx path.
 2. Restlink delivers the `/entitlement/issue` + `/verify` (operatortoken) surface.

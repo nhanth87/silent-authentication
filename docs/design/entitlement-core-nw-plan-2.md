@@ -2,6 +2,14 @@
 
 **Scope:** Full TS.43 EAP-AKA/-' entitlement server integrated with MAP (SS7/SCTP) and Diameter (SWx/S6a) signalling. Replaces lab-only `EapAkaDemoPeer` with production-ready FSM, secure key handling, and network-based subscriber binding. Prerequisite for Phase 2 (Auth Code Flow) and Phase 3 (OTP SMS).
 
+> **Status: plan of record. D6 decided — Shape S** (§2.1.1): the entitlement service
+> terminates EAP-AKA itself, under an operator-granted AuC access agreement. **Shape R**
+> (relay to the operator AAA, TS.43-native) is retained as the **production fallback /
+> pending issue** (§2.1.2) with explicit flip triggers — production must not boot before
+> those triggers are closed in writing.
+> Supersedes the earlier gap analysis in `entitlement-core-network-plan.md` for scope and
+> phasing; that document is kept for the operator-facing ECS/relay contract.
+
 **Audience:** Digicom-ET development, Ethio Telecom integration team, operators.
 
 **Date:** 2026-09-30  
@@ -74,7 +82,7 @@
 
 ## 2. Critical Decisions (Gate Pre-Build)
 
-These decisions **block the implementation** until resolved with Ethio Telecom. ADR reference: `docs/design/adr-ts43-entitlement-core.md`.
+These decisions **block the implementation** until resolved with Ethio Telecom. ADR reference: this document (§2 = the decision record; there is no separate `adr-*` file in this tree).
 
 | ID | Decision | Impact | How to close |
 |---|---|---|---|
@@ -84,7 +92,99 @@ These decisions **block the implementation** until resolved with Ethio Telecom. 
 | **D4** | What TS.43 **app identifier** and token format? | Token expires, format, scope. Not inventing. | **Ethio Telecom** or **GSMA** spec section reference. |
 | **D5** | **Global Title and Diameter realm** for SAS? | STP/DEA route + whitelist. AuC/HSS credential trust. | **Ethio Telecom** GT assignment (e.g. `+251xxx`), Diameter `Origin-Host` (e.g. `sas.ethiotel.et`), realm, mutual auth cert. |
 
-**No Phase 1 code can land without all five closed.**
+| **D6** | **Where does EAP-AKA terminate?** This plan moves AKA verification **into the SAS** (`EapAkaServer`, RES/XRES compare, MAC check, AUTS resync). Today the tree states the opposite in three places. | **Architectural reversal.** It also means Restlink must hold a verified AKA stack and manage SQN resync against the operator AuC — an operator will not grant that lightly. | **Owner decision (Restlink, then Ethio Telecom).** See §2.1. |
+
+**No Phase 1 code can land without D1–D5 closed. D6 is decided (Shape S, §2.1.1); the
+open production risk is R1–R3 in §2.1.2.**
+
+### 2.1 D6 — the EAP-AKA termination decision (blocking, owner-level)
+
+This plan is a genuine architectural change, not an implementation detail. The existing
+invariants, verbatim from the tree:
+
+- `AGENTS.md` §4 / contract §1: *"SIM credential, EAP-AKA / EAP-AKA' termination | **Operator
+  3GPP AAA** | RFC 5448; **never in SAS**"*
+- `ts43-eapaka-wire-protocol.md` §7: *"**EAP-AKA terminates at the operator AAA**, never in SAS"*
+- contract §4: *"The SAS does **not** implement an EAP-AKA peer in production; the lab
+  `sas-diameter-testapp` and `EapAkaDemoPeer` exist only to emulate the operator AAA for a POC."*
+
+So the two designs are mutually exclusive:
+
+| | **Shape S — SAS is the EAP server** (this plan, Phase 1a–1d) | **Shape R — SAS relays EAP to the operator AAA** (GSMA TS.43 §2.8.1, the spec-native way) |
+|---|---|---|
+| Who verifies RES/MAC | **Restlink** | **operator 3GPP AAA** |
+| Vectors | SAS fetches CK/IK/XRES from HSS over SWx, or the full quintuplet over MAP SAI | SAS relays EAP payloads; the AAA fetches and consumes its own vectors |
+| SQN / AUTS | SAS owns resync state → an off-by-one desyncs the AuC for the real network | never Restlink's problem |
+| SIM key material in Restlink's process | CK/IK/MSK/EMSK transiently — a much larger secret surface | none; the relay sees EAP packets, not keys |
+| What the operator must agree to | hand Restlink vector-grade access to the AuC | expose a DER/EAP relay endpoint (or run the ECS themselves) |
+| Compliance fit | moves Restlink from "adapter above the operator" toward being an **AAA** | stays an adapter; matches TS.43 §2.8.1 literally |
+
+### 2.1.1 D6 — DECIDED: Shape S (SAS is the EAP server)
+
+**Decision: Shape S.** The entitlement service terminates EAP-AKA itself: it fetches vectors
+from the operator HSS/HLR, verifies RES against XRES, checks `AT_MAC`, handles one AUTS
+resync, then mints the entitlement token. Restlink accepts that this moves it from
+"adapter above the operator" toward being an AAA on the Wi-Fi entitlement path.
+
+Accepted consequences (all deliberate, all owned by Restlink):
+
+- CK/IK/MSK/EMSK exist transiently in the SAS process → the secret-handling rules in §3.4
+  and the zeroization mutation check (H25M) become load-bearing, not hygiene.
+- The SAS owns SQN resync state → §7 requires per-IMSI rate limiting, a hard resync cap of
+  1, and an explicit "do not retry on MAC failure beyond the first resync" rule.
+- Vector consumption and the `/verify` path must stay **disjoint**: `AGENTS.md` §5's
+  "no AIR on the verify path" (which exists because vectors advance the AuC SQN) is
+  preserved by confining every vector-consuming operation to `/ts43`. The `/verify` FSM
+  still uses the read-only, non-consuming evidence path.
+- MAP SAI is vector-consuming by construction, so under Shape S it may only serve the
+  EAP-AKA (not AKA') case and must be off the `/verify` hot path.
+
+**New boundary, stated once, everywhere:** *EAP-AKA terminates at the operator 3GPP AAA,
+**except** on the Restlink entitlement service (`POST /ts43`), where Restlink is the EAP
+server under an operator-granted AuC access agreement. No other surface may terminate or
+consume authentication vectors.* Amended in: `AGENTS.md` §4, contract §1/§4,
+`ts43-eapaka-wire-protocol.md` §7.
+
+### 2.1.2 Shape R retained as the **production fallback** (PENDING ISSUE)
+
+Shape S is the build target. Shape R is **not discarded — it is the escape hatch**, and it is
+retained here so a production deploy does not fail on it.
+
+**Why it is likely to be needed:** Shape S is only deployable if Ethio Telecom grants
+Restlink **vector-grade AuC access** (SWx MAR returning CK/IK/XRES, or MAP SAI returning the
+quintuplet, with the AuC's SQN/AV state shared with Restlink). Many operators will not. If
+they refuse — or if the SQN-resync liability is unacceptable contractually — Shape S cannot
+go to production and the deployment **must** flip to Shape R.
+
+**Triggers that force the flip (any one is sufficient):**
+
+| # | Trigger | Detected by |
+|---|---|---|
+| R1 | Operator refuses vector-grade AuC access for a third party | D2/D5 negotiation (ADR sign-off) |
+| R2 | Operator exposes only a Diameter EAP / DER endpoint (TS 29.273 + RFC 4072) or an SE/T5 function | D2 answer, D3 |
+| R3 | Operator runs its own TS.43 ECS and hands out entitlement results over an API | D1/Q1 of the operator conversation |
+| R4 | Real-network UAT shows SQN resync instability (`AUTS` loops, MAC failures at volume) | Phase 1e / UAT metrics |
+| R5 | Contractual/security review rejects Restlink holding CK/IK at all | Restlink + operator security review |
+
+**What Shape R requires (so the switch is configuration, not a rewrite):**
+
+1. `EapAkaServer` is reused **as the client/referee** — no crypto is thrown away. The UE SDK
+   needs the same `EapAkaKeys`/`EapAkaPrimeKeys` to compute `AT_RES`/`AT_MAC`.
+2. The vector-fetch RAs (`AuthVectorRA`, `Jss7MapAuthVectorBackend`, `CorsacSwxAuthVectorBackend`
+   returning CK/IK) are **replaced, not extended**, by a relay RA that forwards EAP payloads
+   over Diameter EAP (RFC 4072) to the operator AAA and maps the DER Result-Code per GSMA
+   TS.43 §2.8.1 (see `entitlement-core-network-plan.md` §2.1 for the normative table).
+3. `EntitlementSbb` keeps its FSM, timers and token issuance; only the VECTOR state changes
+   from "fetch + verify locally" to "relay + await AAA outcome".
+4. Therefore: **no `/ts43` request/response contract, no FSM state name, no token format and
+   no gate may depend on Shape S specifically.** This is a design constraint on Phase 1d —
+   if `EntitlementSbb`'s public surface leaks "I hold CK/IK", the R5→R1 flip becomes a
+   rewrite and the fallback is worthless.
+
+**Action before any production deploy:** close R1–R3 in writing. Until then a Shape S
+production boot is a **D2/D5-unresolved deploy**, and the prod gate must refuse it
+(follow-up: a `PRO-3x` preflight check that requires the recorded operator AuC-access
+agreement reference; the D6 gate itself is H25 + `PRO-30`, per §5.4/§5.5).
 
 ---
 
@@ -95,65 +195,80 @@ These decisions **block the implementation** until resolved with Ethio Telecom. 
 All new code is either pure library (no I/O) or sits in `/ras/` seam. No naked jSS7/Diameter outside of resource adapters.
 
 ```
-sas-entitlement/
+sas-entitlement/                                        (module is in the root reactor; no I/O here)
 ├── src/main/java/et/restlink/sas/entitlement/
 │   ├── eap/
-│   │   ├── EapPacket.java           (codec RFC 3748: type, code, ID, attrs)
-│   │   ├── EapAkaAttributes.java     (AT_* enums, encode/decode, builder)
-│   │   ├── EapAkaKeys.java           (CK, IK, MK, K_encr, K_aut via RFC 4187 §7)
-│   │   ├── EapAkaPrimeKeys.java      (CK', IK' per RFC 9048, TS 33.402 Annex A)
-│   │   ├── EapAkaServer.java         (state machine: CHALLENGE, RESPONSE, FAILURE)
-│   │   └── EapAkaTest.java           (RFC 4187 Appendix, vectors, RFC 5448, AKA')
-│   │
+│   │   ├── EapPacket.java              (codec RFC 3748: code, type, ID, attrs)
+│   │   ├── EapAkaAttributes.java        (AT_* encode/decode, builder)
+│   │   ├── EapAkaKeys.java              (CK, IK, K_encr, K_aut, MSK, EMSK per RFC 4187 §7)
+│   │   ├── EapAkaPrimeKeys.java         (CK', IK' per RFC 9048 / TS 33.402)
+│   │   └── EapAkaServer.java            (pure FSM: CHALLENGE, RESPONSE, FAILURE)
 │   ├── ts43/
-│   │   ├── Ts43Request.java          (vers, app, EAP_ID, terminal_* params)
-│   │   ├── Ts43Response.java         (eap-relay body, entitlement token)
-│   │   ├── Ts43Event.java            (submitted from REST → SBB)
-│   │   ├── Ts43Parser.java           (query params, EAP packet extraction)
-│   │   └── Ts43Test.java             (frame round-trip, PKCE state nonce)
+│   │   ├── Ts43Request.java             (terminal_id, app, entitlement_version, token, EAP_ID)
+│   │   ├── Ts43Response.java            (EAP relay body + entitlement token)
+│   │   └── Ts43Parser.java              (query + JSON body, EAP packet extraction)
 │   │
-│   ├── EntitlementConfig.java        (sas.entitlement.* properties)
-│   ├── EntitlementTokenService.java  (already exists; + signalTsOpaque(IMSI,eapMethod))
-│   ├── EntitlementResource.java      (already exists)
-│   └── AttestationVerifier.java      (already exists)
+│   ├── EntitlementConfig.java           (sas.entitlement.* properties)
+│   ├── EntitlementTokenService.java     (exists — method is issueToken(msisdn,imsi,eapMethod);
+│   │                                   │  signalTsOpaque() is NEW and does not exist yet)
+│   ├── EntitlementResource.java         (exists)
+│   └── AttestationVerifier.java         (exists)
+│
+├── src/test/java/et/restlink/sas/entitlement/          ← tests live HERE, not in src/main
+│   ├── eap/EapPacketTest.java           (frame round-trip, fuzz: truncate/duplicate/unknown attr)
+│   ├── eap/EapAkaKeysTest.java          (RFC 4187 vector, RFC 9048 CK'/IK', Milenage TS 35.208)
+│   ├── eap/EapAkaServerTest.java        (challenge, RES verify, MAC fail, AUTS resync ×1)
+│   └── ts43/Ts43ParserTest.java         (param binding, multi-valued app, version gate)
+│
+└── NOTE: SAS_AUTHVECTOR / SUBSCRIBER_DB are pure lookups, no raw I/O → they may live in
+   sas-api, not in an RA. H24 only forces a transport client (jSS7/Diameter/socket) into /ras/.
 
 sas-host/
 ├── src/main/java/et/restlink/sas/
-│   ├── ras/authvector/
-│   │   ├── AuthVectorResourceAdaptor.java
-│   │   ├── AuthVectorBackend.java     (interface: fetch(IMSI,scheme)→Future<Vec>)
-│   │   ├── AuthVectorRaEndpoint.java  (TC/Diameter event→activity→SBB)
-│   │   ├── Jss7MapAuthBackend.java    (MAP SAI: quintet, resync support)
-│   │   ├── CorsacSwxAuthBackend.java  (SWx MAR: EAP-AKA vector + CK'/IK')
-│   │   ├── InMemoryAuthVectorBackend.java (lab only)
-│   │   ├── command/FetchVectorCommand.java
-│   │   ├── command/ResyncCommand.java  (max 1 × per session)
-│   │   └── command/AbortAuthCommand.java
+│   ├── ras/authvector/                  ← the ONLY place a jSS7/Diameter client may live
+│   │   ├── AuthVectorBackend.java        (interface: fetchVectors(imsi,scheme,n)→Future<Vec>)
+│   │   ├── CorsacSwxAuthVectorBackend.java (SWx MAR — EXTENDS the existing
+│   │   │   │                             CorsacSwxVerifierBackend, do NOT fork a 2nd client:
+│   │   │   │                             MAR/MAA + SAR/SAA + per-Session-Id correlation already
+│   │   │   │                             work; add CK/IK + resync to that one)
+│   │   ├── Jss7MapAuthVectorBackend.java (MAP SAI, quintet only; triplet → reject)
+│   │   ├── InMemoryAuthVectorBackend.java (lab only; PRO-30 refuses it in prod)
+│   │   ├── AuthVectorResourceAdaptor.java (holds RaBootstrapPort, fires result events)
+│   │   ├── AuthVectorRaEndpoint.java     (implements RaEndpointPort + RaCommandPort)
+│   │   └── command/{FetchVector,Resync,AbortAuth}Command.java
 │   │
 │   ├── ras/binding/
+│   │   ├── SubscriberBindingBackend.java  (interface: lookup(imsi)→Future<msisdn>)
+│   │   ├── SwxSarBinding.java             (SWx SAR, Server-Assignment-Type = 12
+│   │   │                                 AAA_USER_DATA_REQUEST — exists in corsac's
+│   │   │                                 ServerAssignmentTypeEnum; the current SAS code
+│   │   │                                 sends REGISTRATION(1) — pick one, see §3.3)
+│   │   ├── ShUdrBinding.java              (read-only Sh UDR/SNR)
+│   │   ├── MapSendImsiBinding.java        (MAP SendIMSI on claimed MSISDN)
+│   │   ├── SubscriberDbBinding.java       (read-only export fallback)
 │   │   ├── SubscriberBindingResourceAdaptor.java
-│   │   ├── SubscriberBindingBackend.java (interface: lookup(IMSI)→Future<MSISDN>)
 │   │   ├── SubscriberBindingRaEndpoint.java
-│   │   ├── SwxSarBinding.java         (SWx SAR AAA_USER_DATA_REQUEST)
-│   │   ├── ShUdrBinding.java          (read-only Sh UDR)
-│   │   ├── MapSendImsiBinding.java    (MAP SendIMSI on claimed MSISDN)
-│   │   ├── SubscriberDbBinding.java   (fallback to exported DB if configured)
-│   │   ├── command/LookupBindingCommand.java
-│   │   └── command/AbortBindingCommand.java
+│   │   └── command/{LookupBinding,AbortBinding}Command.java
 │   │
 │   ├── sbbs/
-│   │   ├── EntitlementSbb.java        (FSM, timer, zeroize CK/IK/XRES)
+│   │   ├── EntitlementSbb.java            (FSM, timer, zeroize CK/IK/XRES)
 │   │   └── EntitlementSbbEvents.java
 │   │
-│   ├── web/
-│   │   └── Ts43Resource.java          (GET/POST /ts43, thin submit-await)
-│   │
-│   ├── bootstrap/
-│   │   └── SasBootstrap.java          (register AuthVectorRA, BindingRA, EntitlementSbb)
-│   │
-│   └── cdr/
-│       └── Ts43Cdr.java               (audit: timestamp, IMSI hash, result, no secrets)
+│   ├── web/Ts43Resource.java             (GET/POST /ts43 — thin submit-and-await)
+│   ├── bootstrap/SasBootstrap.java        (register AuthVectorRA, BindingRA, EntitlementSbb)
+│   └── cdr/Ts43Cdr.java                   (timestamp, IMSI hash, result; no secrets)
 ```
+
+Corrections vs the first draft (all verified against this tree):
+
+| Draft | Reality | Evidence |
+|---|---|---|
+| `class AuthVectorResourceAdaptor extends ResourceAdaptor` | no such base class. RA pattern = plain `final class` implementing `RaEndpointPort, RaCommandPort` + a delegate holding `RaBootstrapPort` | `ras/swxverifier/SwxVerifierRaEndpoint.java:28`, `SwxVerifierResourceAdaptor.java:30` |
+| `EapAkaTest.java`, `Ts43Test.java` under `src/main` | tests live in `src/test/java` and are named `*Test` | every existing test in the tree |
+| `CorsacSwxAuthBackend` as a new client | `CorsacSwxVerifierBackend` already does MAR/MAA + SAR/SAA + PPR probe over the same link with per-Session-Id correlation and fail-closed result mapping | `ras/swxverifier/CorsacSwxVerifierBackend.java:81` |
+| `S6aDialog, S6aExchangeCorrelator adapted to SWx MAR` | `SwxDialog` + `SwxExchangeCorrelator` already exist for SWx — do not adapt the S6a ones | `ras/swxverifier/SwxDialog.java`, `SwxExchangeCorrelator.java` |
+| `sas.authvector.backend-order` as a new switch | extend `SasTransportConfig` (`sas.transport.swx` / `.map` already exist and are preflight-gated) | `config/SasTransportConfig.java:47-49` |
+| `EntitlementTokenService.issue(...)` | the method is `issueToken(msisdn, imsi, eapMethod)`; `signalTsOpaque` does not exist | `EntitlementTokenService.java:145` |
 
 ### 3.2 EAP-AKA Cryptography (Pure Library)
 
@@ -170,9 +285,16 @@ class EapPacket {
 }
 
 class EapAkaAttributes {
-    // RFC 4187 §11 / RFC 9048 §8 assigned numbers (verify against RFC before coding):
-    // AT_RAND(1), AT_AUTN(2), AT_RES(3), AT_AUTS(4), AT_MAC(11), AT_IDENTITY(14),
-    // AT_ENCR_DATA(130), AT_KDF_INPUT(23), AT_KDF(24), AT_CLIENT_ERROR_CODE(22)
+    // Assigned numbers — verified against RFC 4187 §11, RFC 5216, RFC 9048 §8 and the
+    // IANA EAP registry (method types: 23 = EAP-AKA [RFC 4187], 50 = EAP-AKA' [RFC 9048]):
+    //   AT_RAND(1) AT_AUTN(2) AT_RES(3) AT_AUTS(4) AT_NONCE_SEND(5) AT_NONCE_RECEIVE(6)
+    //   AT_SOURCE_IDENTIFIER(7) AT_AUTHORIZATION_IDENTIFIER(8) AT_AUTHENTICATOR_INFO(9)
+    //   AT_MAC(11) AT_IDENTITY(14) AT_ENCR_KEYS(16) AT_SELECTED_CIPHER_SUITE(20)
+    //   AT_VENDOR_SPECIFIC(21) AT_CLIENT_ERROR_CODE(22) AT_KDF_INPUT(23) AT_KDF(24)
+    // CORRECTION vs the first draft: there is NO AT_ENCR_DATA(130) — 130 is NAS-Identifier
+    // [RFC 6696] in the IANA EAP registry. EAP-AKA' derives CK'/IK' in the clear from
+    // CK||IK + KDF inputs; encrypted key transport is the optional EAP-NAK AT_ENCR_KEYS(16)
+    // and is not needed when the ECS↔UE hop is TLS.
     // Builder pattern, constant-length padding to block boundary
 }
 
@@ -270,6 +392,13 @@ SAS ─────────────────┐
 └─────────────────────────
 
 SAS derives CK' and IK' locally via TS 33.402 Annex A (Milenage MAC-A).
+
+⚠️ **MAP SAI cannot serve the EAP-AKA' case.** The AKA' derivation binds CK'/IK' to the
+access-network name (TS 33.402 / RFC 9048 KDF); the MAP quintuplet carries no ANID, so SAI
+only supports plain EAP-AKA. If the operator's Wi-Fi AAA runs EAP-AKA', the MAP backend is
+insufficient — that is decision **D2/D4**. SAI also consumes a real vector from the AuC and
+advances SQN, the same risk class the design already refuses for AIR on the `/verify` path
+(`AGENTS.md` §5), so it must be rate-limited and kept off the `/verify` hot path.
 ```
 
 #### Binding Path: IMSI → MSISDN
@@ -280,15 +409,21 @@ SAS derives CK' and IK' locally via TS 33.402 Annex A (Milenage MAC-A).
 SAS ─ SAR ─► HSS
     • Destination: HSS (non-3GPP-User-Data request)
     • User-Name: IMSI@nai.epc
-    • Server-Assignment-Type: AAA_USER_DATA_REQUEST
-    • Auth-Application-Id: 16777265 (SWx, TS 29.273)
+    • Server-Assignment-Type: 12 (AAA_USER_DATA_REQUEST)
+      ⚠ corsac's ServerAssignmentTypeEnum HAS this value (verified), but the SAS
+        currently sends REGISTRATION(1) — CorsacSwxVerifierBackend.java:319. Pick ONE:
+        12 is the read-only correct choice (does not register as serving AAA);
+        1 changes AAA registration state and is NOT read-only.
+    • Auth-Application-Id: 16777265 (SWx) — verified in the TS 29.230 Diameter
+      application registry: STa=16777250, S6a=16777251, SWm=16777264, SWx=16777265,
+      S6b=16777272
     ↓
-   HSS (does NOT register SAP as serving AAA; read-only)
+   HSS (read-only with type 12)
     ↓
     SAA
     • Result-Code: 2001
-    • Non-3GPP-User-Data (grouped AVP, TS 29.273 §8.2.3.x — verify)
-      └─ MSISDN AVP (if the HSS provisions it for this profile)
+    • Non-3GPP-User-Data (grouped AVP) → Subscription-Id END_USER_E164 = MSISDN
+      (the lab SwxHandler already returns exactly this — reuse it, §5.3)
     ↑ timeout 2s
 └───────────────────────
 ```
@@ -411,37 +546,47 @@ ENDED (activity destroyed, timer cleared)
 
 ### 3.5 Entitlement Token Binding to CAMARA
 
-**Token format:** signed opaque string (already implemented in `EntitlementTokenService`).
+**Token format:** `base64url(payload-json) "." base64url(HMAC-SHA256(payload, secret))` — an
+opaque signed blob, **not** a JWT (no JWS header, no `alg`, no base64 header segment). Payload
+fields: `msisdn`, `imsi`, `eapMethod`, `iat`, `exp`, `jti`; TTL clamped to 300 s; `jti`
+single-use ledger. Already implemented in `EntitlementTokenService.issueToken(...)` — Phase 1d
+adds the caller, not a new format.
 
-**Issuance:** `POST /entitlement/issue` (called by AAA at EAP-AKA completion)
+**Issuance:** `POST /entitlement/issue`
 - Input: `{"msisdn": "+...", "imsi": "2519...", "eapMethod": "EAP-AKA'"}`
-- API key required (unless attestation-only mode).
-- Output: `{"token": "<jwt>", "expiresInSeconds": 300}` (TTL configurable).
+- `X-Api-Key` required when `sas.security.enforce-api-keys=true`; plus the AAA attestation
+  HMAC (`X-Sas-Attestation-Ts` / `X-Sas-Attestation-Mac`) when
+  `sas.entitlement.issue-attestation-required=true` (prod default, gate H19 / PRO-23).
+- Output: `{"token": "<opaque>", "expiresInSeconds": 300}`.
+- Caller in this design = `EntitlementSbb` after a **verified** EAP exchange, so the
+  attestation MAC must be minted with the operator-shared secret (§D5) *or* the
+  attestation requirement must be relaxed for the internal SBB caller — decide in Phase 1d,
+  otherwise the SBB cannot call its own `/issue`.
 
-**Redemption at `/token`:**
+**Redemption at `/token`:** already wired. `TokenResource.JWT_BEARER_GRANT_TYPE` accepts a
+client-signed assertion whose `sub` is `operatortoken:<tk>`; `resolveSubject(...)` resolves it
+through `IdentityAnchor` → `OperatorTokenSupport.resolve(...)` → `EntitlementTokenService.exchange(...)`
+and issues the access token.
 
 ```
 POST /token
-  grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer   (existing JWT_BEARER_GRANT_TYPE)
-  assertion=<client-signed JWT with sub=operatortoken:<entitlement_token>>
-  (client authentication as already enforced by OAuthClientAuthenticator)
+  grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer
+  assertion=<client-signed JWT, sub=operatortoken:<tk>>
+  client auth: private_key_jwt (OAuthClientAuthenticator) when
+               sas.oauth.require-client-auth=true (prod default: must be true)
 
-CAMARA SAS /token endpoint:
-  ├─ verify assertion signature (existing OperatorTokenAnchor)
-  ├─ resolve operatortoken → {msisdn, imsi, eapMethod, exp} via EntitlementTokenService
-  ├─ generate access_token
-  │   ├─ iss: sas.oauth.issuer
-  │   ├─ sub: <pseudonymous (HMAC(msisdn, secret))>  ← never plaintext MSISDN
-  │   ├─ amr: ["eap-aka"] or ["eap-aka-prime"]
-  │   ├─ scope: "number-verification:verify" + others
-  │   ├─ aud: <requesting client_id>
-  │   ├─ exp: 3600 (1 hour)
-  │
-  ├─ [if refresh_token enabled] generate refresh_token
-  │   └─ signed, rotated on re-issue
-  │
-  └─ return {access_token, refresh_token (opt), token_type: Bearer}
+SAS /token already does:
+  ├─ verify client assertion signature + audience + replay guard (OAuthAssertionReplayGuard)
+  ├─ resolve operatortoken → {msisdn, imsi, eapMethod} and CONSUME it (single-use)
+  │   └─ replay ⇒ OAuthException.invalidGrant → **HTTP 400 invalid_grant**
+  │      (NOT 401 — the draft's "401 UNAUTHENTICATED" is wrong for this endpoint)
+  ├─ eapMethod outside {EAP-AKA, EAP-AKA'} ⇒ reject
+  └─ AccessTokenService.issueUserToken(msisdn, scopes, clientId) → access_token
 ```
+
+Phase 2 adds `amr`, pseudonymous `sub`, ID token and refresh — the sub claim is currently
+the E.164 number in the token payload (HMAC-signed, never logged), so **pseudonymising `sub`
+is a Phase 2 change**, not a Phase 1d one.
 
 ---
 
@@ -451,21 +596,26 @@ CAMARA SAS /token endpoint:
 
 **Responsibility:** fetch authentication vectors (MAR/SAI) from HSS or HLR, handle resync.
 
+There is **no `ResourceAdaptor` base class** in micro-jainslee. The pattern that ships in
+this tree (`ras/swxverifier/`) is: a backend holding the transport, a plain `final class`
+adaptor holding the `RaBootstrapPort`, and a 3-port `*RaEndpoint`. Sketch, corrected:
+
 ```java
-public class AuthVectorResourceAdaptor extends ResourceAdaptor {
-    // Inbound: TC/Diameter events from network
-    // Outbound: command to SBB via event
-    
-    // Configure active backend(s)
-    AuthVectorBackend hssBackend = new CorsacSwxAuthBackend(...);
-    AuthVectorBackend hlrBackend = new Jss7MapAuthBackend(...);
-    
-    // SBB submits FetchVectorCommand
+// (a) the transport — the ONLY place a jSS7/Diameter client may be touched (gate H24)
+public final class CorsacSwxAuthVectorBackend implements AuthVectorBackend { /* ... */ }
+
+// (b) the adaptor: plain class, no superclass; owns the bootstrap port
+public final class AuthVectorResourceAdaptor {
+    private static final Logger LOG = LogManager.getLogger(AuthVectorResourceAdaptor.class);
+    private RaBootstrapPort bootstrapPort;
+    private AuthVectorBackend backend;   // injected/selected by config
+
+    // SBB submits FetchVectorCommand → pick backend → await the answer
     void onFetchVector(FetchVectorCommand cmd) {
-        // route by backend priority: sas.authvector.backend-order
-        // or backend-specific config (sas.authvector.map vs sas.authvector.swa)
-        // await Diameter response or TC response
-        // on success: fire AuthVectorResult event → SBB
+        // backend selection comes from the EXISTING SasTransportConfig switch
+        // (sas.transport.swx=memory|corsac, sas.transport.map=memory|jss7) — do not
+        // add a parallel sas.authvector.backend-order property.
+        // on answer: correlate per Diameter Session-Id, then fire an event up to the SBB
     }
     
     // Diameter event from CorsacSwxAuthBackend
@@ -474,12 +624,16 @@ public class AuthVectorResourceAdaptor extends ResourceAdaptor {
         // fire event upward
     }
     
-    // TC event from Jss7MapAuthBackend
+    // TC event from Jss7MapAuthVectorBackend
     void onMapSaiResponseReceived(SendAuthInfoResponse sai) {
-        // extract RAND, SRES, Kc, RES, CK, IK
+        // extract RAND, SRES, Kc, RES, CK, IK (quintuple; triplet → reject)
         // fire event
     }
 }
+
+// (c) the 3-port endpoint that micro-jainslee wires (RaEndpointPort + RaCommandPort),
+//     mirroring SwxVerifierRaEndpoint — it delegates, it does not do I/O itself.
+public final class AuthVectorRaEndpoint implements RaEndpointPort, RaCommandPort { /* ... */ }
 ```
 
 ### 4.2 SubscriberBindingResourceAdaptor
@@ -487,12 +641,13 @@ public class AuthVectorResourceAdaptor extends ResourceAdaptor {
 **Responsibility:** lookup IMSI → MSISDN via SWx SAR, Sh UDR, MAP SendIMSI, or DB.
 
 ```java
-public class SubscriberBindingResourceAdaptor extends ResourceAdaptor {
+// plain final class + RaBootstrapPort, exactly as in §4.1 — no superclass
+public final class SubscriberBindingResourceAdaptor {
     // SBB submits LookupBindingCommand
     void onLookupBinding(LookupBindingCommand cmd) {
         // cmd.imsi, cmd.claimedMsisdn (opt)
         // route to available backend(s) per config priority
-        // sas.binding.source-order: ["swa-sar", "sh-udr", "map-smi", "db"]
+        // sas.binding.source-order: ["swx-sar", "sh-udr", "map-smi", "db"]  (typo fixed: swx, not swa)
     }
     
     void onSwxSarResponse(...) {
@@ -520,11 +675,12 @@ public class SubscriberBindingResourceAdaptor extends ResourceAdaptor {
 
 | Category | File | Coverage |
 |---|---|---|
-| EAP-AKA codec | `EapPacketTest.java` | frame format, attribute encode/decode, fuzz (truncate, duplicate, unknown attr) |
-| Crypto | `EapAkaKeysTest.java` | RFC 4187 test vector, RFC 5448 (AKA'), RFC 9048 (AKA' + network name), Milenage TS 35.208 |
-| Server FSM | `EapAkaServerTest.java` | accept identity, challenge, response, MAC verify, AUTS resync (1×), failure cases |
-| Binding logic | `SubscriberBindingTest.java` | IMSI→MSISDN happy path, missing source, all sources attempted, priority order |
-| Token issue | `EntitlementTokenServiceTest.java` | JWT creation, expiry, msisdn obscured in token body |
+| EAP-AKA codec | `sas-entitlement/src/test/java/.../eap/EapPacketTest.java` | frame format, attribute encode/decode, fuzz (truncate, duplicate, unknown attr) |
+| Crypto | `.../eap/EapAkaKeysTest.java` | RFC 4187 test vector, RFC 9048 (AKA' + network name), Milenage TS 35.208 |
+| Server FSM | `.../eap/EapAkaServerTest.java` | accept identity, challenge, response, MAC verify, AUTS resync (1×), failure cases |
+| TS.43 parsing | `.../ts43/Ts43ParserTest.java` | param binding, multi-valued `app`, version gate |
+| Binding logic | `sas-host/src/test/java/.../ras/binding/SubscriberBindingTest.java` | IMSI→MSISDN happy path, missing source, all sources attempted, priority order |
+| Token issue | `sas-entitlement/src/test/java/.../EntitlementTokenServiceTest.java` (exists) | token creation, expiry, single-use, eapMethod whitelist |
 
 ### 5.2 Integration Tests (simulator-backed)
 
@@ -535,7 +691,7 @@ public class SubscriberBindingResourceAdaptor extends ResourceAdaptor {
 | Resync scenario (1×) | SQN on HLR/HSS desync | AUTS in first response, MAR/SAI resync, new challenge, Success |
 | Resync rejected (2×) | force 2nd resync | first resync accepted, 2nd rejected → FAILED |
 | MAC mismatch | UE computes wrong MAC | EAP-Failure |
-| Token replay | same token twice at `/token` | 2nd call: `401 UNAUTHENTICATED` |
+| Token replay | same token twice at `/token` | 2nd call: `400 invalid_grant` (the operator token is consumed on first resolve; `OAuthException.invalidGrant` → 400) |
 | Timeout vector fetch | kill HLR/HSS | activity timeout after 2s, FALLBACK |
 | Timeout UE response | UE silent for 30s | activity timeout, FAILED |
 | Key zeroization | confirm via memory inspector or custom JVM agent | all CK/IK/XRES/MSK zero after activity end |
@@ -558,12 +714,26 @@ public class SubscriberBindingResourceAdaptor extends ResourceAdaptor {
 - MAP SendIMSI(MSISDN) → return IMSI (hardcoded test data; fail if MSISDN not in test set).
 - New endpoint: read IMSI state, to validate SQN transitions during test.
 
-**`ue-sdk` / `ue-sdk-web`:**
+**`ue-sdk` (JVM/Android — the only SDK that may do EAP-AKA):**
 
 - `Ts43Client(networkUrl, appId, terminalId)`.
-- `async doEapAka(imsi, usim)` loop: GET challenge, parse AT_RAND||AUTN||MAC, compute RES||IK'C||MAC, POST response, loop until SUCCESS or FAILURE.
-- Milenage library (or mock for web SDK) to compute RES/IK'/MAC client-side.
-- Return entitlement token.
+- `doEapAka(imsi, usim)` loop: GET challenge → parse `AT_RAND`/`AT_AUTN`/`AT_MAC` →
+  compute `AT_RES`/`AT_MAC` → POST response → loop until Success/Failure.
+- Milenage (fipsy/libmilenage) or JCE `Mac` + the SIM's session context; K never
+  leaves the SIM (no `at.exchange` raw K), keys zeroized on exit.
+- Returns the entitlement token.
+
+**`ue-sdk-web` (browser) — MUST NOT do EAP-AKA.** The draft's "Milenage library (or
+mock for web SDK) to compute RES/IK'/MAC client-side" is rejected:
+
+- A browser has no SIM access; a "mock" Milenage means the **K** would have to be
+  shipped to JS — that turns any web page into an online SIM-cloning oracle. Never.
+- So the web SDK gets **token handoff only**: it receives/holds the already-issued
+  entitlement token and hands it to the bank backend, exactly like
+  `src/session-tuple.js` does for the IP tuple today.
+- Corollary (already in AGENTS.md): an app that cannot reach the SIM falls back to
+  OTP / Passkey. This is the documented iOS + web trade-off, not a defect to engineer
+  around.
 
 ### 5.4 Gate H25 (New, Entitlement Core)
 
@@ -571,20 +741,36 @@ public class SubscriberBindingResourceAdaptor extends ResourceAdaptor {
 
 **H25: Entitlement service uses core network without ATI, AIR, SRI-SM; fail-closed on missing binding; no secrets logged**
 
+(Gate ids in `harness/gates.yaml` currently stop at H24 — 24 gate blocks, 34/34 runner
+assertions. H25 is the next free id. The `slee_boundary` checker in
+`harness/run_hardness.py` is the model to copy for a source-scanning gate.)
+
 Checks:
 
 1. ✓ No `AnyTimeInterrogation*` operation in code (search jSS7 API imports).
-2. ✓ No AIR (S6a); MAR is allowed (SWx only).
+2. ✓ No AIR (S6a) on the entitlement path; MAR is allowed (SWx only). NOTE: AIR is already
+   banned globally by `AGENTS.md` §5 — H25 must not weaken or contradict that rule.
 3. ✓ No SRI-SM in binding path (only SAR, UDR, SendIMSI).
 4. ✓ Each signal stage (vector, binding) has **one and only one** Diameter dialog or TC dialog at a time (no concurrent).
 5. ✓ Timeout on missing binding: if LookupBindingCommand times out or fails, → FALLBACK (never approves).
-6. ✓ No plaintext IMSI/MSISDN in CDR or logs (search `log.info.*[im]sdn`, check CDR schema).
+6. ✓ No plaintext IMSI/MSISDN **in logs** (`log.info.*[im]sdn` beyond the existing
+   `maskMsisdn(...)` helper), and no AKA key material in logs/CDR. ⚠ NOT "no MSISDN in
+   the CDR": the existing audit schema deliberately has a `msisdn` column
+   (`cdr/SasCdrService.java:40`) and AGENTS.md's privacy rule is "never returned to the
+   **mobile app** (bank backend only)" — server-side audit keeps the number, and flow/evidence
+   rows must stay masked (`recordFlow` → `maskMsisdn`). A gate that bans MSISDN in the CDR
+   would fail the current, intended design.
 7. ✓ Secrets zeroized: CK, IK, CK', IK', XRES, MSK (`byte[]` + `Arrays.fill` or `SecretKey.destroy()`).
 8. ✓ No `InMemoryAuthVectorBackend` or `InMemoryBindingBackend` in production mode (config enforced).
 9. ✓ Prod requires HMAC attestation on `/entitlement/issue` if enabled.
-10. **Mutation check** (H25M): remove one zeroize call; test should detect key material escape.
+10. **Mutation check** (H25M): remove one zeroize call; the test must detect the escape.
+    Model it on `harness/mut_slee_boundary.py` (H24's mutation self-test, run via
+    `python3 harness/run_hardness.py --mutations`). Static source scanning cannot prove
+    zeroization happened at runtime — the mutation self-test is what makes this check real.
 
-**Spec anchor:** TS 29.002 (MAP), TS 29.272 (S6a), TS 29.273 (SWx), TS 33.402 (UMTS security), RFC 4187, RFC 9048, CAMARA TS.43 (if published).
+**Spec anchor:** TS 29.002 (MAP), TS 29.272 (S6a), TS 29.273 (SWx/SAR), TS 33.402
+("Security aspects of non-3GPP accesses"), TS 29.230 (Diameter app registry), RFC 3748,
+RFC 4187, RFC 9048, GSMA TS.43 v13.0 (published).
 
 ### 5.5 Prod Hardening (PRO-30 … PRO-33, new)
 
@@ -614,13 +800,19 @@ PRO-33: AuC/HSS credentials not in config, must be env/vault
 **Local lab verification (before any deployment):**
 
 ```bash
-cd sas-host && mvn -o clean package
+# Build: root reactor covers sas-api + sas-entitlement + sas-host (test apps are
+# standalone builds, so they must be built separately and sequentially).
+mvn -o test                                   # from the worktree root
+(cd sas-diameter-testapp && mvn -o package -DskipTests)
+(cd sas-jss7-testapp     && mvn -o package -DskipTests)
+./scripts/package-dist.sh                    # Quarkus FAST-JAR dist (never a fat jar)
 
-# Start simulators
-java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar &
+# Start simulators (testapp ports: 3868 S6a / 3869 SWx; 8086+18086 control UI)
+java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar \
+     --diameter-port 13868 --web-port 18086 &
 java -jar sas-jss7-testapp/target/sas-jss7-testapp.jar &
 
-# Start SAS with lab config
+# Start SAS (lab profile, plain HTTP :8085)
 dist/run.sh &
 
 # Run test
@@ -657,22 +849,27 @@ docker ps  # ensure no leftover containers
 grep -i "ck\|ik\|xres" sas-host/data/logs/*.log
 # → no match (or only algorithm names, not values)
 
-# Check SCTP endpoints active during run
-/proc/net/sctp/eps | wc -l
-# should show active transports
+# Check SCTP endpoints active during run (SCTP sockets are NOT TCP sockets:
+# `ss -tlnp` will not show them)
+cat /proc/net/sctp/eps | head
+# should list the local/remote SCTP associations
 
-# Jar contents
-jar tf sas-host/target/sas-host-runner.jar | grep -i 'inmemory.*backend'
-# → should NOT appear in prod jar (only in -dev or with dev profile)
+# Prod artifact: fast-jar layout, and in-memory backends must be absent from
+# a prod run (config gate PRO-30, not a jar-content check)
+ls sas-host/target/quarkus-app/quarkus-run.jar   # fast-jar entry point
+# → there is NO sas-host-runner.jar: this tree ships a Quarkus fast-jar, never
+#   an uber/fat jar (scripts/package-dist.sh passes -Dquarkus.package.jar.type=fast-jar)
 ```
 
 ---
 
 ## 6. Implementation Phases and Milestones
 
-### Phase 1a: EAP-AKA Library + Test Vectors (4–5 days)
+### Phase 1a: EAP-AKA Library + Test Vectors (4–5 days) — **unblocked, start here**
 
-**Deliverable:** `sas-entitlement/.../eap/` module, all tests pass.
+**Deliverable:** `sas-entitlement/src/main/java/.../eap/` + `src/test/java/.../eap/`, all
+tests pass. Pure library: no I/O, no signalling, no config keys, no gate changes. Useful
+under both D6 outcomes (UE-side under R, server-side under S).
 
 - `EapPacket` (encode/decode RFC 3748).
 - `EapAkaAttributes` (all AT_* attributes).
@@ -683,9 +880,11 @@ jar tf sas-host/target/sas-host-runner.jar | grep -i 'inmemory.*backend'
 
 **Gate:** `mvn -o test` + no external network calls in tests.
 
-### Phase 1b: AuthVector RA + Diameter (SWx) Backend (6–8 days)
+### Phase 1b: AuthVector RA + Diameter (SWx) Backend (6–8 days) — **unblocked (D6 = Shape S)**
 
 **Deliverable:** `sas-host/.../ras/authvector/`, SWx MAR/MAA working end-to-end.
+⚠ Keep it swappable: if R1–R3 (§2.1.2) force the Shape R flip, this RA is *replaced* by a
+relay RA. No caller may depend on the concrete backend type — depend on `AuthVectorBackend`.
 
 - `AuthVectorResourceAdaptor`, `AuthVectorBackend` interface.
 - `CorsacSwxAuthBackend` (via corsac-diameter fork).
@@ -695,20 +894,25 @@ jar tf sas-host/target/sas-host-runner.jar | grep -i 'inmemory.*backend'
 
 **Gate:** MAR dialog completes in < 2s, resync works, timeout aborts cleanly.
 
-### Phase 1c: MAP Backend + Binding RA (5–6 days)
+### Phase 1c: MAP Backend + Binding RA (5–6 days) — **unblocked (D6 = Shape S)**
 
-**Deliverable:** `Jss7MapAuthBackend`, `SubscriberBindingRA`, binding source priority.
+**Deliverable:** `Jss7MapAuthAuthVectorBackend`, `SubscriberBindingRA`, binding source priority.
 
-- `Jss7MapAuthBackend` (MAP SAI, quintet only; triplet → reject).
+- `Jss7MapAuthVectorBackend` (MAP SAI, quintet only; triplet → reject). Note: under Shape R
+  the SAS does not consume vectors at all, so the whole vector-fetch half of 1c collapses to
+  the binding half — re-scope after D6.
 - `SubscriberBindingResourceAdaptor`, backends: `SwxSarBinding`, `ShUdrBinding`, `MapSendImsiBinding`, `SubscriberDbBinding`.
 - LookupBindingCommand, command executor.
 - Config: `sas.authvector.backend-order`, `sas.binding.source-order`.
 
 **Gate:** SAI dialog works, SQN increments; SAR / UDR / SendIMSI each complete in < 2s; binding priority order enforced.
 
-### Phase 1d: EntitlementSbb + `/ts43` Endpoint + FSM (6–7 days)
+### Phase 1d: EntitlementSbb + `/ts43` Endpoint + FSM (6–7 days) — **unblocked (D6 = Shape S)**
 
 **Deliverable:** `EntitlementSbb`, `Ts43Resource`, FSM, timeouts, key zeroization.
+**Shape-S/R portability rule (§2.1.2 item 4):** the SBB's public surface — the `/ts43`
+contract, the FSM state names, the token format — must not expose "the SAS holds CK/IK",
+or the R-flip becomes a rewrite and the fallback is worthless.
 
 - State machine: IDLE → IDENTITY → VECTOR → CHALLENGE → VERIFIED → TOKEN → ENDED.
 - 45s total timeout, 2s per signalling stage.
@@ -752,10 +956,13 @@ jar tf sas-host/target/sas-host-runner.jar | grep -i 'inmemory.*backend'
 - `ras/smsdelivery/SmppBackend` (SMPP 3.4 to SMSC).
 - `OtpAttemptStore` → PostgreSQL (from H2).
 - Code stored as HMAC, not plaintext; attempt count, validity window.
-- Preflight PRO-29: `sas.otp.enabled=true` only if backend is real SMPP and store is PostgreSQL.
+- Preflight: **PRO-29 already exists** (`harness/preflight_prod.py` — refuses
+  `sas.otp.enabled=true` on a lab sender / in-memory attempt store). Phase 3 *extends* it
+  with the SMPP-adapter and PostgreSQL conditions; it does not introduce PRO-29.
 - Fallback: when OTP disabled, SAS returns `403 SERVICE_UNAVAILABLE` for `/send-code`.
 
-**Gate:** `sas.otp.enabled=false` by default in lab; prod gate PRO-29 rejects lab sender + H2 store.
+**Gate:** `sas.otp.enabled=false` by default in lab; the existing PRO-29 already rejects the
+lab sender, and its mutation scenarios are covered by `preflight_prod.py --selftest`.
 
 ---
 
@@ -771,12 +978,17 @@ jar tf sas-host/target/sas-host-runner.jar | grep -i 'inmemory.*backend'
 | SQN exhaustion DoS on AuC | Medium | Rate-limit per IMSI (token bucket, e.g. 1 EAP session per IMSI per 10s). Monitored in metrics. |
 | Device sends oversized EAP packet (fuzz) | Medium | Unit test: parse and reject oversized attributes; no buffer overflow. Java is safe but test anyway. |
 | iOS app cannot use TS.43 (no API) | Medium | **Documented trade-off:** iOS falls back to OTP or Passkey. Not a blocker if OTP is enabled. |
+| **Operator refuses vector-grade AuC access → Shape S cannot ship (R1)** | **CRITICAL** | D6 is Shape S, so this is the top production risk. Mitigated by keeping Shape R as a designed fallback (§2.1.2) with R1–R3 tracked as a pending issue, plus the Phase 1d portability rule that keeps the flip a config change. Close R1–R3 in writing before any prod boot. |
 
 ---
 
 ## 8. Open Items and Tracking
 
 - [ ] **ADR approval** (D1–D5): Ethio Telecom signoff on carrier privilege, core topology, GT assignment, token format. (Owner: Restlink)
+- [ ] **PENDING ISSUE — Shape R production fallback (§2.1.2):** close R1 (operator refuses
+      vector-grade AuC access), R2 (operator exposes DER/EAP relay only), R3 (operator runs
+      its own ECS) in writing. Until then a prod boot is a D2/D5-unresolved deploy and must be
+      refused by the prod gate. Owner: Restlink. Blocks: production only — not the lab.
 - [ ] **Phase 1a–1e implementation**: EAP-AKA library, RAs, FSM, lab, prove artifact.
 - [ ] **Phase 2 implementation**: Auth Code Flow, ID token, refresh.
 - [ ] **Phase 3 implementation**: SMPP, persistent store.
@@ -793,23 +1005,35 @@ jar tf sas-host/target/sas-host-runner.jar | grep -i 'inmemory.*backend'
 - **3GPP TS 29.002** — MAP operations (PSI, SAI, SendIMSI)
 - **3GPP TS 29.272** — S6a Diameter (AIR, IDR, PUR) — NOT used for EAP
 - **3GPP TS 29.273** — SWx Diameter (MAR, MAA, SAR, SAA, PPR)
-- **3GPP TS 33.402** — UMTS security, Annex A (CK/IK derivation for non-3GPP)
+- **3GPP TS 33.402** — "3GPP System Architecture Evolution (SAE); Security aspects of
+  non-3GPP accesses" (verified title, 3GPP 33-series index); Annex A covers the
+  access-network binding used for the CK'/IK' derivation
 - **3GPP TS 33.501** — 5G security, N32 SEPP (edge case if prod adds 5G)
+- **RFC 3748** — EAP framework (packet/attribute codec, Code 1–4, Type 23/50)
 - **RFC 4187** — EAP-AKA
-- **RFC 5448** — EAP-AKA'
-- **RFC 9048** — EAP-AKA' with Key Derivation Functions (KDF)
-- **GSMA TS.43** (if published) — Wi-Fi entitlement for non-3GPP
+- **RFC 5448** — EAP-AKA' (original; method type 50)
+- **RFC 9048** — EAP-AKA' with KDF (current reference for the KDF-based derivation)
+- **RFC 4072** — Diameter EAP application (transport for the EAP relay, Shape R)
+- **GSMA TS.43 v13.0** — Service Entitlement Configuration (**published**, 2026-01-29):
+  §2.3 GET params, §2.4 POST, §2.5 version control, §2.8.1 embedded EAP-AKA relay +
+  DER Result-Code→HTTP mapping, §2.8.3 S2S OAuth + `private_key_jwt`, §2.9 document,
+  §2.10 response codes
+- **3GPP TS 29.230** — Diameter application/command code registry (SWx=16777265 etc.)
+- **IANA EAP registry** — Method Type 23 = EAP-AKA [RFC 4187], 50 = EAP-AKA' [RFC 9048];
+  note 130 is `NAS-Identifier`, **not** an EAP-AKA attribute
 - **CAMARA Number Verification v2.1.0** — `/verify`, `/device-phone-number`
 - **TS 35.208** — Milenage test vectors
 - **`docs/design/ts43-eapaka-wire-protocol.md`** — existing wire protocol doc
 - **`docs/design/ts43-entitlement-integration-contract.md`** — operator contract (interfaces A–C)
-- **`AGENTS.md` §8** — H24, H25, PRO-30..33 gates
+- **`AGENTS.md` §7** — the installed hardness gate (H1–H24 today; H25 is the next free id;
+  §8 is the agent-rules section, not the gate section)
 
 ---
 
 ## 10. Success Criteria
 
-1. ✓ 34/34 hardness gates pass (including new H25).
+1. ✓ 35/35 hardness gates pass (H1–H24 today + new H25; the runner prints `== 34/34 ==`
+   today, so H25 makes it 35/35).
 2. ✓ All tests (`mvn -o test`) pass; coverage ≥ 85% for new code.
 3. ✓ Prove artifact: lab E2E working, token issued, `/verify` accepts token, no secrets in logs, all processes stopped.
 4. ✓ ADR D1–D5 closed with Ethio Telecom sign-off.
@@ -819,4 +1043,9 @@ jar tf sas-host/target/sas-host-runner.jar | grep -i 'inmemory.*backend'
 
 ---
 
-**Next Step:** Present ADR template and blockers to Ethio Telecom. Parallel: start Phase 1a (EAP-AKA library + vectors).
+**Next Step:**
+1. **D6 decided: Shape S** (§2.1.1). Phases 1a–1d unblocked.
+2. Present D1–D5 to Ethio Telecom, **including the vector-grade AuC access request** that
+   Shape S depends on — and record the answer, because R1–R3 (§2.1.2) gate production.
+3. Start **Phase 1a** — the pure EAP-AKA library + RFC 4187/9048 + Milenage vectors.
+   Device-side under R, server-side under S: never wasted work.
