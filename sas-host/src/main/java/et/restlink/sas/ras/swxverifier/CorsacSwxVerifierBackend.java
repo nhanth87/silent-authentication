@@ -35,6 +35,8 @@ import com.mobius.software.telco.protocols.diameter.primitives.common.Experiment
 import com.mobius.software.telco.protocols.diameter.primitives.common.VendorSpecificApplicationId;
 
 import et.restlink.sas.config.SasTransportConfig;
+import et.restlink.sas.ras.authvector.AuthVector;
+import et.restlink.sas.ras.authvector.AuthVectorBackend;
 import et.restlink.sas.diameter.DiameterConfig;
 import et.restlink.sas.fsm.SasTimeouts;
 import et.restlink.sas.model.AccessTech;
@@ -78,7 +80,7 @@ import java.util.concurrent.TimeoutException;
  * (RFC 6733 §8.1) with Hop-by-Hop Id (§8.2) as fallback; an answer that
  * matches no pending exchange is dropped and its requester times out.</p>
  */
-public final class CorsacSwxVerifierBackend implements SwxVerifierBackend {
+public final class CorsacSwxVerifierBackend implements SwxVerifierBackend, AuthVectorBackend {
 
     private static final Logger LOG = LogManager.getLogger(CorsacSwxVerifierBackend.class);
     private static final String LINK_ID = "swx-sas";
@@ -383,6 +385,159 @@ public final class CorsacSwxVerifierBackend implements SwxVerifierBackend {
             return;
         }
         out.complete(SwxEvidence.combine(combined, evidence, "SWX-MAR+SAR+PPR"));
+    }
+
+    // ---- AuthVectorBackend (Phase 1b): same link, same correlator, no second stack ----
+    //
+    // The entitlement service needs the *vector*, not a boolean. Rather than open a
+    // second Diameter association (two links to the same HSS is two chances to leak a
+    // dialog, and it would need a second port), the vector exchange reuses this
+    // stack, this link and this correlator. The extra surface is one MAR/MAA pair.
+
+    @Override
+    public CompletableFuture<AuthVector> fetch(String imsi, String scheme) {
+        return requestVector(imsi, scheme, null, null);
+    }
+
+    @Override
+    public CompletableFuture<AuthVector> resync(String imsi, String scheme,
+                                                byte[] rand, byte[] auts) {
+        if (auts == null || auts.length != 16) {
+            CompletableFuture<AuthVector> failed = new CompletableFuture<>();
+            failed.completeExceptionally(
+                    new IllegalArgumentException("AT_AUTS must be 16 octets"));
+            return failed;
+        }
+        return requestVector(imsi, scheme, rand, auts);
+    }
+
+    @Override
+    public String name() {
+        return "corsac-swx";
+    }
+
+    private CompletableFuture<AuthVector> requestVector(String imsi, String scheme,
+                                                        byte[] resyncRand, byte[] auts) {
+        CompletableFuture<AuthVector> out = new CompletableFuture<>();
+        if (imsi == null || imsi.isBlank()) {
+            out.completeExceptionally(new IllegalArgumentException("IMSI is required"));
+            return out;
+        }
+        if (!AuthVector.EAP_AKA.equals(scheme) && !AuthVector.EAP_AKA_PRIME.equals(scheme)) {
+            out.completeExceptionally(
+                    new IllegalArgumentException("unsupported AKA scheme: " + scheme));
+            return out;
+        }
+        long deadline = System.currentTimeMillis() + SasTimeouts.DIAMETER_MS;
+        try {
+            runVectorMar(out, deadline, imsi, scheme, resyncRand, auts);
+        } catch (Exception e) {
+            LOG.warn("SWx vector MAR send failed", e);
+            out.completeExceptionally(e);
+        }
+        return out;
+    }
+
+    /**
+     * MAR/MAA for a vector. On a resync the {@code SIP-Auth-Data-Item} carries the
+     * peer's {@code AT_AUTS} in {@code SIP-Authorization} (RFC 4187 §4.4 / TS 29.273
+     * §6.2.2), which is what makes the HSS re-issue against its current SQN instead
+     * of rejecting the subscriber.
+     */
+    private void runVectorMar(CompletableFuture<AuthVector> out, long deadline,
+                              String imsi, String scheme, byte[] resyncRand, byte[] auts)
+            throws Exception {
+        DiameterLink link = stack.getNetworkManager().getLink(LINK_ID);
+        MultimediaAuthRequest mar = provider.getMessageFactory().createMultimediaAuthRequest(
+                link.getLocalHost(), link.getLocalRealm(),
+                link.getDestinationHost(), link.getDestinationRealm(),
+                imsi, 1L, provider.getAvpFactory().getSIPAuthDataItem());
+        mar.getSIPAuthDataItem().setSIPAuthenticationScheme(scheme);
+        if (auts != null) {
+            io.netty.buffer.ByteBuf resync = io.netty.buffer.Unpooled.wrappedBuffer(auts);
+            try {
+                mar.getSIPAuthDataItem().setSIPAuthorization(resync);
+            } finally {
+                resync.release();
+            }
+        }
+        SwxClientSession session =
+                (SwxClientSession) provider.getSessionFactory().createClientSession(mar);
+        dispatch(session, mar, deadline)
+                .thenAccept(answer -> out.complete(toVector(answer, scheme)))
+                .exceptionally(ex -> {
+                    LOG.warn("SWx vector exchange failed imsi={}", maskImsi(imsi), ex);
+                    out.completeExceptionally(ex);
+                    return null;
+                });
+    }
+
+    /**
+     * MAA → {@link AuthVector}. Fail-closed: only {@code 2001}/{@code 2002} (and a
+     * success-series Experimental-Result) may produce a vector, an empty item set is
+     * a refusal, and a non-EAP-AKA scheme cannot ground a SIM-based authentication.
+     */
+    private AuthVector toVector(SwxAnswer answer, String scheme) {
+        MultimediaAuthAnswer maa = as(answer, MultimediaAuthAnswer.class);
+        long rc = resultCode(answer);
+        if (!SwxEvidence.isSuccess(rc, experimentalCode(answer))) {
+            throw new IllegalStateException("SWx MAA result-code " + rc + " is not success");
+        }
+        List<SIPAuthDataItem> items = maa == null ? null : maa.getSIPAuthDataItem();
+        if (items == null || items.isEmpty()) {
+            throw new IllegalStateException("SWx MAA carried no auth data item (fail-closed)");
+        }
+        SIPAuthDataItem item = items.get(0);
+        String answered = item.getSIPAuthenticationScheme();
+        if (answered != null && !answered.isBlank()
+                && !AuthVector.EAP_AKA.equals(answered)
+                && !AuthVector.EAP_AKA_PRIME.equals(answered)) {
+            throw new IllegalStateException("HSS answered with a non-AKA scheme: " + answered);
+        }
+        // SIP-Authenticate carries RAND||AUTN (TS 29.273 §8.2.2); the lab simulator
+        // fabricates a single opaque blob, so the split is only asserted when it fits.
+        byte[] challenge = item.getSIPAuthenticate() == null
+                ? null : toBytes(item.getSIPAuthenticate());
+        byte[] expected = item.getSIPAuthorization() == null
+                ? null : toBytes(item.getSIPAuthorization());
+        if (challenge == null || challenge.length < 32) {
+            throw new IllegalStateException(
+                    "SWx MAA SIP-Authenticate is too short for RAND||AUTN: " + len(challenge));
+        }
+        if (expected == null || expected.length < 8 || expected.length > 16) {
+            throw new IllegalStateException(
+                    "SWx MAA XRES has an implausible length: " + len(expected));
+        }
+        byte[] rand = java.util.Arrays.copyOfRange(challenge, 0, 16);
+        byte[] autn = java.util.Arrays.copyOfRange(challenge, 16, 32);
+        byte[] ck = item.getConfidentialityKey() == null
+                ? null : toBytes(item.getConfidentialityKey());
+        byte[] ik = item.getIntegrityKey() == null
+                ? null : toBytes(item.getIntegrityKey());
+        return new AuthVector(rand, autn, expected, ck, ik,
+                answered == null || answered.isBlank() ? scheme : answered);
+    }
+
+    private static byte[] toBytes(io.netty.buffer.ByteBuf buffer) {
+        try {
+            byte[] out = new byte[buffer.readableBytes()];
+            buffer.getBytes(buffer.readerIndex(), out);
+            return out;
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static String len(byte[] value) {
+        return value == null ? "absent" : String.valueOf(value.length);
+    }
+
+    /** Never log a full IMSI. */
+    private static String maskImsi(String imsi) {
+        if (imsi == null || imsi.length() < 6) {
+            return "***";
+        }
+        return imsi.substring(0, 3) + "****" + imsi.substring(imsi.length() - 2);
     }
 
     /**

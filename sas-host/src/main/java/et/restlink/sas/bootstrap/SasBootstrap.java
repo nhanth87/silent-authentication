@@ -37,6 +37,10 @@ import et.restlink.sas.ras.s6averifier.InMemoryS6aVerifierBackend;
 import et.restlink.sas.ras.s6averifier.S6aVerifierBackend;
 import et.restlink.sas.ras.s6averifier.S6aVerifierRaEndpoint;
 import et.restlink.sas.ras.s6averifier.S6aVerifierResourceAdaptor;
+import et.restlink.sas.ras.authvector.AuthVectorBackend;
+import et.restlink.sas.ras.authvector.AuthVectorRaEndpoint;
+import et.restlink.sas.ras.authvector.AuthVectorResourceAdaptor;
+import et.restlink.sas.ras.authvector.InMemoryAuthVectorBackend;
 import et.restlink.sas.ras.swxverifier.CorsacSwxVerifierBackend;
 import et.restlink.sas.ras.swxverifier.InMemorySwxVerifierBackend;
 import et.restlink.sas.ras.swxverifier.SwxVerifierBackend;
@@ -87,6 +91,7 @@ public class SasBootstrap implements SasVerifyEngine {
     private volatile MapVerifierRaEndpoint mapVerifierEndpoint;
     private volatile S6aVerifierRaEndpoint s6aVerifierEndpoint;
     private volatile SwxVerifierRaEndpoint swxVerifierEndpoint;
+    private volatile AuthVectorRaEndpoint authVectorEndpoint;
     private volatile Jss7MapVerifierBackend jss7MapBackend;
     private volatile CorsacS6aVerifierBackend corsacS6aBackend;
     private volatile CorsacSwxVerifierBackend corsacSwxBackend;
@@ -113,6 +118,7 @@ public class SasBootstrap implements SasVerifyEngine {
         wireMapVerifierRa();
         wireS6aVerifierRa();
         wireSwxVerifierRa();
+        wireAuthVectorRa();
         registerSbbTypes();
         mapEventToSbb();
         LOG.info("=== Silent Auth SAS ready — resolver={}ms map={}ms s6a={}ms swx={}ms total={}ms ===",
@@ -249,6 +255,38 @@ public class SasBootstrap implements SasVerifyEngine {
         swxVerifierEndpoint = new SwxVerifierRaEndpoint(ra);
         container.registerRa(swxVerifierEndpoint, swxVerifierEndpoint);
         LOG.info("SWx verifier RA wired (EAP-AKA, TS 29.273, own AAA/HSS only)");
+    }
+
+    /**
+     * Auth-vector RA (Phase 1b, D6 Shape S). With {@code corsac} it reuses the very
+     * same {@link CorsacSwxVerifierBackend} instance the verifier RA uses — one link,
+     * one correlator, one port to the operator HSS. A second Diameter association
+     * would be a second chance to leak a dialog and would need its own port.
+     */
+    private void wireAuthVectorRa() {
+        AuthVectorBackend backend;
+        if (transportConfig.useCorsacAuthVector()) {
+            if (corsacSwxBackend == null) {
+                corsacSwxBackend = new CorsacSwxVerifierBackend(transportConfig);
+                try {
+                    corsacSwxBackend.start();
+                    LOG.info("[SAS] auth-vector transport = corsac-diameter (shared SWx link)");
+                } catch (Exception e) {
+                    LOG.warn("[SAS] auth-vector corsac start failed — staying in-memory", e);
+                    corsacSwxBackend = null;
+                }
+            }
+            backend = corsacSwxBackend != null
+                    ? corsacSwxBackend
+                    : new InMemoryAuthVectorBackend();
+        } else {
+            backend = new InMemoryAuthVectorBackend();
+        }
+        AuthVectorResourceAdaptor ra = new AuthVectorResourceAdaptor();
+        ra.setBackend(backend);
+        authVectorEndpoint = new AuthVectorRaEndpoint(ra);
+        container.registerRa(authVectorEndpoint, authVectorEndpoint);
+        LOG.info("Auth vector RA wired (TS 29.273 MAR/MAA vectors, own HSS only)");
     }
 
     private void registerSbbTypes() {

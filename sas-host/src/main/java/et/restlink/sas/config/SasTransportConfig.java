@@ -36,6 +36,14 @@ public class SasTransportConfig {
     @ConfigProperty(name = "sas.transport.swx", defaultValue = "memory")
     String swxTransport;
 
+    /**
+     * Auth-vector source for the entitlement service (D6 Shape S): {@code memory}
+     * (lab only, PRO-30 refuses it in prod) or {@code corsac}, which reuses the
+     * existing SWx link rather than opening a second Diameter association.
+     */
+    @ConfigProperty(name = "sas.transport.authvector", defaultValue = "memory")
+    String authVectorTransport;
+
     /** Resolver source: memory (default), cgnat, radius, or sd (PCRF Gx probe). */
     @ConfigProperty(name = "sas.transport.resolver", defaultValue = "memory")
     String resolverTransport;
@@ -137,6 +145,11 @@ public class SasTransportConfig {
 
     public boolean useCorsacSwx() {
         return "corsac".equalsIgnoreCase(swxTransport);
+    }
+
+    /** True when the auth-vector transport is the real (shared) SWx client. */
+    public boolean useCorsacAuthVector() {
+        return "corsac".equalsIgnoreCase(authVectorTransport);
     }
 
     public boolean useCgnatResolver() {

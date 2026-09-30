@@ -536,12 +536,56 @@ def otp_surface_check(p: Profile) -> Report:
     return r
 
 
+def auth_vector_check(p: Profile) -> Report:
+    """PRO-30 — the auth-vector source must be a real operator path, never the lab.
+
+    Under the D6/Shape S decision the entitlement service terminates EAP-AKA itself,
+    so it fetches authentication vectors from the operator HSS over SWx. The lab
+    backend mints *fabricated* vectors, which means an EAP server driven by them would
+    "authenticate" anything — the one failure mode a silent-auth product must never
+    ship. The entitlement path is opt-in today (the /ts43 surface does not exist yet),
+    so `memory` is only a failure once the surface is actually enabled; until then the
+    check still reports the value so the operator sees which one is wired.
+    """
+    r = Report()
+    notes: list[str] = []
+    source = (p.get("sas.transport.authvector") or "").strip().lower()
+    entitlement_on = (p.get("sas.entitlement.enabled") or "true").strip().lower() == "true"
+    notes.append(f"sas.transport.authvector={source or 'unset'} "
+                 f"(entitlement.enabled={entitlement_on})")
+
+    if source in ("", "memory", "in-memory", "inmemory"):
+        if entitlement_on:
+            notes.append("the TS.43 entitlement service terminates EAP-AKA and must read real "
+                         "vectors; set sas.transport.authvector=corsac and record the "
+                         "operator vector-grade AuC access agreement (plan 2.1.2 R1) "
+                         "before the /ts43 surface is enabled")
+        else:
+            notes.append("entitlement surface is off, so the fabricated lab vector source is "
+                         "not reachable — acceptable while /ts43 does not exist")
+        ok = not entitlement_on
+    elif source == "corsac":
+        swx = (p.get("sas.transport.swx") or "").strip().lower()
+        if swx not in ("corsac",):
+            notes.append("sas.transport.authvector=corsac reuses the SWx client, so "
+                         "sas.transport.swx must be corsac too (one link, one correlator)")
+        ok = swx == "corsac"
+    else:
+        notes.append(f"unknown auth-vector transport {source!r}; legal values are memory|corsac")
+        ok = False
+
+    r.add("PRO-30", "entitlement auth vectors come from the operator, not the lab", ok,
+          "\n".join(notes))
+    return r
+
+
 def run(env: dict[str, str], overrides: dict[str, str | None] | None = None,
         check_files: bool = True) -> Report:
     profile = Profile(env, check_files=check_files, overrides=overrides)
     report = build_checks(profile)
     report.rows.extend(quota_tenant_check(profile).rows)
     report.rows.extend(otp_surface_check(profile).rows)
+    report.rows.extend(auth_vector_check(profile).rows)
     return report
 
 
@@ -673,6 +717,7 @@ MUTATIONS: list[tuple[str, dict, set[str]]] = [
     ("secret env var unset", {"SAS_OAUTH_SECRET": ""}, {"PRO-03", "PRO-24"}),
     ("assurance detail on", {"sas.api.assurance-detail-enabled": "true"}, {"PRO-27"}),
     ("relative log dir", {"SAS_LOG_DIR": "logs"}, {"PRO-26"}),
+    ("lab auth vector source", {"sas.transport.authvector": "memory"}, {"PRO-30"}),
     ("lab OTP SMS sender", {"sas.otp.enabled": "true", "sas.otp.sms-delivery": "log"},
      {"PRO-29"}),
 ]

@@ -915,11 +915,36 @@ surface) — deliberately left for 1d so the FSM shape drives the parser, not th
 
 **Gate:** `mvn -o test` + no external network calls in tests.
 
-### Phase 1b: AuthVector RA + Diameter (SWx) Backend (6–8 days) — **unblocked (D6 = Shape S)**
+### Phase 1b: AuthVector RA + Diameter (SWx) Backend — **DONE** (RA + SWx vector; E2E vs simulator pending 1e)
 
-**Deliverable:** `sas-host/.../ras/authvector/`, SWx MAR/MAA working end-to-end.
-⚠ Keep it swappable: if R1–R3 (§2.1.2) force the Shape R flip, this RA is *replaced* by a
-relay RA. No caller may depend on the concrete backend type — depend on `AuthVectorBackend`.
+Landed in `sas-host/src/main/java/.../ras/authvector/`, 12 tests green:
+
+| Piece | Note |
+|---|---|
+| `AuthVector` | RAND/AUTN/XRES/CK/IK + scheme; wipes itself, `toString` never prints keys, and reports `hasSessionKeys()` so a vector without CK/IK cannot be mistaken for a usable one |
+| `AuthVectorBackend` | the seam: `fetch` / `resync` / `stop` / `name` |
+| **`CorsacSwxVerifierBackend` now also implements `AuthVectorBackend`** | ⚠ **not a second client** — it reuses the *same* stack, link and correlator, so there is still exactly one Diameter association to the operator HSS. A second link would be a second chance to leak a dialog and would need its own port |
+| `InMemoryAuthVectorBackend` | lab only, `PRO-30` refuses it in prod |
+| `AuthVectorResourceAdaptor` + `AuthVectorRaEndpoint` | the only route to a vector (gate H24); owns the 2 s budget, bounds the in-flight table at 256, aborts everything on `raInactive` |
+| `FetchVectorCommand` / `ResyncVectorCommand` / `AbortAuthVectorCommand` | outbound commands |
+| `sas.transport.authvector=memory\|corsac` | in `SasTransportConfig`, next to every other transport switch |
+
+**Resync cap is per session, not per exchange** — the tests caught that a counter living
+on the in-flight exchange resets as soon as the exchange completes, which would have let a
+client resync forever and walk the AuC sequence number down. The budget now lives on the
+session (`reqId`) and is released only by an abort or `raInactive`.
+
+**PRO-30 (new preflight check, selftest 24/24):** the auth-vector source must not be the
+lab. `corsac` additionally requires `sas.transport.swx=corsac`, because it reuses that
+client. While `sas.entitlement.enabled=true` and the source is `memory`, the check fails and
+names the operator vector-grade AuC access agreement (§2.1.2 R1) — which is exactly the
+"don't deploy and get burned" gate Phase S needs.
+
+**Still open in 1b:** the SWx vector path is unit-tested and compiles against the real
+corsac API, but has not been driven against `sas-diameter-testapp`; the lab HSS still
+fabricates a 32-octet opaque `SIP-Authenticate` that the new parser correctly refuses. That
+is Phase 1e work (the testapp must emit `RAND‖AUTN` + a real XRES + CK/IK, and support the
+`AT_AUTS` resync).
 
 - `AuthVectorResourceAdaptor`, `AuthVectorBackend` interface.
 - `CorsacSwxAuthBackend` (via corsac-diameter fork).
