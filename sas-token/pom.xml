@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>et.restlink</groupId>
+    <artifactId>sas-core</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>sas-token</artifactId>
+  <name>sas-core :: sas-token</name>
+  <description>JOSE profile shared by the two SAS binaries: ES256 JWS for access and
+    ID tokens (RFC 7515/7518), and the operator token the entitlement server (sas-ecs)
+    issues and the CAMARA server (sas-camara) verifies — a JWS nested in an ECDH-ES
+    A256GCM JWE (RFC 7516) so the subscriber number never travels readable through the
+    device. Pure library: no I/O, no CDI, no REST. Crypto comes from Nimbus JOSE+JWT.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

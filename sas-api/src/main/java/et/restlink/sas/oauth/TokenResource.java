@@ -43,6 +43,7 @@ public class TokenResource {
     private static final Logger LOG = LogManager.getLogger(TokenResource.class);
 
     public static final String CIBA_GRANT_TYPE = "urn:openid:params:grant-type:ciba";
+    public static final String AUTHORIZATION_CODE_GRANT_TYPE = "authorization_code";
     public static final String CLIENT_CREDENTIALS_GRANT_TYPE = "client_credentials";
     public static final String JWT_BEARER_GRANT_TYPE = OAuthClientAuthenticator.JWT_BEARER_GRANT_TYPE;
 
@@ -63,6 +64,12 @@ public class TokenResource {
     @Inject
     IdentityAnchor operatorAnchor;
 
+    @Inject
+    AuthorizationCodeService authorizationCodes;
+
+    @Inject
+    IdTokenService idTokens;
+
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response token(@FormParam("grant_type") String grantType,
@@ -72,6 +79,9 @@ public class TokenResource {
                           @FormParam("client_assertion_type") String clientAssertionType,
                           @FormParam("client_assertion") String clientAssertion,
                           @FormParam("assertion") String assertion,
+                          @FormParam("code") String code,
+                          @FormParam("redirect_uri") String redirectUri,
+                          @FormParam("code_verifier") String codeVerifier,
                           @Context UriInfo uriInfo) {
         String normalizedGrantType = trimToNull(grantType);
         if (normalizedGrantType == null) {
@@ -79,6 +89,8 @@ public class TokenResource {
         }
         try {
             return switch (normalizedGrantType) {
+                case AUTHORIZATION_CODE_GRANT_TYPE -> authorizationCodeToken(code, redirectUri,
+                        codeVerifier, clientId, clientAssertionType, clientAssertion, uriInfo);
                 case CIBA_GRANT_TYPE -> cibaToken(authReqId, scope, clientId,
                         clientAssertionType, clientAssertion, uriInfo);
                 case CLIENT_CREDENTIALS_GRANT_TYPE -> clientCredentialsToken(scope, clientId,
@@ -122,6 +134,55 @@ public class TokenResource {
         String accessToken = accessTokens.issue(binding);
         LOG.info("[SAS] /token granted CIBA token for {}", binding.authReqId());
         return tokenResponse(accessToken, binding.scopes());
+    }
+
+    /**
+     * RFC 6749 §4.1.3 + RFC 7636 §4.5: the code is consumed first (so a replayed code
+     * is spent even when the rest of the request is wrong), then bound checks run —
+     * same client, byte-identical redirect_uri, PKCE verifier.
+     */
+    private Response authorizationCodeToken(String code,
+                                            String redirectUri,
+                                            String codeVerifier,
+                                            String clientId,
+                                            String clientAssertionType,
+                                            String clientAssertion,
+                                            UriInfo uriInfo) {
+        if (authorizationCodes == null) {
+            throw OAuthException.serverError("authorization code flow is unavailable");
+        }
+        if (trimToNull(code) == null) {
+            throw OAuthException.invalidRequest("code is required");
+        }
+        OAuthClient client = authenticateClient(
+                clientId, clientAssertionType, clientAssertion, uriInfo, false);
+        String authenticatedClientId = client.clientId() != null ? client.clientId() : trimToNull(clientId);
+        AuthorizationCodeService.AuthorizationCode granted = authorizationCodes.consume(code)
+                .orElseThrow(() -> OAuthException.invalidGrant(
+                        "code is invalid, expired or already used"));
+        if (authenticatedClientId == null || !authenticatedClientId.equals(granted.clientId())) {
+            throw OAuthException.invalidGrant("code was issued to another client");
+        }
+        if (redirectUri == null || !redirectUri.equals(granted.redirectUri())) {
+            throw OAuthException.invalidGrant("redirect_uri does not match the authorization request");
+        }
+        if (!AuthorizationCodeService.pkceMatches(codeVerifier, granted.codeChallenge())) {
+            throw OAuthException.invalidGrant("PKCE code_verifier does not match");
+        }
+        client.authorizeGrant(AUTHORIZATION_CODE_GRANT_TYPE);
+        String accessToken = accessTokens.issueUserToken(granted.msisdn(), granted.scopes(),
+                granted.clientId(), granted.amr());
+        String idToken = null;
+        if (granted.openid()) {
+            if (idTokens == null || !idTokens.available()) {
+                throw OAuthException.serverError("openid requested but ID tokens are unavailable");
+            }
+            idToken = idTokens.issue(metadata == null ? accessTokens.issuer() : metadata.issuer(),
+                    granted.msisdn(), granted.clientId(), granted.nonce(),
+                    granted.authTimeEpochSec(), granted.amr());
+        }
+        LOG.info("[SAS] /token granted authorization-code token for client {}", granted.clientId());
+        return tokenResponse(accessToken, granted.scopes(), idToken);
     }
 
     private Response clientCredentialsToken(String scope,
@@ -208,11 +269,22 @@ public class TokenResource {
     }
 
     private static Response tokenResponse(String accessToken, Set<String> scopes) {
-        return Response.ok(Map.of(
-                "access_token", accessToken,
-                "token_type", "Bearer",
-                "expires_in", AccessTokenService.TOKEN_TTL_SECONDS,
-                "scope", String.join(" ", scopes))).build();
+        return tokenResponse(accessToken, scopes, null);
+    }
+
+    private static Response tokenResponse(String accessToken, Set<String> scopes, String idToken) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("access_token", accessToken);
+        body.put("token_type", "Bearer");
+        body.put("expires_in", AccessTokenService.TOKEN_TTL_SECONDS);
+        body.put("scope", String.join(" ", scopes));
+        if (idToken != null) {
+            body.put("id_token", idToken);
+        }
+        return Response.ok(body)
+                .header("Cache-Control", "no-store")
+                .header("Pragma", "no-cache")
+                .build();
     }
 
     private static Response error(OAuthException e) {

@@ -36,16 +36,27 @@ public class OAuthMetadataService {
     @Inject
     OAuthServerConfig config;
 
+    @Inject
+    OAuthSigningKeys signingKeys;
+
+    public static final String AUTHORIZATION_PATH = "/authorize";
+
     public Map<String, Object> metadata(UriInfo uriInfo) {
         String issuer = issuer();
         String base = baseUrl(issuer, uriInfo);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("issuer", issuer);
+        metadata.put("authorization_endpoint", url(base, AUTHORIZATION_PATH));
         metadata.put("token_endpoint", url(base, "/token"));
         metadata.put("jwks_uri", url(base, JWKS_PATH));
         metadata.put("backchannel_authentication_endpoint", url(base, "/bc-authorize"));
         metadata.put("scopes_supported", scopesSupported());
+        metadata.put("response_types_supported", List.of("code"));
+        metadata.put("response_modes_supported", List.of("query"));
+        metadata.put("code_challenge_methods_supported", List.of("S256"));
+        metadata.put("subject_types_supported", List.of("pairwise"));
         metadata.put("grant_types_supported", List.of(
+                TokenResource.AUTHORIZATION_CODE_GRANT_TYPE,
                 TokenResource.CIBA_GRANT_TYPE,
                 TokenResource.CLIENT_CREDENTIALS_GRANT_TYPE,
                 TokenResource.JWT_BEARER_GRANT_TYPE));
@@ -54,7 +65,11 @@ public class OAuthMetadataService {
                 JsonWebKey.SUPPORTED_SIGNATURE_ALGORITHMS);
         metadata.put("backchannel_token_delivery_modes_supported", List.of("poll"));
         metadata.put("backchannel_user_code_parameter_supported", false);
-        metadata.put("id_token_signing_alg_values_supported", List.of("HS256"));
+        // ID tokens are only ever ES256 (asymmetric, JWKS-verifiable); an HS256 lab
+        // server issues none, so it advertises none.
+        if (signingKeys != null && signingKeys.es256()) {
+            metadata.put("id_token_signing_alg_values_supported", List.of("ES256"));
+        }
         metadata.put("request_parameter_supported", false);
         metadata.put("require_request_uri_registration", false);
         return metadata;
@@ -62,13 +77,31 @@ public class OAuthMetadataService {
 
     public Map<String, Object> jwks() {
         String configured = configuredJwksJson();
+        Map<String, Object> parsed;
         try {
             @SuppressWarnings("unchecked")
-            Map<String, Object> parsed = MAPPER.readValue(configured, Map.class);
-            return parsed;
+            Map<String, Object> read = MAPPER.readValue(configured, Map.class);
+            parsed = read;
         } catch (IOException e) {
             throw new IllegalStateException("invalid sas.oauth.jwks-json", e);
         }
+        if (signingKeys == null || signingKeys.publicJwkMaps().isEmpty()) {
+            return parsed;
+        }
+        // Publish the ES256 signing keys next to any statically configured entries.
+        List<Object> keys = new ArrayList<>();
+        Object existing = parsed.get("keys");
+        if (existing instanceof List<?> list) {
+            keys.addAll(list);
+        }
+        keys.addAll(signingKeys.publicJwkMaps());
+        Map<String, Object> out = new LinkedHashMap<>(parsed);
+        out.put("keys", keys);
+        return out;
+    }
+
+    public String authorizationEndpoint(UriInfo uriInfo) {
+        return url(baseUrl(issuer(), uriInfo), AUTHORIZATION_PATH);
     }
 
     public String issuer() {

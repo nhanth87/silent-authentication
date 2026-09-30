@@ -29,6 +29,7 @@ class OAuthMetadataServiceTest {
                 metadata.get("backchannel_authentication_endpoint"));
         assertEquals("https://sas.example.com/jwks.json", metadata.get("jwks_uri"));
         assertEquals(List.of(
+                TokenResource.AUTHORIZATION_CODE_GRANT_TYPE,
                 TokenResource.CIBA_GRANT_TYPE,
                 TokenResource.CLIENT_CREDENTIALS_GRANT_TYPE,
                 TokenResource.JWT_BEARER_GRANT_TYPE), metadata.get("grant_types_supported"));

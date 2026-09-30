@@ -11,6 +11,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jwt.JWTClaimsSet;
+
+import et.restlink.sas.token.Es256Jws;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -27,6 +32,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -34,7 +40,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Mints the CAMARA user-bound access token for a consumed CIBA pending
- * binding: {@code b64url(payload-json).b64url(HMAC-SHA256(payload, secret))}
+ * binding. With {@code sas.oauth.signing-alg=ES256} the token is an ES256 JWS
+ * ({@code typ=at+jwt}, RFC 9068) verifiable by anyone through {@code /jwks.json};
+ * with the lab-legacy {@code HS256} it is
+ * {@code b64url(payload-json).b64url(HMAC-SHA256(payload, secret))}
  * with {@code iss=sas-restlink}, {@code sub}/{@code phone_number} bound to the
  * resolved MSISDN, TTL 300 s (CAMARA single-use ceiling). Fail-closed: a blank
  * {@code sas.oauth.secret} makes issuance throw; introspection rejects
@@ -63,6 +72,12 @@ public class AccessTokenService {
     @Inject
     OAuthServerConfig config;
 
+    @Inject
+    OAuthSigningKeys signingKeys;
+
+    /** RFC 9068 access-token media type. */
+    public static final JOSEObjectType ACCESS_TOKEN_TYPE = new JOSEObjectType("at+jwt");
+
     /** jti → consumption deadline epoch sec (replay guard hook for /verify). */
     private final Map<String, Long> consumedJtis = new ConcurrentHashMap<>();
 
@@ -74,6 +89,7 @@ public class AccessTokenService {
             @JsonProperty("client_id") String clientId,
             @JsonProperty("token_use") String tokenUse,
             String scope,
+            List<String> amr,
             String jti,
             Long iat,
             Long exp) {}
@@ -84,7 +100,13 @@ public class AccessTokenService {
             String jti,
             long expiresEpochSec,
             String clientId,
-            String tokenUse) {
+            String tokenUse,
+            List<String> amr) {
+
+        public Decoded(String msisdn, Set<String> scopes, String jti, long expiresEpochSec,
+                       String clientId, String tokenUse) {
+            this(msisdn, scopes, jti, expiresEpochSec, clientId, tokenUse, List.of());
+        }
 
         public Decoded(String msisdn, Set<String> scopes, String jti, long expiresEpochSec) {
             this(msisdn, scopes, jti, expiresEpochSec, null, null);
@@ -106,6 +128,15 @@ public class AccessTokenService {
     }
 
     public String issueUserToken(String msisdn, Set<String> scopes, String clientId) {
+        return issueUserToken(msisdn, scopes, clientId, null);
+    }
+
+    /**
+     * @param amr authentication methods the grant proved, e.g. {@code ["mno"]} for a
+     *            network-based (IP-bound) authentication; {@code null} for none
+     */
+    public String issueUserToken(String msisdn, Set<String> scopes, String clientId,
+                                 List<String> amr) {
         if (msisdn == null || msisdn.isBlank()) {
             throw new IllegalStateException("user-bound access token requires an msisdn");
         }
@@ -117,6 +148,7 @@ public class AccessTokenService {
                 clientId,
                 "user",
                 String.join(" ", scopes == null ? Set.of() : scopes),
+                amr == null || amr.isEmpty() ? null : List.copyOf(amr),
                 randomJti(),
                 nowSec,
                 nowSec + TOKEN_TTL_SECONDS);
@@ -138,6 +170,7 @@ public class AccessTokenService {
                 clientId,
                 "client",
                 String.join(" ", scopes == null ? Set.of() : scopes),
+                null,
                 randomJti(),
                 nowSec,
                 nowSec + TOKEN_TTL_SECONDS);
@@ -148,6 +181,17 @@ public class AccessTokenService {
     }
 
     private String sign(TokenPayload payload) {
+        if (signingKeys != null && signingKeys.es256()) {
+            ECKey key = signingKeys.signingKey().orElseThrow(() -> new IllegalStateException(
+                    "ES256 selected but no signing key is available"));
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> claims = MAPPER.convertValue(payload, Map.class);
+                return Es256Jws.sign(JWTClaimsSet.parse(claims), key, ACCESS_TOKEN_TYPE);
+            } catch (java.text.ParseException e) {
+                throw new IllegalStateException("access-token claims are not a valid JWT claims set", e);
+            }
+        }
         String signingSecret = config == null ? "" : config.secret();
         if (signingSecret.isBlank()) {
             LOG.error("sas.oauth.secret is blank — refusing to issue access tokens");
@@ -203,7 +247,7 @@ public class AccessTokenService {
             }
         }
         return new Decoded(userBound ? p.sub() : null, scopes, p.jti(), p.exp(),
-                p.clientId(), p.tokenUse());
+                p.clientId(), p.tokenUse(), p.amr() == null ? List.of() : p.amr());
     }
 
     public String issuer() {
@@ -242,6 +286,31 @@ public class AccessTokenService {
     private TokenPayload verifySignedPayload(String token) {
         if (token == null || token.isBlank()) {
             return null;
+        }
+        // Algorithm is pinned by configuration, never taken from the token header:
+        // an ES256 server refuses HS256 tokens and vice versa (RFC 8725 §3.1).
+        if (signingKeys != null && signingKeys.es256()) {
+            if (!"ES256".equals(Es256Jws.peekAlgorithm(token))) {
+                LOG.warn("Access token: algorithm is not ES256");
+                return null;
+            }
+            JWTClaimsSet claims = Es256Jws.verify(token, signingKeys.verificationKeys(),
+                    ACCESS_TOKEN_TYPE);
+            if (claims == null) {
+                LOG.warn("Access token: invalid ES256 signature or type");
+                return null;
+            }
+            try {
+                TokenPayload p = MAPPER.readValue(claims.toString(), TokenPayload.class);
+                if (p == null || p.exp() == null || p.jti() == null || p.jti().isBlank()) {
+                    LOG.warn("Access token: missing exp/jti claims");
+                    return null;
+                }
+                return p;
+            } catch (IOException e) {
+                LOG.warn("Access token: malformed payload JSON");
+                return null;
+            }
         }
         String signingSecret = config == null ? "" : config.secret();
         if (signingSecret.isBlank()) {

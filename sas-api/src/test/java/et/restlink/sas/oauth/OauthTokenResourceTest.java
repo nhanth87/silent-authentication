@@ -87,7 +87,7 @@ class OauthTokenResourceTest {
         clientAuthenticator.client = OAuthClient.anonymous(CLIENT_ID);
 
         Response response = resource.token(TokenResource.CIBA_GRANT_TYPE, "req-id",
-                null, CLIENT_ID, null, null, null, null);
+                null, CLIENT_ID, null, null, null, null, null, null, null);
 
         assertEquals(200, response.getStatus());
         assertEquals(CLIENT_ID, accessTokens.lastBinding.clientId());
@@ -102,7 +102,7 @@ class OauthTokenResourceTest {
         clientAuthenticator.client = OAuthClient.anonymous("other-client");
 
         Response response = resource.token(TokenResource.CIBA_GRANT_TYPE, "req-id",
-                null, "other-client", null, null, null, null);
+                null, "other-client", null, null, null, null, null, null, null);
 
         assertEquals(400, response.getStatus());
         assertErrorBody(response, "invalid_grant");
@@ -112,7 +112,7 @@ class OauthTokenResourceTest {
     @Test
     void cibaTokenWithScopeParameter_invalidRequest400() throws Exception {
         Response response = resource.token(TokenResource.CIBA_GRANT_TYPE, "req-id",
-                SCOPE_VERIFY, null, null, null, null, null);
+                SCOPE_VERIFY, null, null, null, null, null, null, null, null);
 
         assertEquals(400, response.getStatus());
         assertErrorBody(response, "invalid_request");
@@ -121,7 +121,8 @@ class OauthTokenResourceTest {
 
     @Test
     void wrongGrantType_unsupportedGrantType400() throws Exception {
-        Response response = cibaToken("authorization_code", "req-id");
+        // ROPC is deliberately unsupported (RFC 9700 §2.4).
+        Response response = cibaToken("password", "req-id");
         assertEquals(400, response.getStatus());
         assertErrorBody(response, "unsupported_grant_type");
         assertFalse(authRequests.called, "grant check must gate the consumption");
@@ -241,7 +242,7 @@ class OauthTokenResourceTest {
     @Test
     void jwtBearerWithScopeParameter_invalidRequest400() throws Exception {
         Response response = resource.token(TokenResource.JWT_BEARER_GRANT_TYPE, null,
-                SCOPE_VERIFY, null, null, null, "assertion-value", null);
+                SCOPE_VERIFY, null, null, null, "assertion-value", null, null, null, null);
 
         assertEquals(400, response.getStatus());
         assertErrorBody(response, "invalid_request");
@@ -313,17 +314,17 @@ class OauthTokenResourceTest {
     // ---- plumbing (no Quarkus boot, no HTTP server) ----
 
     private Response cibaToken(String grantType, String authReqId) {
-        return resource.token(grantType, authReqId, null, null, null, null, null, null);
+        return resource.token(grantType, authReqId, null, null, null, null, null, null, null, null, null);
     }
 
     private Response clientCredentials(String scope, String clientId) {
         return resource.token(TokenResource.CLIENT_CREDENTIALS_GRANT_TYPE, null,
-                scope, clientId, null, null, null, null);
+                scope, clientId, null, null, null, null, null, null, null);
     }
 
     private Response jwtBearer(String assertion) {
         return resource.token(TokenResource.JWT_BEARER_GRANT_TYPE, null,
-                null, null, null, null, assertion, null);
+                null, null, null, null, assertion, null, null, null, null);
     }
 
     private static OAuthClient registeredClient(Set<String> grantTypes) {

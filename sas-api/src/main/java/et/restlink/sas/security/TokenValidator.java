@@ -7,6 +7,12 @@
 
 package et.restlink.sas.security;
 
+import com.nimbusds.jwt.JWTClaimsSet;
+
+import et.restlink.sas.oauth.AccessTokenService;
+import et.restlink.sas.oauth.OAuthSigningKeys;
+import et.restlink.sas.token.Es256Jws;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -28,7 +34,8 @@ import java.util.Set;
 
 /**
  * P1 OIDC / JWT token validator for the bank→SAS northbound surface.
- * Validates: signature (HMAC-SHA256), expiry, issuer, audience, scope,
+ * Validates: signature (ES256 against the Authorization Server JWKS; HMAC-SHA256
+ * only while {@code sas.security.accept-hs256} is on — lab legacy), expiry, issuer, audience, scope,
  * CAMARA NV token-lifetime policy (F5: {@code exp - iat} ≤ 300 s, iat
  * required) and the user-number binding (F4). Fail-closed: any validation
  * failure rejects the request.
@@ -71,6 +78,9 @@ public class TokenValidator {
 
     @Inject
     SasSecurityConfig config;
+
+    @Inject
+    OAuthSigningKeys signingKeys;
 
     /**
      * Validated bearer-token claims. {@code error == null} means accepted.
@@ -199,7 +209,7 @@ public class TokenValidator {
             return DetailedAuth.fail("malformed JWT (expected 3 parts)");
         }
         String signingInput = parts[0] + "." + parts[1];
-        if (!verifySignature(signingInput, parts[2])) {
+        if (!verifyAnySignature(token, signingInput, parts[2])) {
             return DetailedAuth.fail("invalid token signature");
         }
         String payloadJson;
@@ -277,6 +287,31 @@ public class TokenValidator {
             }
         }
         return null;
+    }
+
+    /**
+     * Algorithm-pinned signature check: ES256 against our own JWKS, or HS256 when the
+     * lab switch allows it. Anything else — {@code none}, RS*, an unknown alg — fails.
+     */
+    private boolean verifyAnySignature(String token, String signingInput, String signatureB64) {
+        String alg = Es256Jws.peekAlgorithm(token);
+        if ("ES256".equals(alg)) {
+            if (signingKeys == null || signingKeys.verificationKeys().isEmpty()) {
+                LOG.warn("ES256 bearer token but no Authorization Server key is configured");
+                return false;
+            }
+            JWTClaimsSet claims = Es256Jws.verify(token, signingKeys.verificationKeys(),
+                    AccessTokenService.ACCESS_TOKEN_TYPE);
+            return claims != null;
+        }
+        if ("HS256".equals(alg)) {
+            if (!config.acceptHs256()) {
+                LOG.warn("HS256 bearer token refused (sas.security.accept-hs256=false)");
+                return false;
+            }
+            return verifySignature(signingInput, signatureB64);
+        }
+        return false;
     }
 
     private boolean verifySignature(String signingInput, String signatureB64) {

@@ -75,9 +75,12 @@ public record JsonWebKey(
             case "RS256" -> "SHA256withRSA";
             case "RS384" -> "SHA384withRSA";
             case "RS512" -> "SHA512withRSA";
-            case "ES256" -> "SHA256withECDSA";
-            case "ES384" -> "SHA384withECDSA";
-            case "ES512" -> "SHA512withECDSA";
+            // JOSE carries ECDSA signatures as raw R||S (RFC 7518 §3.4), not DER.
+            // The plain "SHAxxxwithECDSA" JCA names expect DER and would reject every
+            // standards-conformant ES* client assertion.
+            case "ES256" -> "SHA256withECDSAinP1363Format";
+            case "ES384" -> "SHA384withECDSAinP1363Format";
+            case "ES512" -> "SHA512withECDSAinP1363Format";
             default -> throw new IllegalArgumentException("unsupported JWS alg: " + headerAlg);
         };
     }

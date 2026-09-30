@@ -169,6 +169,26 @@ public class AuthorizationRequestService {
         return new IdentityAnchor.OperatorBinding(result.msisdn(), result.imsi());
     }
 
+    /**
+     * Network-based authentication shared by CIBA and the Authorization Code flow:
+     * resolve the live IP:port:ts tuple to exactly one subscriber through the SAS
+     * Resolver. Fail-closed — any miss, ambiguity or timeout throws.
+     *
+     * @throws CibaException access_denied / invalid_request
+     */
+    public IdentityAnchor.OperatorBinding resolveNetworkAnchor(String srcIp, int srcPort) {
+        if (srcIp == null || srcIp.isBlank()) {
+            throw CibaException.invalidRequest("no network source address for authentication");
+        }
+        long nowMs = System.currentTimeMillis();
+        ResolverResult result = awaitResolver(srcIp.trim(), Math.max(0, srcPort), nowMs);
+        if (!result.found()) {
+            throw CibaException.accessDenied(
+                    "no unique subscriber bound to the network tuple (" + result.miss() + ")");
+        }
+        return new IdentityAnchor.OperatorBinding(result.msisdn(), result.imsi());
+    }
+
     private ResolverResult awaitResolver(String ip, int port, long tsEpochMs) {
         try {
             return resolver().resolve(ip, port, tsEpochMs)

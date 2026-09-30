@@ -51,6 +51,18 @@ public class SasSecurityConfig {
     @ConfigProperty(name = "sas.security.enforce-api-keys", defaultValue = "false")
     boolean enforceApiKeys;
 
+    /**
+     * Accept HS256 bearer tokens signed with {@code sas.security.hmac-secret}. Lab
+     * legacy only: prod sets {@code false} (preflight PRO-33) so the resource server
+     * verifies nothing but ES256 tokens from the Authorization Server's JWKS.
+     */
+    @ConfigProperty(name = "sas.security.accept-hs256")
+    java.util.Optional<Boolean> acceptHs256;
+
+    public boolean acceptHs256() {
+        return acceptHs256 == null || acceptHs256.orElse(true);
+    }
+
     public boolean tokenValidationEnabled() {
         return tokenValidationEnabled;
     }

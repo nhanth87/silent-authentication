@@ -70,6 +70,36 @@ class OAuthClientAuthenticatorTest {
     }
 
     @Test
+    void es256ClientAssertionFromAStandardJoseLibraryIsAccepted() throws Exception {
+        // Nimbus signs ES256 the JOSE way (raw R||S). A verifier that expects DER
+        // rejects this; the P1363 fix is what makes it pass.
+        com.nimbusds.jose.jwk.ECKey ec = et.restlink.sas.token.Es256Keys.generate(
+                com.nimbusds.jose.jwk.KeyUse.SIGNATURE);
+        String registry = "{\"clients\":[{"
+                + "\"client_id\":\"" + CLIENT_ID + "\","
+                + "\"token_endpoint_auth_method\":\"private_key_jwt\","
+                + "\"grant_types\":[\"" + TokenResource.JWT_BEARER_GRANT_TYPE + "\"],"
+                + "\"scopes\":[\"" + TokenValidator.SCOPE_NUMBER_VERIFICATION_VERIFY + "\"],"
+                + "\"purposes\":[\"" + OAuthScopePolicy.PURPOSE_FRAUD_PREVENTION + "\"],"
+                + "\"jwks\":{\"keys\":[" + ec.toPublicJWK().toJSONString() + "]}"
+                + "}]}";
+        OAuthClientAuthenticator es = authenticator(false, registry);
+        long now = System.currentTimeMillis() / 1000L;
+        com.nimbusds.jwt.JWTClaimsSet claims = new com.nimbusds.jwt.JWTClaimsSet.Builder()
+                .issuer(CLIENT_ID).subject(CLIENT_ID).audience(AUDIENCE)
+                .issueTime(new java.util.Date(now * 1000L))
+                .expirationTime(new java.util.Date((now + 60) * 1000L))
+                .jwtID("es256-jti-1").build();
+        String assertion = et.restlink.sas.token.Es256Jws.sign(claims, ec,
+                com.nimbusds.jose.JOSEObjectType.JWT);
+
+        OAuthClient client = es.authenticate(CLIENT_ID,
+                OAuthClientAuthenticator.CLIENT_ASSERTION_TYPE_JWT_BEARER,
+                assertion, Set.of(AUDIENCE), true);
+        assertTrue(client.authenticated());
+    }
+
+    @Test
     void missingClientAssertionIsRejectedWhenRequired() {
         OAuthException e = assertThrows(OAuthException.class, () -> authenticator.authenticate(
                 CLIENT_ID,

@@ -28,6 +28,7 @@
   </licenses>
 
   <modules>
+    <module>sas-token</module>
     <module>sas-api</module>
     <module>sas-entitlement</module>
     <module>sas-host</module>
@@ -43,6 +44,7 @@
     <log4j2.version>2.23.1</log4j2.version>
     <jss7.version>9.2.8-j25</jss7.version>
     <corsac-diameter.version>10.0.0-41-SNAPSHOT</corsac-diameter.version>
+    <nimbus-jose.version>10.9.1</nimbus-jose.version>
   </properties>
 
   <dependencyManagement>
@@ -53,6 +55,16 @@
         <version>${quarkus.platform.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.nimbusds</groupId>
+        <artifactId>nimbus-jose-jwt</artifactId>
+        <version>${nimbus-jose.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>et.restlink</groupId>
+        <artifactId>sas-token</artifactId>
+        <version>${project.version}</version>
       </dependency>
       <dependency>
         <groupId>et.restlink</groupId>

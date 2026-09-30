@@ -41,6 +41,52 @@ public class OAuthServerConfig {
     @ConfigProperty(name = "sas.oauth.require-client-auth", defaultValue = "false")
     Optional<Boolean> requireClientAuth;
 
+    /** Access/ID-token signing algorithm: ES256 (JWKS-verifiable) or HS256 (lab legacy). */
+    @Inject
+    @ConfigProperty(name = "sas.oauth.signing-alg", defaultValue = "HS256")
+    Optional<String> signingAlg;
+
+    /** Private P-256 JWK (JSON) used for ES256. Prod: from the environment/secret store. */
+    @Inject
+    @ConfigProperty(name = "sas.oauth.signing-jwk")
+    Optional<String> signingJwk;
+
+    /** Retired public keys still published for verification during a rotation (JWKS JSON). */
+    @Inject
+    @ConfigProperty(name = "sas.oauth.previous-jwks")
+    Optional<String> previousJwks;
+
+    /** Lab only: mint a random ES256 key at start when none is configured. */
+    @Inject
+    @ConfigProperty(name = "sas.oauth.allow-ephemeral-signing-key", defaultValue = "false")
+    Optional<Boolean> allowEphemeralSigningKey;
+
+    /** Secret for pairwise ID-token subjects (OIDC Core §8.1). Prod: required. */
+    @Inject
+    @ConfigProperty(name = "sas.oauth.pairwise-secret")
+    Optional<String> pairwiseSecret;
+
+    public String signingAlg() {
+        String alg = value(signingAlg, "HS256");
+        return alg.toUpperCase(java.util.Locale.ROOT);
+    }
+
+    public Optional<String> signingJwk() {
+        return normalized(signingJwk);
+    }
+
+    public Optional<String> previousJwks() {
+        return normalized(previousJwks);
+    }
+
+    public boolean allowEphemeralSigningKey() {
+        return allowEphemeralSigningKey != null && allowEphemeralSigningKey.orElse(false);
+    }
+
+    public Optional<String> pairwiseSecret() {
+        return normalized(pairwiseSecret);
+    }
+
     public String secret() {
         return value(secret, "");
     }
