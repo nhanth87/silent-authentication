@@ -954,16 +954,47 @@ is Phase 1e work (the testapp must emit `RAND‖AUTN` + a real XRES + CK/IK, and
 
 **Gate:** MAR dialog completes in < 2s, resync works, timeout aborts cleanly.
 
-### Phase 1c: MAP Backend + Binding RA (5–6 days) — **unblocked (D6 = Shape S)**
+### Phase 1c: Binding RA — **DONE** (RA + source order + export source; live sources pending)
 
-**Deliverable:** `Jss7MapAuthAuthVectorBackend`, `SubscriberBindingRA`, binding source priority.
+The EAP exchange proves an **IMSI**; the bank claims a **number**. Phase 1c is the only
+thing that bridges the two, so it is the part that must never guess. Landed in
+`sas-host/src/main/java/.../ras/binding/`, 16 tests green:
 
-- `Jss7MapAuthVectorBackend` (MAP SAI, quintet only; triplet → reject). Note: under Shape R
-  the SAS does not consume vectors at all, so the whole vector-fetch half of 1c collapses to
-  the binding half — re-scope after D6.
-- `SubscriberBindingResourceAdaptor`, backends: `SwxSarBinding`, `ShUdrBinding`, `MapSendImsiBinding`, `SubscriberDbBinding`.
-- LookupBindingCommand, command executor.
-- Config: `sas.authvector.backend-order`, `sas.binding.source-order`.
+| Piece | Note |
+|---|---|
+| `SubscriberBinding` | resolved **or** unresolved, plus the source name for audit. `resolved()` is the only thing a caller may treat as an answer; an unresolved binding is a refusal |
+| `SubscriberBindingBackend` | the seam. Documents the two banned sources as constants: **SRI-SM** (Home Routing makes it answer a correlation ID, not a number) and **ATI** (FS.11 Cat 1) |
+| `SubscriberBindingResourceAdaptor` | walks `sas.binding.source-order` inside **one shared 2 s budget**; first resolved wins; a source that errors or answers "unresolved" falls through; exhaustion ⇒ unresolved |
+| `SubscriberDbBinding` | the read-only export (no transport) — the only source that works in the lab, and last in the order because it can only be stale |
+| `SubscriberBindingRaEndpoint` + `LookupBindingCommand`/`AbortBindingCommand` | 3-port RA, same shape as the others (H24) |
+
+Two properties the tests pinned, both of which were wrong in my first cut:
+
+- **The source order is configuration, not construction.** The first version cleared the
+  list on every `setSourceOrder` and refilled it with placeholders, which silently threw
+  away a live transport the bootstrap had just registered. It is now a
+  `LinkedHashMap<token, backend>` that only re-orders.
+- **The budget is shared, and the remainder is still usable.** A slow first source does not
+  abort the walk — the next source is asked with whatever is left, and the *total* stays
+  inside 2 s. A test asserting "the second source is never asked" was wrong about the
+  contract, not about the code; the assertion now checks the total.
+
+**Still open in 1c:** the three live sources are declared and ordered but not yet wired to
+transports —
+
+- `swx-sar`: the shared SWx client already speaks SAR, but with
+  `Server-Assignment-Type = REGISTRATION(1)`, which *is* a registration. The read-only choice
+  is `AAA_USER_DATA_REQUEST(12)` (present in corsac's `ServerAssignmentTypeEnum`); that
+  switch plus reading the MSISDN out of `Non-3GPP-User-Data → Subscription-Id
+  (END_USER_E164)` is a small change on the existing link.
+- `sh-udr`: no Sh client exists in the tree yet; the S6a verifier notes Sh UDR/SNR as the
+  intended read-only source for SIM-swap freshness, so this is shared work.
+- `map-smi`: `SendImsiRequest`/`SendImsiResponse` exist in jSS7 9.2.8-j25
+  (`service.mobility.oam`), and the jSS7 stack exists — but it is owned by
+  `Jss7MapVerifierBackend`, so this needs a shared-stack decision, not a second stack.
+
+All three plug in at the `SubscriberBindingBackend` seam, and until they are wired they
+answer `unresolved` by design, so the export path stays reachable and the lab loop works.
 
 **Gate:** SAI dialog works, SQN increments; SAR / UDR / SendIMSI each complete in < 2s; binding priority order enforced.
 
