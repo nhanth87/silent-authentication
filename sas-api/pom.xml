@@ -18,6 +18,10 @@
   <dependencies>
     <dependency>
       <groupId>et.restlink</groupId>
+      <artifactId>sas-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>et.restlink</groupId>
       <artifactId>sas-token</artifactId>
     </dependency>
     <dependency>
