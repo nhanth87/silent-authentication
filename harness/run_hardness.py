@@ -477,12 +477,144 @@ def check_entitlement_split(expect, contract):
         if not path.exists() or not re.search(rule["pattern"], path.read_text(encoding="utf-8")):
             problems.append(f"{rule['file']}: expected /{rule['pattern']}/ — {rule['why']}")
 
+    closure_note = ""
+    for rule in expect.get("closure_forbidden", []):
+        found, walked = _closure_violations(root, rule)
+        problems.extend(found)
+        closure_note += f"; {rule['binary']}: {len(walked)} internal modules walked"
+        lib = root / rule.get("artifact_lib", "")
+        if rule.get("artifact_lib") and lib.is_dir():
+            pat = re.compile(rule["artifact_pattern"])
+            leaked = sorted(f.name for f in lib.iterdir() if pat.search(f.name))
+            for name in leaked[:3]:
+                problems.append(f"{rule['artifact_lib']}: ships {name} — {rule['why']}")
+            closure_note += f", artifact lib/ checked ({'clean' if not leaked else len(leaked)})"
+        elif rule.get("artifact_lib"):
+            closure_note += ", artifact not built (scripts/check-dependency-boundary.sh covers it)"
+
     if problems:
         return False, "; ".join(problems[:6]) + (f" (+{len(problems) - 6} more)"
                                                  if len(problems) > 6 else "")
     return True, (f"binary split intact ({len(expect.get('pom_forbidden', []))} pom rules, "
                   f"{len(expect.get('import_forbidden', []))} import rules, "
-                  f"{len(expect.get('pattern_forbidden', []))} signalling/key rules)")
+                  f"{len(expect.get('pattern_forbidden', []))} signalling/key rules"
+                  f"{closure_note})")
+
+
+def _module_poms(root):
+    """artifactId → pom path for every reactor module of the root aggregator."""
+    agg = (root / "pom.xml").read_text(encoding="utf-8")
+    out = {}
+    for mod in re.findall(r"<module>\s*([^<\s]+)\s*</module>", agg):
+        pom = root / mod / "pom.xml"
+        if pom.exists():
+            text = pom.read_text(encoding="utf-8")
+            body = re.sub(r"<parent>.*?</parent>", "", text, flags=re.S)
+            art = re.search(r"<artifactId>\s*([^<\s]+)\s*</artifactId>", body)
+            if art:
+                out[art.group(1)] = pom
+    return out
+
+
+def _closure_violations(root, rule):
+    """Walk the internal dependency closure of one binary; report forbidden artifacts
+    (internal modules or external signalling groups/names) anywhere in it."""
+    poms = _module_poms(root)
+    start = rule["binary"]
+    seen, todo, problems = set(), [start], []
+    forbidden = set(rule.get("artifacts", []))
+    groups = tuple(rule.get("groups", []))
+    names = re.compile(rule.get("artifact_pattern", r"(?!)"))
+    while todo:
+        art = todo.pop()
+        if art in seen or art not in poms:
+            continue
+        seen.add(art)
+        text = poms[art].read_text(encoding="utf-8")
+        deps = re.findall(r"<dependency>(.*?)</dependency>", text, flags=re.S)
+        for dep in deps:
+            if re.search(r"<scope>\s*test\s*</scope>", dep):
+                continue
+            g = (re.search(r"<groupId>\s*([^<\s]+)", dep) or [None, ""])[1]
+            a = (re.search(r"<artifactId>\s*([^<\s]+)", dep) or [None, ""])[1]
+            via = f"{art} -> {g}:{a}"
+            if a in forbidden or (groups and g.startswith(groups)) or (g != "et.restlink" and names.search(a)):
+                problems.append(f"{start} closure reaches {via} — {rule['why']}")
+            if g == "et.restlink" and a in poms:
+                todo.append(a)
+    return problems, seen
+
+
+def check_exposure_contract(expect, contract):
+    """H28 — the subscriber exposure contract and its Java halves cannot drift.
+
+    The OpenAPI document is the source of truth (layered ADR §4). The paths, scopes and
+    cause codes the Java contract declares, the operations the ECS resource serves, the
+    calls the gateway client makes and the methods of SubscriberService must all be the
+    same set — otherwise one side answers or asks something the other does not know.
+    """
+    root = HERE.parent
+    problems = []
+    doc = yaml.safe_load((root / expect["openapi"]).read_text(encoding="utf-8"))
+    paths = doc.get("paths", {})
+    yaml_paths = set(paths)
+    yaml_scopes = set(doc["components"]["securitySchemes"]["oAuth2ClientCredentials"]
+                      ["flows"]["clientCredentials"]["scopes"])
+    op_scopes = {p: next(iter(v.values())).get("x-required-scope") for p, v in paths.items()}
+    yaml_causes = set(doc["components"]["schemas"]["ProblemDetails"]["properties"]["cause"]["enum"])
+    server = doc["servers"][0]["url"]
+
+    def java(rel):
+        f = root / rel
+        if not f.exists():
+            problems.append(f"{rel}: missing")
+            return ""
+        return f.read_text(encoding="utf-8")
+
+    api = java(expect["api_constants"])
+    consts = dict(re.findall(r'static final String (\w+)\s*=\s*"([^"]*)"', api))
+    path_names = [n for n in consts if n.endswith("_PATH") and n != "BASE_PATH"]
+    java_paths = {consts[n] for n in path_names}
+    java_scopes = {v for n, v in consts.items() if n.startswith("SCOPE_")}
+    if not server.endswith(consts.get("BASE_PATH", "\0")):
+        problems.append(f"server url {server!r} does not end with BASE_PATH {consts.get('BASE_PATH')!r}")
+    if java_paths != yaml_paths:
+        problems.append(f"paths differ: contract-only {sorted(yaml_paths - java_paths)}, "
+                        f"Java-only {sorted(java_paths - yaml_paths)}")
+    if java_scopes != yaml_scopes:
+        problems.append(f"scopes differ: contract-only {sorted(yaml_scopes - java_scopes)}, "
+                        f"Java-only {sorted(java_scopes - yaml_scopes)}")
+    for p, sc in op_scopes.items():
+        if sc not in yaml_scopes:
+            problems.append(f"{p}: x-required-scope {sc!r} is not a declared scope")
+
+    resource = java(expect["ecs_resource"])
+    served = set(re.findall(r"@Path\(ExposureApi\.(\w+_PATH)\)", resource)) - {"BASE_PATH"}
+    if "@Path(ExposureApi.BASE_PATH)" not in resource:
+        problems.append(f"{expect['ecs_resource']}: not rooted at ExposureApi.BASE_PATH")
+    if served != set(path_names):
+        problems.append(f"ECS resource serves {sorted(served)}, contract has {sorted(path_names)}")
+
+    client = java(expect["gateway_client"])
+    called = set(re.findall(r"ExposureApi\.(\w+_PATH)", client)) - {"BASE_PATH"}
+    if called != set(path_names):
+        problems.append(f"gateway client calls {sorted(called)}, contract has {sorted(path_names)}")
+
+    service = java(expect["service_interface"])
+    methods = re.findall(r"CompletableFuture<ExposureOutcome<\w+>>\s+(\w+)\s*\(", service)
+    if len(methods) != len(yaml_paths):
+        problems.append(f"SubscriberService has {len(methods)} operations, contract {len(yaml_paths)}")
+
+    causes_src = java(expect["cause_enum"])
+    java_causes = set(re.findall(r"^\s{4}([A-Z_]+)\(\d{3}\)", causes_src, flags=re.M))
+    if java_causes != yaml_causes:
+        problems.append(f"cause codes differ: contract-only {sorted(yaml_causes - java_causes)}, "
+                        f"Java-only {sorted(java_causes - yaml_causes)}")
+
+    if problems:
+        return False, "; ".join(problems[:6])
+    return True, (f"{len(yaml_paths)} operations, {len(yaml_scopes)} scopes, {len(yaml_causes)} "
+                  f"causes — contract, ECS resource, gateway client and SubscriberService agree")
 
 
 CHECKERS = {
@@ -495,6 +627,7 @@ CHECKERS = {
     "license_parity": check_license_parity,
     "slee_boundary": check_slee_boundary,
     "entitlement_split": check_entitlement_split,
+    "exposure_contract": check_exposure_contract,
 }
 
 # ---------------------------------------------------------------------------
@@ -568,10 +701,12 @@ def main(argv):
         try:
             import mut_slee_boundary
             import mut_entitlement_split
+            import mut_exposure_contract
         except ImportError as exc:  # pragma: no cover - must be next to this file
             print(f"mutation self-test unusable: {exc}", file=sys.stderr)
             return 2
-        return mut_slee_boundary.main() + mut_entitlement_split.main()
+        return (mut_slee_boundary.main() + mut_entitlement_split.main()
+                + mut_exposure_contract.main())
 
     trace_arg = None
     for i, a in enumerate(argv):

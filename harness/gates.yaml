@@ -610,15 +610,18 @@ gates:
 
 
   - id: H25
-    title: two binaries, one trust boundary — CAMARA server and entitlement server never share code paths
+    title: two binaries split by layer — the CAMARA gateway signals nothing, only sas-ecs reaches the core
     spec: ["GSMA TS.43", "CAMARA ICM", "TS 29.002", "TS 29.273", "FS.11", "RFC 7516"]
     clause: >-
-      sas-camara and sas-ecs meet only through the operator token (sas-token);
-      entitlement signalling uses SAI/SendIMSI (MAP) or MAR/SAR (SWx) only
+      layered ADR §2/§3: sas-camara and sas-ecs meet only through the subscriber exposure
+      API (sas-subscriber-api); entitlement signalling uses SAI/SendIMSI (MAP) or MAR/SAR
+      (SWx) only
     rule: >-
-      no module of one binary depends on or imports the other's code; shared libraries
-      import neither side; the entitlement path never imports ATI, SRI-SM or S6a AIR, and
-      never passes AKA key material to a log call
+      no module of one binary depends on or imports the other's code; the gateway's whole
+      internal dependency closure carries no operator adapter, MAP, Diameter or SCTP artifact
+      (and neither does its packaged lib/ when built); shared libraries import neither side;
+      the entitlement path never imports ATI, SRI-SM or S6a AIR, and never passes AKA key
+      material to a log call
     check: entitlement_split
     expect:
       pom_forbidden:
@@ -680,6 +683,14 @@ gates:
                   "sas-operator-adapter/src/main/java/et/restlink/sas/ras/authvector"]
           pattern: 'LOG\.\w+\([^;]*\.(ck|ik|xres|kAut|kEncr|msk|emsk|autn|rand)\(\)'
           why: AKA key material passed to a log call
+      closure_forbidden:
+        - binary: sas-host
+          artifacts: ["sas-operator-adapter", "sas-entitlement", "sas-subscriber-exposure",
+                      "sas-ecs-host"]
+          groups: ["org.restcomm", "org.mobicents", "com.mobius-software"]
+          artifact_pattern: '(sctp|diameter|jss7|corsac|ss7)'
+          artifact_lib: sas-host/target/quarkus-app/lib/main
+          why: the CAMARA gateway signals no core network (layered ADR §2)
       required:
         - file: sas-ecs-host/src/main/java/et/restlink/sas/bootstrap/EcsBootstrap.java
           pattern: 'implements SasEntitlementEngine'
@@ -720,3 +731,21 @@ gates:
       scenarios: ["HS256 bearer tokens re-enabled", "ephemeral AS signing key",
                   "resource server not pinned to this AS", "OAuth client auth off",
                   "direct operator-token bearer on", "operator-token header on"]
+
+  - id: H28
+    title: the subscriber exposure contract and its Java halves cannot drift
+    spec: ["3GPP TS 29.522 (UEId)", "3GPP TS 29.122 (MonitoringEvent)", "RFC 9457", "RFC 8705"]
+    clause: docs/design/openapi/sas-subscriber-exposure-v1.yaml (layered ADR §4)
+    rule: >-
+      the OpenAPI paths, scopes and cause codes equal the Java contract (ExposureApi,
+      ExposureCause); the sas-ecs resource serves exactly those operations, the sas-camara
+      client calls exactly those operations, and SubscriberService has one method per
+      operation
+    check: exposure_contract
+    expect:
+      openapi: docs/design/openapi/sas-subscriber-exposure-v1.yaml
+      api_constants: sas-subscriber-api/src/main/java/et/restlink/sas/subscriber/ExposureApi.java
+      cause_enum: sas-subscriber-api/src/main/java/et/restlink/sas/subscriber/ExposureCause.java
+      service_interface: sas-subscriber-api/src/main/java/et/restlink/sas/subscriber/SubscriberService.java
+      ecs_resource: sas-subscriber-exposure/src/main/java/et/restlink/sas/exposure/SubscriberExposureResource.java
+      gateway_client: sas-host/src/main/java/et/restlink/sas/ras/exposure/ExposureClient.java

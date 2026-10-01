@@ -13,7 +13,7 @@ an observable (the exact MAP op / Diameter command, the fail-closed outcome, the
 
 ```bash
 python3 harness/run_hardness.py           # contract self-check (documented SoT)
-python3 harness/run_hardness.py --mutations   # H24 slee_boundary mutation self-test (10/10)
+python3 harness/run_hardness.py --mutations   # mutation self-tests: H24 10/10, H25 11/11, H28 8/8
 python3 harness/run_hardness.py --trace path/to/verifier_trace.json   # (future) Java verifier
 python3 harness/preflight_prod.py         # deployment verdict for THIS environment
 python3 harness/preflight_prod.py --selftest   # prove the deployment gate bites
@@ -44,13 +44,17 @@ documented contract, so the harness asserts both the design and the shipped conf
 | H15 | `prod` profile admits a correctly provisioned deployment | FS.31 (baseline) |
 | H16 | Northbound auth cannot be softened (validation/enforcement/scopes/secrets) | FS.11 §3.3.4; CAMARA NV |
 | H17 | Cleartext HTTP / no-mTLS / lab keystore refused | FS.07; FS.31 |
-| H18 | No fake signalling path (memory resolver, loopback peer, missing SS7 JSON) | TS 29.002 / 29.272 / 29.273 |
+| H18 | No fake signalling path: the CAMARA gateway configures no transport, reaches sas-ecs over HTTPS with a real home PLMN; no lab OTP sender | TS 29.002 / 29.272 / 29.273 / 29.338 |
 | H19 | TS.43 entitlement stays signed + attested, TTL ≤300 s | TS 33.402; GSMA TS.43 |
 | H20 | Admin key/cookies and persistence leave the lab (H2 → PostgreSQL + Flyway) | FS.31 |
 | H21 | Tenant quota bound to a real tenant; assurance detail not globally forced | CAMARA NV; SG.22 |
 | H22 | Device bearer declarations use one vocabulary (GS_2G3G/LTE/NR + UNKNOWN) across SAS + all four UE SDKs | TS 29.002 / 29.272; CAMARA NV |
 | H23 | Dual license stated where it binds: `LICENSE.md` + bundled `LICENSES/AGPL-3.0.txt`, root + every component README, Maven `<licenses>`, npm `license` — and no permissive relicense | AGPL-3.0 §13; CAMARA NV (Apache-2.0 attribution) |
 | H24 | Only micro-jainslee services run the SAS — nothing is coded around the container | TS 23.018 / TS 23.060 TC-TIMER; TS 29.002 / 29.272; CAMARA NV |
+| H25 | Two binaries split by layer: no cross-binary code; the gateway's whole internal dependency closure (and built `lib/`) carries no adapter/MAP/Diameter/SCTP artifact; no ATI/SRI-SM/AIR on the entitlement path; no AKA key in a log call | GSMA TS.43; FS.11; TS 29.002 / 29.273 |
+| H26 | sas-ecs prod profile: real vectors, own decryption key, PostgreSQL ledger, redemption at the ECS, exposure off until authenticated | GSMA TS.43; TS 33.402; RFC 7516 |
+| H27 | sas-camara OAuth AS is ES256-only; operator tokens only in CAMARA ICM form, redeemed at the ECS | CAMARA ICM; RFC 9068 / 7515 / 8725 |
+| H28 | Subscriber exposure contract ↔ Java halves: paths, scopes, causes, ECS resource, gateway client, `SubscriberService` | 3GPP TS 29.522 / 29.122 (inspired); RFC 9457 |
 
 H15–H21 are backed by 29 static checks (`PRO-01`…`PRO-29`) in
 [`harness/preflight_prod.py`](../../harness/preflight_prod.py): they read
