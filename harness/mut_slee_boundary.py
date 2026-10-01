@@ -45,7 +45,7 @@ SCENARIOS = [
      add_import(None, 'import org.restcomm.protocols.ss7.map.api.Maif;')),
     ("SLEE container reached from an SBB", f'{J}/sbbs/VerifySbb.java',
      add_import(None, 'import com.microjainslee.core.MicroSleeContainer;')),
-    ("raw JSR-240 SLEE API inside an RA", f'{J}/ras/resolver/RadiusAccountingListenerBackend.java',
+    ("raw JSR-240 SLEE API inside an RA", 'sas-operator-adapter/src/main/java/et/restlink/sas/ras/resolver/RadiusAccountingListenerBackend.java',
      add_import(None, 'import javax.slee.ActivityContextInterface;')),
     ("hand-rolled thread pool in the northbound", f'{A}/api/VerifyResource.java',
      prepend_line(None, 'public class',

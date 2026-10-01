@@ -26,10 +26,10 @@ main/
 ├── proposal/                 ← formal DOCX chapters + build script
 ├── sas-common/               ← shared kernel: model, SasTimeouts, API-key auth
 ├── sas-token/                ← shared JOSE: ES256 JWS + operator token (JWS in JWE), Nimbus
-├── sas-operator-adapter/     ← operator adapter RAs: MAP (jSS7, SCTP) + Diameter SWx, auth-vector, binding
+├── sas-operator-adapter/     ← operator adapter RAs: MAP (jSS7) + Diameter S6a/SWx + Gx/RADIUS/CGNAT resolver, auth-vector, binding
 ├── sas-api/                  ← CAMARA library (/verify, SIM Swap, OTP, OAuth AS, operator-token accept)
 ├── sas-entitlement/          ← entitlement library (EAP-AKA, /ts43, /entitlement, token issuer)
-├── sas-host/                 ← BINARY sas-camara :8085 (SasBootstrap, resolver/S6a RAs, CDR, admin)
+├── sas-host/                 ← BINARY sas-camara :8085 (SasBootstrap, VerifySbb, CDR, admin)
 ├── sas-ecs-host/             ← BINARY sas-ecs :8095 (EcsBootstrap, EntitlementSbb) — TS.43 ECS
 ├── sas-diameter-testapp/     ← lab HSS/AAA/PCRF(Gx) Diameter simulator (corsac), :3868
 ├── sas-jss7-testapp/         ← lab home-HLR simulator (jSS7 coral-valley), SCTP :2906
