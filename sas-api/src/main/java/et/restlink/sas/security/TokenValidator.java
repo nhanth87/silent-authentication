@@ -7,6 +7,7 @@
 
 package et.restlink.sas.security;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import com.nimbusds.jwt.JWTClaimsSet;
 
 import et.restlink.sas.oauth.AccessTokenService;
@@ -280,7 +281,7 @@ public class TokenValidator {
      */
     private static String extractUserBinding(String payloadJson) {
         for (String claim : List.of("phone_number", "msisdn")) {
-            var normalized = RequestValidator.normalizeE164(
+            var normalized = PhoneNumberNormalizer.toE164(
                     extractStringClaim(payloadJson, claim));
             if (normalized.isPresent()) {
                 return normalized.get();

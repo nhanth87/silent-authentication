@@ -7,6 +7,7 @@
 
 package et.restlink.sas.ras.resolver;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import com.mobius.software.telco.protocols.diameter.ApplicationIDs;
 import com.mobius.software.telco.protocols.diameter.AsyncCallback;
 import com.mobius.software.telco.protocols.diameter.DiameterLink;
@@ -538,7 +539,7 @@ public final class PcrfSdResolverBackend implements ResolverBackend {
                     continue;
                 }
                 if (type == SUB_ID_TYPE_E164) {
-                    String normalized = normalizeE164(data);
+                    String normalized = PhoneNumberNormalizer.toE164(data).orElse(null);
                     if (normalized != null) {
                         e164.add(normalized);
                     }
@@ -551,14 +552,6 @@ public final class PcrfSdResolverBackend implements ResolverBackend {
     }
 
     /** Canonical {@code +E.164}: digits only, single leading {@code +}. Null when empty. */
-    static String normalizeE164(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String digits = raw.replaceAll("[^0-9]", "");
-        return digits.isEmpty() ? null : "+" + digits;
-    }
-
     private record Nested(int code, byte[] data) {}
 
     private static List<Nested> nestedAvps(byte[] grouped) {

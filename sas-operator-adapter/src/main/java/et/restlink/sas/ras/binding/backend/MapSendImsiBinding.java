@@ -7,6 +7,7 @@
 
 package et.restlink.sas.ras.binding.backend;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -181,7 +182,6 @@ public final class MapSendImsiBinding
      *         unresolved, which the RA turns into a refusal.
      */
     public CompletableFuture<SubscriberBinding> lookupMsisdn(String provedImsi, String msisdn) {
-        Claim claim = new Claim(provedImsi, msisdn);
         if (!started || mapProvider == null) {
             return CompletableFuture.completedFuture(
                     SubscriberBinding.unresolved(provedImsi, name() + "-unavailable"));
@@ -192,6 +192,14 @@ public final class MapSendImsiBinding
             return CompletableFuture.completedFuture(
                     SubscriberBinding.unresolved(provedImsi, name() + "-no-claim"));
         }
+        String digits = PhoneNumberNormalizer.toDigits(msisdn).orElse(null);
+        if (digits == null) {
+            // Not a number: refuse here rather than ask the HLR about garbage.
+            return CompletableFuture.completedFuture(
+                    SubscriberBinding.unresolved(provedImsi, name() + "-not-a-number"));
+        }
+        // The confirmed binding carries the canonical form, whatever shape the claim had.
+        Claim claim = new Claim(provedImsi, "+" + digits);
         CompletableFuture<SubscriberBinding> out = new CompletableFuture<>();
         MAPDialogOam dialog = null;
         try {
@@ -212,7 +220,7 @@ public final class MapSendImsiBinding
             claims.put(dialogId, claim);
             ISDNAddressString number = mapProvider.getMAPParameterFactory()
                     .createISDNAddressString(AddressNature.international_number,
-                            NumberingPlan.ISDN, normaliseMsisdn(msisdn));
+                            NumberingPlan.ISDN, digits);
             dialog.addSendImsiRequest(number);
             dialog.send();
             LOG.info("[binding] SendIMSI sent msisdn={}", msisdn);
@@ -422,11 +430,6 @@ public final class MapSendImsiBinding
     }
 
     /** MAP carries a bare national number here, so drop a leading '+'. */
-    static String normaliseMsisdn(String msisdn) {
-        String value = msisdn.trim();
-        return value.startsWith("+") ? value.substring(1) : value;
-    }
-
     /**
      * GT endpoint for the dialog. The SSN is the OAM one (3): sendImsi rides the
      * network-management service selector, not the HLR's (6).

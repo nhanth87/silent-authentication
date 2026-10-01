@@ -7,6 +7,7 @@
 
 package et.restlink.sas.security;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -71,62 +72,62 @@ class RequestValidatorTest {
     @Test
     void normalizeE164_alreadyCanonical_unchanged() {
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("+251911111111"));
+                PhoneNumberNormalizer.toE164("+251911111111"));
         assertEquals(java.util.Optional.of("+123456789"),
-                RequestValidator.normalizeE164("+123456789"));
+                PhoneNumberNormalizer.toE164("+123456789"));
     }
 
     @Test
     void normalizeE164_missingPlus_added() {
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("251911111111"));
+                PhoneNumberNormalizer.toE164("251911111111"));
     }
 
     @Test
     void normalizeE164_doublePlus_collapsedToOne() {
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("++251911111111"));
+                PhoneNumberNormalizer.toE164("++251911111111"));
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("+ +251911111111"));
+                PhoneNumberNormalizer.toE164("+ +251911111111"));
     }
 
     @Test
     void normalizeE164_separatorsAndPunctuation_stripped() {
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("+251 911 111 111"));
+                PhoneNumberNormalizer.toE164("+251 911 111 111"));
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("251-911-111-111"));
+                PhoneNumberNormalizer.toE164("251-911-111-111"));
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("(+251)-911.111.111"));
+                PhoneNumberNormalizer.toE164("(+251)-911.111.111"));
         assertEquals(java.util.Optional.of("+251911111111"),
-                RequestValidator.normalizeE164("\t+251911111111\n"));
+                PhoneNumberNormalizer.toE164("\t+251911111111\n"));
     }
 
     @Test
     void normalizeE164_invalidShapes_empty() {
-        assertFalse(RequestValidator.normalizeE164(null).isPresent());
-        assertFalse(RequestValidator.normalizeE164("").isPresent());
-        assertFalse(RequestValidator.normalizeE164("   ").isPresent());
-        assertFalse(RequestValidator.normalizeE164("+").isPresent());            // no digits
-        assertFalse(RequestValidator.normalizeE164("++").isPresent());           // no digits
-        assertFalse(RequestValidator.normalizeE164("+0123456789").isPresent()); // leading 0
-        assertFalse(RequestValidator.normalizeE164("+25191a1111").isPresent());  // letter
-        assertFalse(RequestValidator.normalizeE164("abc").isPresent());
+        assertFalse(PhoneNumberNormalizer.toE164(null).isPresent());
+        assertFalse(PhoneNumberNormalizer.toE164("").isPresent());
+        assertFalse(PhoneNumberNormalizer.toE164("   ").isPresent());
+        assertFalse(PhoneNumberNormalizer.toE164("+").isPresent());            // no digits
+        assertFalse(PhoneNumberNormalizer.toE164("++").isPresent());           // no digits
+        assertFalse(PhoneNumberNormalizer.toE164("+0123456789").isPresent()); // leading 0
+        assertFalse(PhoneNumberNormalizer.toE164("+25191a1111").isPresent());  // letter
+        assertFalse(PhoneNumberNormalizer.toE164("abc").isPresent());
         // 16 digits after cleaning → over E.164 maximum
-        assertFalse(RequestValidator.normalizeE164("+1234567890123456").isPresent());
+        assertFalse(PhoneNumberNormalizer.toE164("+1234567890123456").isPresent());
     }
 
     @Test
     void normalizeE164_maxLength_stillValid() {
         assertEquals(java.util.Optional.of("+123456789012345"),
-                RequestValidator.normalizeE164("123456789 012345"));
+                PhoneNumberNormalizer.toE164("123456789 012345"));
     }
 
     @Test
     void hashInput_isNormalizedNumber_sha256OfPlusDigits() {
         // The hashedPhoneNumber contract: sha256 of "+E164" — the normalized
         // value already carries the '+', so hash(normalize(x)) is the digest.
-        String normalized = RequestValidator.normalizeE164("251911111111").orElseThrow();
+        String normalized = PhoneNumberNormalizer.toE164("251911111111").orElseThrow();
         assertEquals(
                 RequestValidator.sha256Hex("+251911111111"),
                 RequestValidator.sha256Hex(normalized));

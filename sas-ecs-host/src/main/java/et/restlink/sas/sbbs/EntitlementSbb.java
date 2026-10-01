@@ -7,6 +7,7 @@
 
 package et.restlink.sas.sbbs;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import com.microjainslee.api.ActivityContextInterface;
 import com.microjainslee.api.RaCommandPort;
 import com.microjainslee.api.Sbb;
@@ -123,6 +124,11 @@ public final class EntitlementSbb implements Sbb, SleeEventHandler {
         if (isBlank(evt.imsi())) {
             return Ts43Result.failure(evt.reqId(), "IMSI is required");
         }
+        if (!isBlank(evt.claimedMsisdn()) && claimOf(evt) == null) {
+            // A malformed claim is refused, never silently turned into "no claim"
+            // (which would switch the binding step to discovery).
+            return Ts43Result.failure(evt.reqId(), "claimed number is not a valid E.164 number");
+        }
         AuthVector vector = fetchVector(evt, false);
         if (vector == null) {
             return Ts43Result.failure(evt.reqId(), "no authentication vector available");
@@ -144,7 +150,7 @@ public final class EntitlementSbb implements Sbb, SleeEventHandler {
         // Identifier 1 is the first Challenge of the activity; a resync reuses it.
         EapPacket packet = server.buildChallenge(1, akaPrime);
         sessions.put(new EntitlementSessions.Session(evt.reqId(), evt.imsi(),
-                normaliseMsisdn(evt.claimedMsisdn()), server, akaPrime, System.currentTimeMillis()));
+                claimOf(evt), server, akaPrime, System.currentTimeMillis()));
         return Ts43Result.challenge(evt.reqId(), Base64.getEncoder().encodeToString(packet.encode()),
                 "challenge issued");
     }
@@ -283,7 +289,7 @@ public final class EntitlementSbb implements Sbb, SleeEventHandler {
         // A null claim is passed through on purpose: a discovery source (sh-udr,
         // SWx/SAR) can answer it, a number-driven one (MAP SendIMSI) answers
         // unresolved, and the result decides.
-        String claim = normaliseMsisdn(evt.claimedMsisdn());
+        String claim = claimOf(evt);
         CompletableFuture<SubscriberBinding> reply = new CompletableFuture<>();
         port.sendCommand(new LookupBindingCommand(evt.reqId(), imsi, claim, reply));
         try {
@@ -334,12 +340,9 @@ public final class EntitlementSbb implements Sbb, SleeEventHandler {
         }
     }
 
-    private static String normaliseMsisdn(String msisdn) {
-        if (isBlank(msisdn)) {
-            return null;
-        }
-        String value = msisdn.trim();
-        return value.startsWith("+") ? value : "+" + value;
+    /** The bank's claimed number in canonical form; null when absent or not a number. */
+    private static String claimOf(Ts43RequestEvent evt) {
+        return PhoneNumberNormalizer.toE164(evt.claimedMsisdn()).orElse(null);
     }
 
     private static boolean isBlank(String value) {

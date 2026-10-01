@@ -7,6 +7,7 @@
 
 package et.restlink.sas.oauth;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.security.RequestValidator;
 
 import io.vertx.core.http.HttpServerRequest;
@@ -146,7 +147,7 @@ public class AuthorizeResource {
                 msisdn = binding.msisdn();
                 amr = AMR_NETWORK;
             }
-            String e164 = RequestValidator.normalizeE164(msisdn).orElse(null);
+            String e164 = PhoneNumberNormalizer.toE164(msisdn).orElse(null);
             if (e164 == null) {
                 return redirectError(redirectUri, state, "access_denied",
                         "authenticated identity is not an E.164 subscriber");

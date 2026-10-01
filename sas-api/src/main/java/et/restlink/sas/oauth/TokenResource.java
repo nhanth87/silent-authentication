@@ -7,6 +7,7 @@
 
 package et.restlink.sas.oauth;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.security.RequestValidator;
 
 import jakarta.inject.Inject;
@@ -264,7 +265,7 @@ public class TokenResource {
     }
 
     private static String normalizedE164(String raw, String subjectType) {
-        return RequestValidator.normalizeE164(raw).orElseThrow(() ->
+        return PhoneNumberNormalizer.toE164(raw).orElseThrow(() ->
                 OAuthException.invalidGrant(subjectType + " subject is not a valid E.164 number"));
     }
 

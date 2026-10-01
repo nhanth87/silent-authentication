@@ -7,6 +7,7 @@
 
 package et.restlink.sas.simswap;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.api.ApiAudit;
 import et.restlink.sas.api.ApiCdrRecorder;
 import et.restlink.sas.api.TenantRegistry;
@@ -292,7 +293,7 @@ public class SimSwapResource {
                         "phoneNumber is required when the access token carries no user binding",
                         correlator));
             }
-            String msisdn = RequestValidator.normalizeE164(requested).orElse(null);
+            String msisdn = PhoneNumberNormalizer.toE164(requested).orElse(null);
             if (msisdn == null) {
                 return Identity.reject(error(400, CODE_INVALID_ARGUMENT,
                         "phoneNumber must be E.164 (+<digits>)", correlator));

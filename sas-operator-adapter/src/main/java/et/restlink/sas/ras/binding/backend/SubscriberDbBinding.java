@@ -7,6 +7,7 @@
 
 package et.restlink.sas.ras.binding.backend;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -60,7 +61,7 @@ public final class SubscriberDbBinding implements SubscriberBindingBackend {
             return CompletableFuture.completedFuture(
                     SubscriberBinding.unresolved(imsi, name()));
         }
-        String msisdn = byImsi.get(normalise(imsi));
+        String msisdn = byImsi.get(imsiKey(imsi));
         return CompletableFuture.completedFuture(msisdn == null
                 ? SubscriberBinding.unresolved(imsi, name())
                 : SubscriberBinding.resolved(imsi, msisdn, name()));
@@ -85,7 +86,17 @@ public final class SubscriberDbBinding implements SubscriberBindingBackend {
      * Strip the NAI decoration a device or the AAA may have attached, so
      * {@code 655010000000001@restlink.et} and {@code 655010000000001} are one identity.
      */
-    static String normalise(String identity) {
+    /**
+     * Export numbers are stored in CAMARA canonical form (via the shared normalizer), so a
+     * row written as {@code 251…} or {@code +251 …} answers the same way. A row whose number
+     * is not a number keeps its raw text, which then never matches a valid claim.
+     */
+    static String canonical(String msisdn) {
+        return PhoneNumberNormalizer.toE164(msisdn).orElse(msisdn.trim());
+    }
+
+    /** Lookup key for the IMSI column: NAI realm cut, a stray leading "+" dropped. Not a phone number. */
+    static String imsiKey(String identity) {
         String value = identity.trim();
         int at = value.indexOf('@');
         if (at > 0) {
@@ -114,7 +125,7 @@ public final class SubscriberDbBinding implements SubscriberBindingBackend {
                     String imsi = text(row, "imsi");
                     String msisdn = text(row, "msisdn");
                     if (imsi != null && msisdn != null) {
-                        out.put(normalise(imsi), msisdn);
+                        out.put(imsiKey(imsi), canonical(msisdn));
                     }
                 }
             } else if (root != null && root.isObject()) {
@@ -122,7 +133,7 @@ public final class SubscriberDbBinding implements SubscriberBindingBackend {
                 root.fields().forEachRemaining(e -> {
                     JsonNode value = e.getValue();
                     if (value != null && value.isTextual()) {
-                        out.put(normalise(e.getKey()), value.asText().trim());
+                        out.put(imsiKey(e.getKey()), canonical(value.asText()));
                     }
                 });
             }

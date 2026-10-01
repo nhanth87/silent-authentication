@@ -7,6 +7,7 @@
 
 package et.restlink.sas.api;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.api.dto.VerifyRequestDto;
 import et.restlink.sas.api.dto.VerifyResponseDto;
 import et.restlink.sas.events.VerifyRequestEvent;
@@ -289,7 +290,7 @@ public class VerifyResource {
         if (operatorBinding != null) {
             // Identity anchor from the signed entitlement token; body phone
             // claims are ignored — the binding is authoritative on this path.
-            claimed = RequestValidator.normalizeE164(operatorBinding.msisdn())
+            claimed = PhoneNumberNormalizer.toE164(operatorBinding.msisdn())
                     .orElse(null);
             if (claimed == null) {
                 return error(401, CODE_UNAUTHENTICATED,
@@ -354,7 +355,7 @@ public class VerifyResource {
             }
             // F6 — one normalization point feeds validation, hashing, comparing.
             claimed = hasPhone
-                    ? RequestValidator.normalizeE164(body.phoneNumber()).orElse(null)
+                    ? PhoneNumberNormalizer.toE164(body.phoneNumber()).orElse(null)
                     : null;
             hashed = hasHashed ? body.hashedPhoneNumber().trim() : null;
             if (hasPhone && claimed == null) {
@@ -431,7 +432,7 @@ public class VerifyResource {
 
         // F4 — verify compares the requested number against BOTH the live
         // network resolution and the token-bound number (when validated).
-        String resolved = RequestValidator.normalizeE164(result.msisdn()).orElse(null);
+        String resolved = PhoneNumberNormalizer.toE164(result.msisdn()).orElse(null);
         boolean verified;
         if (resolved == null) {
             verified = false;
@@ -528,7 +529,7 @@ public class VerifyResource {
         }
 
         // F6 — share response always normalized E.164 (spec pattern ^\+...).
-        String devicePhoneNumber = RequestValidator.normalizeE164(result.msisdn())
+        String devicePhoneNumber = PhoneNumberNormalizer.toE164(result.msisdn())
                 .orElse(null);
         if (devicePhoneNumber == null) {
             return error(403, CODE_NOT_MOBILE,

@@ -7,6 +7,7 @@
 
 package et.restlink.sas.oauth;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.ECKey;
@@ -94,7 +95,7 @@ public class OperatorTokenAnchor implements IdentityAnchor {
             LOG.warn("[SAS] operator token rejected: {}", e.getClass().getSimpleName());
             return null;
         }
-        String msisdn = RequestValidator.normalizeE164(claims.phoneNumber()).orElse(null);
+        String msisdn = PhoneNumberNormalizer.toE164(claims.phoneNumber()).orElse(null);
         if (msisdn == null) {
             LOG.warn("[SAS] operator token rejected: phone_number is not E.164");
             return null;

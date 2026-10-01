@@ -7,6 +7,7 @@
 
 package et.restlink.sas.oauth;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.api.SasVerifyEngine;
 import et.restlink.sas.model.ResolverResult;
 import et.restlink.sas.ras.resolver.ResolverBackend;
@@ -85,7 +86,7 @@ public class AuthorizationRequestService {
         evictExpired(nowSec);
 
         IdentityAnchor.OperatorBinding anchor = resolveAnchor(loginHint, srcIp, srcPort, nowSec);
-        String msisdn = RequestValidator.normalizeE164(anchor.msisdn()).orElse(null);
+        String msisdn = PhoneNumberNormalizer.toE164(anchor.msisdn()).orElse(null);
         if (msisdn == null) {
             LOG.warn("bc-authorize: anchor resolved a non-E.164 identity — rejecting");
             throw CibaException.accessDenied("identity anchor is not a valid E.164 subscriber");

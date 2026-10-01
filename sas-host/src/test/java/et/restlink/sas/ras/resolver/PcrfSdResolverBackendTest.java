@@ -7,6 +7,7 @@
 
 package et.restlink.sas.ras.resolver;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import com.mobius.software.telco.protocols.diameter.ResultCodes;
 import com.mobius.software.telco.protocols.diameter.commands.gx.CreditControlAnswer;
 import com.mobius.software.telco.protocols.diameter.impl.commands.gx.CreditControlAnswerImpl;
@@ -139,14 +140,14 @@ class PcrfSdResolverBackendTest {
     // --- normalization ------------------------------------------------------
 
     @Test
-    void normalizeE164CoversEdgeCases() {
-        assertEquals("+251911111111", PcrfSdResolverBackend.normalizeE164("+251911111111"));
-        assertEquals("+251911111111", PcrfSdResolverBackend.normalizeE164("251911111111"));
-        assertEquals("+251911111111", PcrfSdResolverBackend.normalizeE164(" +251 911-111-111 "));
-        assertNull(PcrfSdResolverBackend.normalizeE164(""));
-        assertNull(PcrfSdResolverBackend.normalizeE164("   "));
-        assertNull(PcrfSdResolverBackend.normalizeE164("no-digits"));
-        assertNull(PcrfSdResolverBackend.normalizeE164(null));
+    void gxSubscriptionIdNumbersGoThroughTheSharedNormalizer() {
+        assertEquals("+251911111111", PhoneNumberNormalizer.toE164("+251911111111").orElse(null));
+        assertEquals("+251911111111", PhoneNumberNormalizer.toE164("251911111111").orElse(null));
+        assertEquals("+251911111111", PhoneNumberNormalizer.toE164(" +251 911-111-111 ").orElse(null));
+        assertNull(PhoneNumberNormalizer.toE164("").orElse(null));
+        assertNull(PhoneNumberNormalizer.toE164("   ").orElse(null));
+        assertNull(PhoneNumberNormalizer.toE164("no-digits").orElse(null));
+        assertNull(PhoneNumberNormalizer.toE164(null).orElse(null));
     }
 
     // --- staleness cache ----------------------------------------------------

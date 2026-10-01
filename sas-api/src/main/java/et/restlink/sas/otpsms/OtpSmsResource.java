@@ -7,6 +7,7 @@
 
 package et.restlink.sas.otpsms;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.api.ApiAudit;
 import et.restlink.sas.api.ApiCdrRecorder;
 import et.restlink.sas.api.TenantRegistry;
@@ -201,7 +202,7 @@ public class OtpSmsResource {
                     "message must be at most " + MESSAGE_MAX_LENGTH + " characters", correlator);
         }
         audit.detail("messageChars", message.length());
-        String msisdn = RequestValidator.normalizeE164(rawNumber).orElse(null);
+        String msisdn = PhoneNumberNormalizer.toE164(rawNumber).orElse(null);
         if (msisdn == null) {
             return error(400, CODE_INVALID_ARGUMENT,
                     "phoneNumber must be E.164 (+<digits>)", correlator);
