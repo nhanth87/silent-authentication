@@ -64,7 +64,7 @@ Các mục §0a–§9 bên dưới viết trước M3 ở những chỗ khởi �
 ### 00.1 Build và đóng gói
 
 ```bash
-/usr/bin/mvn -B -o clean package -Dquarkus.profile=lab           # 9 module, 733 test
+/usr/bin/mvn -B -o clean package -Dquarkus.profile=lab           # 9 module, 791 test
 (cd sas-jss7-testapp && /usr/bin/mvn -o package -DskipTests)      # HLR simulator
 (cd sas-diameter-testapp && /usr/bin/mvn -o package)              # HSS / AAA / PCRF simulator
 ./scripts/package-dist.sh all                                     # dist/ (camara) + dist-ecs/ (ecs)
@@ -996,8 +996,8 @@ python3 harness/run_hardness.py
 python3 harness/run_hardness.py --mutations
 python3 harness/preflight_prod.py --selftest
 ```
-→ kỳ vọng: `649` tests pass · `37/37` gates · H24 `10` + H25 `9` mutations caught ·
-`42/42` kịch bản preflight bị bắt.
+→ kỳ vọng: `791` tests pass · `38/38` gates · H24 `10` + H25 `11` + H28 `8` mutations caught ·
+`45/45` kịch bản preflight bị bắt.
 
 **P2 — build/package dist:**
 
@@ -1775,11 +1775,11 @@ scripts/ecs-map-smoke.sh  && tshark -r target/ecs-map-smoke/ecs-map-smoke.pcap -
 ## 7. Kiểm thử khác trong tree
 
 ```bash
-mvn -o -B test -Dquarkus.profile=lab     # từ repo root: 649 test / 7 module, không cần mạng
-python3 harness/run_hardness.py          # 37/37 gates (H1–H27)
-python3 harness/run_hardness.py --mutations    # H24 10/10 + H25 9/9
+mvn -o -B test -Dquarkus.profile=lab     # từ repo root: 791 test / 9 module, không cần mạng
+python3 harness/run_hardness.py          # 38/38 gates (H1–H28)
+python3 harness/run_hardness.py --mutations    # H24 10/10 + H25 11/11 + H28 8/8
 python3 harness/preflight_prod.py --service all   # verdict cho MÔI TRƯỜNG NÀY (exit = số check fail)
-python3 harness/preflight_prod.py --selftest      # 42/42 kịch bản cấu hình sai bị bắt (camara + ecs)
+python3 harness/preflight_prod.py --selftest      # 45/45 kịch bản cấu hình sai bị bắt (camara + ecs)
 
 scripts/split-smoke.sh                   # hai binary: operator token, CIBA, NV auth code, cách ly — pcap
 scripts/ecs-map-smoke.sh                 # sas-ecs ↔ HLR qua MAP + ma trận fail-closed — pcap

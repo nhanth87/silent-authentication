@@ -65,7 +65,7 @@ those steps are marked **pre-M3**.
 ### 00.1 Build and package
 
 ```bash
-/usr/bin/mvn -B -o clean package -Dquarkus.profile=lab           # 9 modules, 733 tests
+/usr/bin/mvn -B -o clean package -Dquarkus.profile=lab           # 9 modules, 791 tests
 (cd sas-jss7-testapp && /usr/bin/mvn -o package -DskipTests)      # HLR simulator
 (cd sas-diameter-testapp && /usr/bin/mvn -o package)              # HSS / AAA / PCRF simulator
 ./scripts/package-dist.sh all                                     # dist/ (camara) + dist-ecs/ (ecs)
@@ -1005,8 +1005,8 @@ python3 harness/run_hardness.py
 python3 harness/run_hardness.py --mutations
 python3 harness/preflight_prod.py --selftest
 ```
-→ expect: `649` tests pass · `37/37` gates · H24 `10` + H25 `9` mutations caught ·
-`42/42` preflight scenarios detected.
+→ expect: `791` tests pass · `38/38` gates · H24 `10` + H25 `11` + H28 `8` mutations caught ·
+`45/45` preflight scenarios detected.
 
 **P2 — build/package the dist:**
 
@@ -1788,11 +1788,11 @@ scripts/ecs-map-smoke.sh  && tshark -r target/ecs-map-smoke/ecs-map-smoke.pcap -
 ## 7. Other tests in the tree
 
 ```bash
-mvn -o -B test -Dquarkus.profile=lab     # from the repo root: 649 tests / 7 modules, no network
-python3 harness/run_hardness.py          # 37/37 gates (H1–H27)
-python3 harness/run_hardness.py --mutations    # H24 10/10 + H25 9/9
+mvn -o -B test -Dquarkus.profile=lab     # from the repo root: 791 tests / 9 modules, no network
+python3 harness/run_hardness.py          # 38/38 gates (H1–H28)
+python3 harness/run_hardness.py --mutations    # H24 10/10 + H25 11/11 + H28 8/8
 python3 harness/preflight_prod.py --service all   # verdict for THIS environment (exit = #failed checks)
-python3 harness/preflight_prod.py --selftest      # 42/42 misconfiguration scenarios detected (camara + ecs)
+python3 harness/preflight_prod.py --selftest      # 45/45 misconfiguration scenarios detected (camara + ecs)
 
 scripts/split-smoke.sh                   # two binaries: operator token, CIBA, NV auth code, isolation — pcap
 scripts/ecs-map-smoke.sh                 # sas-ecs ↔ HLR over MAP + fail-closed matrix — pcap
