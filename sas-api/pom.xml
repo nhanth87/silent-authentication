@@ -24,6 +24,11 @@
       <groupId>et.restlink</groupId>
       <artifactId>sas-token</artifactId>
     </dependency>
+    <!-- The gateway reaches the subscriber only through this contract (layered ADR R1). -->
+    <dependency>
+      <groupId>et.restlink</groupId>
+      <artifactId>sas-subscriber-api</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>

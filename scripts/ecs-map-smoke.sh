@@ -41,7 +41,7 @@ HLR_PID=$!
   exec "$JAVA" --add-modules jdk.sctp -Dquarkus.profile=lab -Dsas.log.dir="$OUT/ecs" \
   -jar "$REPO/sas-ecs-host/target/quarkus-app/quarkus-run.jar" >"$OUT/ecs/stdout.log" 2>&1) &
 ECS_PID=$!
-(cd "$OUT/camara" && exec "$JAVA" --add-modules jdk.sctp -Dquarkus.profile=lab \
+(cd "$OUT/camara" && exec "$JAVA" -Dquarkus.profile=lab \
   -Dsas.log.dir="$OUT/camara" \
   -jar "$REPO/sas-host/target/quarkus-app/quarkus-run.jar" >"$OUT/camara/stdout.log" 2>&1) &
 CAM_PID=$!
@@ -116,6 +116,14 @@ expect "(f) detached -> no vector" \
   "$(curl -sS "$ECS_URL/ts43/challenge?imsi=655010000000001&msisdn=%2B251911111111")" \
   "no authentication vector available"
 curl -sS -o /dev/null -X POST -d '{"attached":true}' "$HLRC/state"
+# layered ADR §9: the ECS holds the SCTP association; the gateway owns none.
+echo "== runtime signalling boundary"
+"$REPO/scripts/check-no-sctp.sh" "$CAM_PID" sas-camara || fails=1
+if "$REPO/scripts/check-no-sctp.sh" "$ECS_PID" sas-ecs >/dev/null; then
+  echo "   FAIL sas-ecs shows no SCTP socket although it talks MAP"; fails=1
+else
+  echo "   OK   sas-ecs owns the SCTP association (MAP to the HLR)"
+fi
 [[ $fails == 0 ]] || rc=1
 set -e
 echo

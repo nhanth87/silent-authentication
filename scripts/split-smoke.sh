@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Silent Auth SAS — two-binary smoke test with packet capture (lab only).
+# Silent Auth SAS — layered two-binary smoke test with packet capture (lab only).
 #
 # Boots sas-ecs (:8095) and sas-camara (:8085) inside a private user+network namespace
-# (no root needed), captures loopback traffic to a pcap, and drives:
-#   1. ECS  /jwks.json                         — published operator-token signing key
-#   2. ECS  POST /entitlement/issue            — operator token (JWE) for a subscriber
-#   3. CAMARA /bc-authorize login_hint=operatortoken:<JWE>  → CAMARA fetches the ECS
-#      JWKS (visible in the pcap), verifies, consumes the jti
-#   4. CAMARA /token (CIBA)                    — ES256 access token
-#   5. replay of the same operator token       — must be refused (single-use ledger)
-#   6. CAMARA /authorize → /token authorization_code + PKCE (NV network auth)
-#   7. CAMARA POST /camara/number-verification/v2/verify with that ES256 token
+# (no root needed), captures loopback traffic to a pcap, and drives (layered ADR §6):
+#   1. ECS  /jwks.json                         — gone (D8): 404
+#   2. ECS  POST /entitlement/issue            — operator token (JWE to the ECS itself)
+#   3. CAMARA /jwks.json                       — signing keys only, no encryption key
+#   4. CAMARA /bc-authorize login_hint=operatortoken:<JWE> → the gateway forwards it to
+#      the ECS POST /operator-token/redeem (visible in the pcap), never reads it
+#   5. CAMARA /token (CIBA)                    — ES256 access token
+#   6. replay of the same operator token       — refused by the ECS ledger
+#   7. CAMARA /authorize → UE ID at the ECS → /token authorization_code + PKCE, then
+#      /verify: monitoring + SIM change at the ECS, scored by the gateway
+#   8-9. code replay, cross-binary surfaces
+#  10. the gateway owns no SCTP socket; all its subscriber traffic is HTTP to the ECS
 #
 # Usage: scripts/split-smoke.sh [out-dir]    (run after `mvn package`)
 set -euo pipefail
@@ -41,7 +44,7 @@ CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none"
   -Dsas.log.dir="$OUT/ecs" -jar "$REPO/sas-ecs-host/target/quarkus-app/quarkus-run.jar" \
   >"$OUT/ecs/stdout.log" 2>&1) &
 ECS_PID=$!
-(cd "$OUT/camara" && exec "$JAVA" --add-modules jdk.sctp -Dquarkus.profile=lab \
+(cd "$OUT/camara" && exec "$JAVA" -Dquarkus.profile=lab \
   -Dsas.log.dir="$OUT/camara" -Dsas.security.token-validation-enabled=true \
   -Dsas.security.accept-hs256=false \
   "-Dsas.oauth.clients-json=$(echo "$CLIENTS" | tr -d '\n ')" \
@@ -71,18 +74,19 @@ step() { printf '\n== %s\n' "$*"; }
 fail=0
 check() { if [[ "$1" == "$2" ]]; then echo "   OK ($3)"; else echo "   FAIL: expected $2 got $1 ($3)"; fail=1; fi; }
 
-step "1. ECS /jwks.json"
-curl -fsS http://127.0.0.1:8095/jwks.json | jq -c '.keys[] | {kid,kty,crv,use,has_d:(has("d"))}'
+step "1. ECS /jwks.json (D8: no issuer key published any more)"
+check "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8095/jwks.json)" 404 "ECS publishes no operator-token key"
 
 step "2. ECS POST /entitlement/issue (lab: open API)"
 TOK=$(curl -fsS -X POST http://127.0.0.1:8095/entitlement/issue -H 'Content-Type: application/json' \
   -d '{"msisdn":"+251911111111","imsi":"636010000000001","eapMethod":"EAP-AKA"}' | jq -r .token)
 echo "   token parts: $(awk -F. '{print NF}' <<<"$TOK") (5 = JWE), header: $(cut -d. -f1 <<<"$TOK" | base64 -d 2>/dev/null | head -c 200)"
 
-step "3. CAMARA /jwks.json (sig + enc)"
+step "3. CAMARA /jwks.json (signing keys only)"
 curl -fsS http://127.0.0.1:8085/jwks.json | jq -c '.keys[] | {kid,use,alg,has_d:(has("d"))}'
+check "$(curl -fsS http://127.0.0.1:8085/jwks.json | jq '[.keys[] | select(.use=="enc")] | length')" 0 "no operator-token decryption key on the gateway"
 
-step "4. CAMARA CIBA /bc-authorize with login_hint=operatortoken:<JWE>"
+step "4. CAMARA CIBA /bc-authorize with login_hint=operatortoken:<JWE> (redeemed at the ECS)"
 BC=$(curl -sS -X POST http://127.0.0.1:8085/bc-authorize \
   --data-urlencode "login_hint=operatortoken:$TOK" \
   --data-urlencode "scope=dpv:FraudPreventionAndDetection sim-swap:check" \
@@ -130,6 +134,8 @@ code=$(curl -sS -o "$OUT/nv.json" -w '%{http_code}' -X POST \
   -d '{"phoneNumber":"+251911111111"}')
 echo "   $(cat "$OUT/nv.json")"
 check "$code" 200 "NV verify with ES256 auth-code token"
+check "$(jq -r .devicePhoneNumberVerified "$OUT/nv.json")" true "number verified from ECS evidence"
+check "$(grep -c 'evidenceSource\|LAB_HLR\|MAP_PSI' "$OUT/nv.json" || true)" 0 "no internal evidence source in the CAMARA answer"
 
 step "8. code replay (must be invalid_grant)"
 code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8085/token \
@@ -143,6 +149,18 @@ check "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8085/entitlemen
 check "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8085/ts43/challenge?imsi=1')" 404 "CAMARA has no /ts43"
 check "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8095/token)" 404 "ECS has no /token"
 check "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8095/.well-known/openid-configuration)" 404 "ECS has no OIDC discovery"
+
+step "10. the gateway signals nothing (layered ADR §9)"
+if "$REPO/scripts/check-no-sctp.sh" "$CAM_PID" sas-camara; then :; else fail=1; fi
+sleep 1
+if command -v tshark >/dev/null 2>&1; then
+  check "$(tshark -r "$OUT/split-smoke.pcap" -Y sctp 2>/dev/null | wc -l)" 0 "no SCTP on the wire in this run"
+  calls=$(tshark -r "$OUT/split-smoke.pcap" -Y 'http.request.uri contains "/sas-subscriber-exposure/v1/"' \
+    -T fields -e http.request.uri 2>/dev/null | sort | uniq -c | tr -s ' ')
+  echo "   gateway -> ECS exposure calls:"; echo "$calls" | sed 's/^/     /'
+  [[ "$calls" == *"/operator-token/redeem"* && "$calls" == *"/ue-id/retrieve"* ]] \
+    && echo "   OK (redeem + UE ID seen on the wire)" || { echo "   FAIL: exposure calls missing"; fail=1; }
+fi
 
 echo
 echo "pcap: $OUT/split-smoke.pcap"

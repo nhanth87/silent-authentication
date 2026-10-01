@@ -25,7 +25,7 @@
     </dependency>
     <dependency>
       <groupId>et.restlink</groupId>
-      <artifactId>sas-operator-adapter</artifactId>
+      <artifactId>sas-subscriber-api</artifactId>
     </dependency>
 
     <dependency>

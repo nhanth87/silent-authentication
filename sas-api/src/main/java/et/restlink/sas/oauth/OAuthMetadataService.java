@@ -39,9 +39,6 @@ public class OAuthMetadataService {
     @Inject
     OAuthSigningKeys signingKeys;
 
-    @Inject
-    OperatorTokenAnchor operatorTokens;
-
     public static final String AUTHORIZATION_PATH = "/authorize";
 
     public Map<String, Object> metadata(UriInfo uriInfo) {
@@ -88,8 +85,8 @@ public class OAuthMetadataService {
         } catch (IOException e) {
             throw new IllegalStateException("invalid sas.oauth.jwks-json", e);
         }
-        // Publish the ES256 signing keys (use=sig) and the operator-token encryption
-        // key (use=enc, what an ECS encrypts to) next to any static entries.
+        // Publish the ES256 signing keys (use=sig) next to any static entries. No
+        // encryption key: operator tokens are encrypted to and redeemed by the ECS (D3).
         List<Object> keys = new ArrayList<>();
         Object existing = parsed.get("keys");
         if (existing instanceof List<?> list) {
@@ -97,11 +94,6 @@ public class OAuthMetadataService {
         }
         if (signingKeys != null) {
             keys.addAll(signingKeys.publicJwkMaps());
-        }
-        if (operatorTokens != null) {
-            for (com.nimbusds.jose.jwk.ECKey k : operatorTokens.publicEncryptionKeys()) {
-                keys.add(k.toJSONObject());
-            }
         }
         if (keys.size() == (existing instanceof List<?> l ? l.size() : 0)) {
             return parsed;

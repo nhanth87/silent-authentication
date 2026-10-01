@@ -9,8 +9,7 @@ package et.restlink.sas.admin;
 
 import et.restlink.sas.cdr.SasCdrService;
 import et.restlink.sas.config.SasAdminRuntimeConfig;
-import et.restlink.sas.config.Ss7AdminSupport;
-import et.restlink.sas.diameter.DiameterConfigService;
+import et.restlink.sas.bootstrap.SasBootstrap;
 import et.restlink.sas.persist.SasAppUserEntity;
 import et.restlink.sas.persist.SasCdrEntity;
 import et.restlink.sas.persist.SasTenantEntity;
@@ -50,8 +49,7 @@ public class AdminHttpHandler {
     @Inject AdminPageRenderer pages;
     @Inject AdminNavRenderer nav;
     @Inject SasAdminRuntimeConfig runtimeConfig;
-    @Inject Ss7AdminSupport ss7;
-    @Inject DiameterConfigService diameter;
+    @Inject SasBootstrap bootstrap;
     @Inject TenantService tenants;
     @Inject AppUserService appUsers;
     @Inject AdminUserService users;
@@ -170,9 +168,6 @@ public class AdminHttpHandler {
         if (p.equals("/admin/status/partial")) {
             return Optional.of(HttpReply.html(dashboardStatusHtml()));
         }
-        if (p.equals("/admin/ss7/status")) {
-            return Optional.of(HttpReply.html(ss7StatusHtml()));
-        }
         if ("GET".equalsIgnoreCase(method) && p.equals("/admin/cdr/partial")) {
             return Optional.of(HttpReply.html(cdrRows(who)));
         }
@@ -181,12 +176,6 @@ public class AdminHttpHandler {
         }
         if ("GET".equalsIgnoreCase(method) && p.equals("/admin/users/partial")) {
             return Optional.of(HttpReply.html(userRows() + appUserRows()));
-        }
-        if ("POST".equalsIgnoreCase(method) && p.equals("/admin/ss7") && who.isAdminOrOps()) {
-            return Optional.of(handleSs7Post(body));
-        }
-        if ("POST".equalsIgnoreCase(method) && p.equals("/admin/diameter") && who.isAdminOrOps()) {
-            return Optional.of(handleDiameterPost(body));
         }
         if ("POST".equalsIgnoreCase(method) && p.equals("/admin/tenants") && "ADMIN".equals(who.role())) {
             return Optional.of(handleTenantsPost(body, headers));
@@ -214,14 +203,8 @@ public class AdminHttpHandler {
     private Optional<HttpReply> serveShell(String p, AdminAuthService.Principal who) {
         return switch (p) {
             case "/admin", "/admin/" -> Optional.of(page("index.html", who, true));
-            case "/admin/ss7" -> Optional.of(page("ss7.html", who, true, Map.of(
-                    "{{SS7_JSON}}", AdminPageRenderer.esc(ss7.activeJson()),
-                    "{{SS7_STATUS_HTML}}", ss7StatusHtml())));
             case "/admin/http" -> Optional.of(page("http.html", who, true,
                     Map.of("{{HTTP_DETAIL}}", AdminPageRenderer.esc(httpDetail()))));
-            case "/admin/diameter" -> Optional.of(page("diameter.html", who, true, Map.of(
-                    "{{DIAMETER_JSON}}", AdminPageRenderer.esc(diameter.activeJson()),
-                    "{{DIAMETER_STATUS}}", diameterStatusHtml())));
             case "/admin/cdr" -> Optional.of(page("cdr.html", who, true,
                     Map.of("{{CDR_ROWS}}", cdrRows(who))));
             case "/admin/tenants" -> Optional.of(page("tenants.html", who, true,
@@ -246,81 +229,6 @@ public class AdminHttpHandler {
             LOG.error("[admin] cannot render {}: {}", name, e.toString());
             return HttpReply.html(AdminPageRenderer.fallbackDashboard());
         }
-    }
-
-    private HttpReply handleSs7Post(String body) {
-        Map<String, String> fields = form(body);
-        String action = fields.getOrDefault("action", "");
-        if ("save".equals(action) || "saveApply".equals(action)) {
-            String json = fields.getOrDefault("stackJson", "");
-            Ss7AdminSupport.Result validation = ss7.validate(json);
-            if (!validation.ok()) {
-                return HttpReply.text(400, "SS7 JSON invalid: " + String.join("; ", validation.errors()));
-            }
-            String saved = ss7.save(json);
-            if (!saved.contains("\"ok\":true")) {
-                return HttpReply.text(500, saved);
-            }
-        }
-        if ("saveApply".equals(action) || "apply".equals(action)) {
-            ss7.apply();
-        }
-        if ("stop".equals(action)) {
-            ss7.stop();
-        }
-        if ("start".equals(action)) {
-            ss7.start();
-        }
-        return HttpReply.redirect("/admin/ss7");
-    }
-
-    private HttpReply handleDiameterPost(String body) {
-        String raw = body == null ? "" : body.trim();
-        String action;
-        String json;
-        if (raw.startsWith("{")) {
-            String a = "saveApply";
-            String j = raw;
-            try {
-                var node = new ObjectMapper().readTree(raw);
-                if (node.isObject() && node.has("action")) {
-                    a = node.path("action").asText("");
-                    if (!"apply".equals(a)) {
-                        j = diameter.activeJson();
-                    }
-                }
-            } catch (Exception ignored) {
-                // fall through: treat raw body as the candidate document
-            }
-            action = a;
-            json = j;
-        } else {
-            Map<String, String> fields = form(body);
-            action = fields.getOrDefault("action", "save");
-            json = fields.getOrDefault("diameterJson", "");
-        }
-        if ("apply".equals(action)) {
-            try {
-                diameter.reload();
-                return HttpReply.json(200, Map.of("ok", true));
-            } catch (Exception ex) {
-                return HttpReply.json(400, Map.of("ok", false, "error",
-                        ex.getMessage() == null ? ex.toString() : ex.getMessage()));
-            }
-        }
-        DiameterConfigService.Result validation = diameter.validate(json);
-        if (!validation.ok()) {
-            return HttpReply.json(400, Map.of("ok", false, "error",
-                    String.join("; ", validation.errors())));
-        }
-        String saved = diameter.save(json);
-        if (!saved.contains("\"ok\":true")) {
-            return HttpReply.json(500, Map.of("ok", false, "error", saved));
-        }
-        if ("saveApply".equals(action)) {
-            diameter.reload();
-        }
-        return HttpReply.json(200, Map.of("ok", true));
     }
 
     private HttpReply handleTenantsPost(String body, Map<String, String> headers) {
@@ -421,8 +329,7 @@ public class AdminHttpHandler {
         if (!"GET".equalsIgnoreCase(method)) {
             return false;
         }
-        if (path.contains("/partial") || path.endsWith(".json") || path.equals("/admin/status")
-                || path.equals("/admin/ss7/status")) {
+        if (path.contains("/partial") || path.endsWith(".json") || path.equals("/admin/status")) {
             return false;
         }
         String accept = headers == null ? "" : String.valueOf(headers.getOrDefault("Accept", ""));
@@ -430,87 +337,32 @@ public class AdminHttpHandler {
     }
 
     private Map<String, Object> statusSnapshot() {
-        Ss7AdminSupport.Status ss7Status = ss7.status();
-        DiameterConfigService.StatusRecord diameterStatus = diameter.status();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("status", "UP");
-        out.put("ss7.applied", ss7Status.applied());
-        out.put("ss7.m3uaRouteReady", ss7Status.m3uaReady());
-        out.put("ss7.hlrGt", ss7Status.hlrGt());
-        out.put("ss7.localGt", ss7Status.localGt());
-        out.put("ss7.activeFile", ss7Status.activeFile());
-        out.put("diameter.applied", diameterStatus.applied());
-        out.put("diameter.realm", diameterStatus.realm());
-        out.put("diameter.apps", diameterStatus.apps());
-        out.put("diameter.lastReload", diameterStatus.lastReload());
+        out.put("exposure.baseUrl", bootstrap == null ? "" : bootstrap.exposureBaseUrl());
+        out.put("exposure.afId", bootstrap == null ? "" : bootstrap.afId());
         out.put("http.ra.port", runtimeConfig.getInt(SasAdminRuntimeConfig.Keys.HTTP_RA_PORT, 0));
         return out;
     }
 
+    /**
+     * Layered ADR §2: this gateway runs no MAP/Diameter stack, so there is nothing of the
+     * core to configure here — only where the subscriber exposure service lives.
+     */
     private String dashboardStatusHtml() {
-        Ss7AdminSupport.Status ss7Status = ss7.status();
-        DiameterConfigService.StatusRecord diameterStatus = diameter.status();
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"grid gap-4 sm:grid-cols-2\">");
         sb.append("<section class=\"rounded-lg border border-ink-line bg-ink-panel/80 p-4\">");
-        sb.append("<p class=\"text-xs uppercase tracking-[0.25em] text-signal\">MAP verifier</p>");
+        sb.append("<p class=\"text-xs uppercase tracking-[0.25em] text-signal\">Subscriber exposure</p>");
         sb.append("<dl class=\"mt-2 space-y-1 text-sm\">");
-        sb.append(dtDd("M3UA route", ss7Status.m3uaReady() ? "ACTIVE" : "down"));
-        sb.append(dtDd("Applied", String.valueOf(ss7Status.applied())));
-        sb.append(dtDd("HLR GT", ss7Status.hlrGt()));
-        sb.append(dtDd("Local GT", ss7Status.localGt()));
-        sb.append(dtDd("Active file", ss7Status.activeFile()));
-        sb.append("</dl></section>");
-        sb.append("<section class=\"rounded-lg border border-ink-line bg-ink-panel/80 p-4\">");
-        sb.append("<p class=\"text-xs uppercase tracking-[0.25em] text-signal\">Diameter</p>");
-        sb.append("<dl class=\"mt-2 space-y-1 text-sm\">");
-        sb.append(dtDd("Realm", diameterStatus.realm()));
-        sb.append(dtDd("Applied", String.valueOf(diameterStatus.applied())));
-        sb.append(dtDd("Applications", String.join(", ", diameterStatus.apps())));
-        String reload = diameterStatus.lastReload() == 0 ? "" : String.valueOf(diameterStatus.lastReload());
-        sb.append(dtDd("Last reload", reload));
+        sb.append(dtDd("Entitlement server", bootstrap == null ? "" : bootstrap.exposureBaseUrl()));
+        sb.append(dtDd("AF id", bootstrap == null ? "" : bootstrap.afId()));
+        sb.append(dtDd("Signalling", "none in this binary (sas-ecs owns MAP/Diameter)"));
         sb.append("</dl></section>");
         sb.append("</div>");
         sb.append("<p class=\"mt-3 text-xs text-ink-mute\">HTTP RA port ")
                 .append(runtimeConfig.getInt(SasAdminRuntimeConfig.Keys.HTTP_RA_PORT, 0))
                 .append(" · /health · /admin/status.json</p>");
-        return sb.toString();
-    }
-
-    private String ss7StatusHtml() {
-        Ss7AdminSupport.Status s = ss7.status();
-        String badge;
-        if (!s.applied() && !s.m3uaReady()) {
-            badge = "<span class=\"ss7-status ss7-status--stopped\">stopped</span>";
-        } else if (s.m3uaReady()) {
-            badge = "<span class=\"ss7-status ss7-status--live\">LIVE · M3UA route active</span>";
-        } else {
-            badge = "<span class=\"ss7-status ss7-status--degraded\">configured · route not ready</span>";
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"ss7-live\">").append(badge);
-        sb.append("<dl class=\"mt-3 grid gap-2 text-sm sm:grid-cols-2\">");
-        sb.append(dtDd("HLR GT", s.hlrGt()));
-        sb.append(dtDd("Local GT", s.localGt()));
-        sb.append(dtDd("Active file", s.activeFile()));
-        sb.append(dtDd("Applied", String.valueOf(s.applied())));
-        sb.append("</dl></div>");
-        return sb.toString();
-    }
-
-    private String diameterStatusHtml() {
-        DiameterConfigService.StatusRecord s = diameter.status();
-        StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"diameter-live\">");
-        sb.append(s.applied()
-                ? "<span class=\"diameter-status diameter-status--live\">applied</span>"
-                : "<span class=\"diameter-status diameter-status--stopped\">not applied</span>");
-        sb.append("<dl class=\"mt-3 grid gap-2 text-sm sm:grid-cols-2\">");
-        sb.append(dtDd("Realm", s.realm()));
-        sb.append(dtDd("Applications", String.join(", ", s.apps())));
-        String reload = s.lastReload() == 0 ? "" : String.valueOf(s.lastReload());
-        sb.append(dtDd("Last reload", reload));
-        sb.append("</dl></div>");
         return sb.toString();
     }
 

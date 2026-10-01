@@ -74,12 +74,8 @@ CRITICAL_KEYS = (
     "sas.admin.key",
     "sas.admin.session-hmac-secret",
     "sas.admin.cookie-secure",
-    "sas.transport.map",
-    "sas.transport.s6a",
-    "sas.transport.swx",
-    "sas.transport.resolver",
-    "sas.transport.jss7.config",
-    "sas.transport.diameter.peer-host",
+    "sas.exposure.client.base-url",
+    "sas.policy.home-plmn",
     "sas.security.accept-hs256",
     "sas.oauth.signing-alg",
     "sas.oauth.signing-jwk",
@@ -89,10 +85,8 @@ CRITICAL_KEYS = (
     "sas.oauth.clients-json",
     "sas.oauth.pairwise-secret",
     "sas.oauth.authorize.trust-src-header",
-    "sas.operator-token.issuers-json",
-    "sas.operator-token.decryption-jwk",
-    "sas.operator-token.require-encryption",
-    "sas.operator-token.allow-http-jwks",
+    "sas.operator-token.direct-bearer-enabled",
+    "sas.operator-token.header-enabled",
     "sas.otp.enabled",
     "sas.otp.sms-delivery",
 )
@@ -396,100 +390,37 @@ def build_checks(p: Profile) -> Report:
           p.get("sas.admin.cookie-secure") == "true" and 10 <= cost <= 16,
           f"cookie-secure={p.get('sas.admin.cookie-secure')!r} bcrypt-cost={cost} (want 10..16)")
 
-    # --- P2 / P-H4 signalling transport ------------------------------------
-    transports = {
-        "sas.transport.map": ("jss7",),
-        "sas.transport.s6a": ("corsac",),
-        "sas.transport.swx": ("corsac",),
-        "sas.transport.resolver": REAL_RESOLVERS,
-    }
-    notes = [f"{key}={p.get(key)!r} (want {'|'.join(want)})"
-             for key, want in transports.items()
-             if p.get(key).lower() not in want]
-    r.add("PRO-17", "no in-memory pilot backend on any stage", not notes,
-          "\n".join(notes) + "\n  an unknown value falls back to memory in code — a typo "
-          "must never open a fake signalling path against a live bank")
+    # --- layered ADR §2: the gateway signals nothing; it calls the ECS -------
+    # The MAP/Diameter/resolver checks that lived here (old PRO-17..21) belong to the
+    # entitlement server, which owns those transports (its PRO-18/19/30/34, and the
+    # resolver feed once its exposure surface is authenticated in M4).
+    leftovers = [k for k in ("sas.transport.map", "sas.transport.s6a", "sas.transport.swx",
+                             "sas.transport.resolver", "sas.transport.jss7.config",
+                             "sas.transport.diameter.peer-host") if p.get(k)]
+    r.add("PRO-17", "the CAMARA gateway configures no signalling transport", not leftovers,
+          "signalling keys set on the gateway (they belong to sas-ecs): " + ", ".join(leftovers)
+          if leftovers else "no sas.transport.* key — the gateway reaches the core only via sas-ecs")
 
-    jss7_cfg = p.get("sas.transport.jss7.config")
     notes = []
-    if not p.env_sourced("sas.transport.jss7.config"):
-        notes.append("jss7 stack config path must be env-supplied (no lab JSON in prod)")
-    elif p.check_files:
-        f_ok, f_why = file_ok(jss7_cfg)
-        if not f_ok:
-            notes.append(f"jss7 config: {f_why}")
-        else:
-            try:
-                json.loads(Path(jss7_cfg).expanduser().read_text(encoding="utf-8"))
-            except (ValueError, OSError) as exc:
-                notes.append(f"jss7 config is not readable JSON: {exc}")
-    hlr_gt, local_gt = p.get("sas.transport.jss7.hlr-gt"), p.get("sas.transport.jss7.local-gt")
-    if not (hlr_gt.isdigit() and local_gt.isdigit()):
-        notes.append(f"GTs must be digits (hlr-gt={hlr_gt!r} local-gt={local_gt!r})")
-    if hlr_gt == local_gt:
-        notes.append("HLR GT equals local GT — the SAS would interrogate itself")
-    if hlr_gt == "251911000000" or local_gt == "251911999999":
-        notes.append("lab GT defaults still in effect — point them at the own HLR/HSS")
-    r.add("PRO-18", "jSS7 MAP stack configured (PSI/SAI against own HLR)",
-          not notes, "\n".join(notes))
-
-    origin_host = p.get("sas.transport.diameter.origin-host")
-    realm = p.get("sas.transport.diameter.realm")
-    dest_host = p.get("sas.transport.diameter.destination-host")
-    dest_realm = p.get("sas.transport.diameter.destination-realm")
-    notes = []
-    for key, value in (("origin-host", origin_host), ("realm", realm),
-                       ("destination-host", dest_host), ("destination-realm", dest_realm)):
-        if not value:
-            notes.append(f"sas.transport.diameter.{key} unresolved")
-        elif is_labish(value) or value in ("sas.restlink.et", "hss.restlink.et", "restlink.et"):
-            notes.append(f"sas.transport.diameter.{key}={value!r} is the lab identity")
-    if origin_host and origin_host == dest_host:
-        notes.append("origin-host equals destination-host")
-    r.add("PRO-19", "Diameter identity is the operator's own realm", not notes, "\n".join(notes))
-
-    peer = p.get("sas.transport.diameter.peer-host")
-    sd_peer = p.get("sas.transport.sd.peer-host") or peer
-    notes = []
-    if not peer:
-        notes.append("sas.transport.diameter.peer-host unresolved")
+    base = p.get("sas.exposure.client.base-url")
+    if not p.env_sourced("sas.exposure.client.base-url") or not base:
+        notes.append("sas.exposure.client.base-url must come from the environment")
     else:
-        if any(peer.startswith(pre) or peer == pre for pre in LOOPBACK):
-            notes.append(f"S6a/SWx peer is loopback ({peer}) — the CORSAC/SimHss lab path, "
-                         "not a live HSS/AAA")
-        if not p.env_sourced("sas.transport.diameter.peer-host"):
-            notes.append("peer host must be env-supplied")
-    if p.get("sas.transport.resolver") == "sd" and any(
-            sd_peer.startswith(pre) or sd_peer == pre for pre in LOOPBACK):
-        notes.append(f"PCRF Sd probe peer is loopback ({sd_peer})")
-    r.add("PRO-20", "Diameter peer is a real host, not loopback", not notes, "\n".join(notes))
-
-    resolver = p.get("sas.transport.resolver").lower()
-    notes = []
-    if resolver not in REAL_RESOLVERS:
-        notes.append(f"resolver={resolver!r} is not a production IP-binding feed "
-                     f"({'|'.join(REAL_RESOLVERS)}) — nothing to authenticate")
-    elif resolver == "radius":
-        ok, why = secret(p, "sas.transport.resolver.radius.secret")
-        if not ok:
-            notes.append("RADIUS: " + why + " — an empty secret disables Message-Authenticator "
-                         "verification (RFC 2869 §5.7), so bindings become spoofable")
-        port = _int(p, "sas.transport.resolver.radius.port", -1)
-        if not 0 < port <= 65535:
-            notes.append(f"RADIUS accounting port out of range: {port}")
-    elif resolver == "cgnat":
-        log_path = p.get("sas.transport.resolver.cgnat-log")
-        if not log_path:
-            notes.append("CGNAT: sas.transport.resolver.cgnat-log unresolved")
-        elif p.check_files:
-            f_ok, f_why = file_ok(log_path)
-            if not f_ok:
-                notes.append(f"CGNAT: {f_why}")
-    elif resolver == "sd":
-        if p.get("sas.transport.sd.sctp", "true") != "true":
-            notes.append("PCRF Sd over TCP — Gx is SCTP-only in production")
-    r.add("PRO-21", f"resolver feed ({resolver or 'unset'}) is authenticated", not notes,
-          "\n".join(notes))
+        if not base.startswith("https://"):
+            notes.append(f"exposure base URL {base!r} is not https")
+        host = base.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+        if any(host.startswith(pre) or host == pre for pre in LOOPBACK) or host == "localhost":
+            notes.append(f"exposure base URL points at loopback ({host}) — the lab ECS")
+        if not base.rstrip("/").endswith("/sas-subscriber-exposure/v1"):
+            notes.append("exposure base URL must end with /sas-subscriber-exposure/v1")
+    af = p.get("sas.exposure.client.af-id", "sas-camara")
+    if not af or len(af) > 64:
+        notes.append("sas.exposure.client.af-id must be 1-64 characters")
+    plmn = p.get("sas.policy.home-plmn")
+    if not (plmn.isdigit() and len(plmn) in (5, 6)):
+        notes.append(f"sas.policy.home-plmn={plmn!r} must be the operator MCC+MNC (5-6 digits)")
+    r.add("PRO-36", "subscriber exposure client: HTTPS entitlement server, home PLMN set",
+          not notes, "\n".join(notes))
 
     # --- auth server signing key (ES256) --------------------------------------
     # (PRO-22/23 — entitlement tokens and /issue attestation — are sas-ecs checks now.)
@@ -606,34 +537,14 @@ def oauth_checks(p: Profile) -> Report:
     r.add("PRO-31", "OAuth clients authenticate (private_key_jwt); ID subjects pairwise",
           not notes, "\n".join(notes))
 
+    # Layered ADR D3/D6: tokens are redeemed at the entitlement server (no key or
+    # ledger here); only the CAMARA forms (CIBA login_hint, JWT-bearer sub) are offered.
     notes = []
-    if p.get("sas.operator-token.enabled", "true") == "true":
-        raw = p.get("sas.operator-token.issuers-json")
-        if not p.env_sourced("sas.operator-token.issuers-json") or not raw:
-            notes.append("sas.operator-token.issuers-json must come from the environment")
-        else:
-            issuers = _json_list(raw, "issuers")
-            if not issuers:
-                notes.append("no trusted entitlement-server issuer (or invalid JSON)")
-            for it in issuers or []:
-                iss = str(it.get("issuer", ""))
-                if not iss.startswith("https://"):
-                    notes.append(f"issuer {iss!r} is not https")
-                uri = it.get("jwks_uri")
-                if uri and not str(uri).startswith("https://"):
-                    notes.append(f"issuer {iss}: jwks_uri {uri!r} is not https")
-                if not uri and not (it.get("jwks") or {}).get("keys"):
-                    notes.append(f"issuer {iss}: neither jwks_uri nor inline jwks")
-        ok, why = jwk_secret(p, "sas.operator-token.decryption-jwk", "enc")
-        if not ok:
-            notes.append(why)
-        if p.get("sas.operator-token.require-encryption", "true") != "true":
-            notes.append("operator tokens must be encrypted (the MSISDN crosses the device)")
-        if p.get("sas.operator-token.allow-http-jwks", "false") == "true":
-            notes.append("plain-HTTP jwks_uri allowed — a MITM could swap the issuer keys")
-        if p.get("sas.operator-token.header-enabled", "false") == "true":
-            notes.append("X-Sas-Operator-Token header path is a lab helper; keep it off")
-    r.add("PRO-32", "operator tokens: trusted HTTPS issuers, encrypted, own decryption key",
+    if p.get("sas.operator-token.direct-bearer-enabled", "false") == "true":
+        notes.append("direct 'Bearer operatortoken:' on /verify is a lab-only SAS extension (D6)")
+    if p.get("sas.operator-token.header-enabled", "false") == "true":
+        notes.append("X-Sas-Operator-Token header path is a lab helper; keep it off")
+    r.add("PRO-32", "operator tokens only through the CAMARA ICM forms; redeemed at the ECS",
           not notes, "\n".join(notes))
 
     r.add("PRO-33", "resource server accepts only ES256 tokens from this AS",
@@ -974,11 +885,6 @@ def _good_deployment(tmp: Path) -> dict[str, str]:
     keystore.write_bytes(b"not-a-real-keystore")
     truststore = tmp / "sas-truststore.p12"
     truststore.write_bytes(b"not-a-real-truststore")
-    stack = tmp / "ss7-prod.json"
-    stack.write_text(json.dumps({"Sccp": {"pointCode": "1-2-3"},
-                                 "M3UA": {"asp": "sas-asp"}}), encoding="utf-8")
-    cgnat = tmp / "cgnat-bindings.csv"
-    cgnat.write_text("ts,msisdn,ip,port\n", encoding="utf-8")
     client_jwk = json.loads(_jwk("cobalt-2026", "sig", False))
     return {
         "SAS_TLS_KEYSTORE": str(keystore),
@@ -995,24 +901,11 @@ def _good_deployment(tmp: Path) -> dict[str, str]:
         "SAS_OAUTH_CLIENTS_JSON": json.dumps({"clients": [{
             "client_id": "cobalt", "token_endpoint_auth_method": "private_key_jwt",
             "jwks": {"keys": [client_jwk]}, "redirect_uris": ["https://cobalt.bank/cb"]}]}),
-        "SAS_OPERATOR_TOKEN_ISSUERS_JSON": json.dumps({"issuers": [{
-            "issuer": "https://ecs.et-network.net",
-            "jwks_uri": "https://ecs.et-network.net/jwks.json"}]}),
-        "SAS_OPERATOR_TOKEN_DECRYPTION_JWK": _jwk("camara-enc-2026-10", "enc", True),
         "SAS_TENANT_API_KEYS": "cobalt=ck_live_01f0e4b9a7c2d8a43b6e9157,hibret=ck_live_9a4b1e7d0f5c43a2986b715e",
         "SAS_ADMIN_KEY": "sas-admin-2f9c47be13ad86e0c5f7",
         "SAS_ADMIN_SESSION_HMAC_SECRET": "rotated-admin-session-hmac-64-chars-aaaa",
-        "SAS_TRANSPORT_RESOLVER": "radius",
-        "SAS_RADIUS_SECRET": "radius-shared-secret-not-default!",
-        "SAS_CGNAT_LOG_PATH": str(cgnat),
-        "SAS_JSS7_CONFIG": str(stack),
-        "SAS_JSS7_HLR_GT": "251910000001",
-        "SAS_JSS7_LOCAL_GT": "251910000099",
-        "SAS_DIAMETER_PEER_HOST": "hss01.ethio-telecom.net",
-        "SAS_DIAMETER_ORIGIN_HOST": "sas.et-network.net",
-        "SAS_DIAMETER_REALM": "et-network.net",
-        "SAS_DIAMETER_DESTINATION_HOST": "hss01.et-network.net",
-        "SAS_DIAMETER_DESTINATION_REALM": "et-network.net",
+        "SAS_EXPOSURE_BASE_URL": "https://ecs.et-network.net:8443/sas-subscriber-exposure/v1",
+        "SAS_HOME_PLMN": "63601",
         "SAS_DB_JDBC_URL": "jdbc:postgresql://db01.et-network.net:5432/sas",
         "SAS_DB_USER": "sas_app",
         "SAS_DB_PASSWORD": "db-passphrase-long-enough",
@@ -1060,9 +953,7 @@ MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
         ("mTLS off", {"quarkus.http.ssl.client-auth": "none"}, {"PRO-13"}),
         ("lab admin key", {"sas.admin.key": "change-me"}, {"PRO-14"}),
         ("insecure cookies", {"sas.admin.cookie-secure": "false"}, {"PRO-16"}),
-        ("memory transport", {"sas.transport.resolver": "memory"}, {"PRO-17"}),
-        ("loopback Diameter peer", {"sas.transport.diameter.peer-host": "127.0.0.1"}, {"PRO-20"}),
-        ("missing jss7 stack file", {"sas.transport.jss7.config": "/nope/ss7.json"}, {"PRO-18"}),
+        ("signalling transport left in the gateway", {"sas.transport.map": "jss7"}, {"PRO-17"}),
         ("H2 lab database", {"quarkus.datasource.db-kind": "h2",
                              "quarkus.datasource.jdbc.url": "jdbc:h2:file:./data/sas-db"},
          {"PRO-25"}),
@@ -1085,12 +976,15 @@ MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
         ("resource server not pinned to this AS", {"SAS_SECURITY_ISSUER": "https://idp.other"},
          {"PRO-06"}),
         ("OAuth client auth off", {"sas.oauth.require-client-auth": "false"}, {"PRO-31"}),
-        ("lab operator-token decryption key",
-         {"SAS_OPERATOR_TOKEN_DECRYPTION_JWK": _jwk("lab-camara-enc-x", "enc", True)},
+        ("direct operator-token bearer on", {"sas.operator-token.direct-bearer-enabled": "true"},
          {"PRO-32"}),
-        ("plain-HTTP issuer JWKS", {"sas.operator-token.allow-http-jwks": "true"}, {"PRO-32"}),
-        ("operator tokens not encrypted", {"sas.operator-token.require-encryption": "false"},
-         {"PRO-32"}),
+        ("operator-token header on", {"sas.operator-token.header-enabled": "true"}, {"PRO-32"}),
+        ("plain-HTTP exposure client",
+         {"SAS_EXPOSURE_BASE_URL": "http://ecs.et-network.net:8443/sas-subscriber-exposure/v1"},
+         {"PRO-36"}),
+        ("loopback exposure client",
+         {"SAS_EXPOSURE_BASE_URL": "https://127.0.0.1:8443/sas-subscriber-exposure/v1"}, {"PRO-36"}),
+        ("home PLMN not a PLMN", {"SAS_HOME_PLMN": "ethio"}, {"PRO-36"}),
     ],
     "ecs": [
         ("lab auth vector source", {"ECS_TRANSPORT_AUTHVECTOR": "memory"}, {"PRO-30"}),

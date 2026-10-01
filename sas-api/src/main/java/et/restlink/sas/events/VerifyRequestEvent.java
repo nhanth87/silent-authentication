@@ -41,6 +41,7 @@ public final class VerifyRequestEvent implements SleeEvent {
     private final AccessTech accessTech;
     private final AssurancePolicy.RiskClass riskClass;
     private final String tenantId;
+    private final boolean operatorAnchored;
 
     public VerifyRequestEvent(String reqId,
                               String srcIp,
@@ -87,6 +88,26 @@ public final class VerifyRequestEvent implements SleeEvent {
                               AccessTech accessTech,
                               AssurancePolicy.RiskClass riskClass,
                               String tenantId) {
+        this(reqId, srcIp, srcPort, tsEpochMs, claimedMsisdn, claimedImsi, accessTech,
+                riskClass, tenantId, false);
+    }
+
+    /**
+     * Full overload with the identity proof: {@code operatorAnchored} is true only when
+     * the number came from an operator token the entitlement server redeemed (EAP-AKA
+     * proof). The Wi-Fi path has no other proof of the subscriber.
+     */
+    public VerifyRequestEvent(String reqId,
+                              String srcIp,
+                              int srcPort,
+                              long tsEpochMs,
+                              String claimedMsisdn,
+                              String claimedImsi,
+                              AccessTech accessTech,
+                              AssurancePolicy.RiskClass riskClass,
+                              String tenantId,
+                              boolean operatorAnchored) {
+        this.operatorAnchored = operatorAnchored;
         this.reqId = reqId;
         this.srcIp = srcIp;
         this.srcPort = srcPort;
@@ -121,6 +142,11 @@ public final class VerifyRequestEvent implements SleeEvent {
     /** Optional claimed IMSI (TS.43 entitlement token); {@code null} = absent. */
     public String claimedImsi() {
         return claimedImsi;
+    }
+
+    /** True when the number was proven by a redeemed operator token (TS.43 EAP-AKA). */
+    public boolean operatorAnchored() {
+        return operatorAnchored;
     }
 
     public AccessTech accessTech() {

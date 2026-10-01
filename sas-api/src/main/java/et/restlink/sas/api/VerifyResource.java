@@ -411,7 +411,8 @@ public class VerifyResource {
 
         VerifyRequestEvent event = new VerifyRequestEvent(reqId, srcIp, srcPort, ts,
                 claimed, claimedImsi, accessTech,
-                VerifyRequestDto.parse(riskClassHeader), tenant.tenantId());
+                VerifyRequestDto.parse(riskClassHeader), tenant.tenantId(),
+                operatorBinding != null);
 
         VerifyResult result = awaitResult(event, reqId);
 

@@ -7,137 +7,122 @@
 
 package et.restlink.sas.oauth;
 
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.KeyUse;
-
-import et.restlink.sas.token.Es256Keys;
-import et.restlink.sas.token.OperatorToken;
+import et.restlink.sas.api.SasVerifyEngine;
+import et.restlink.sas.events.VerifyRequestEvent;
+import et.restlink.sas.model.VerifyResult;
+import et.restlink.sas.subscriber.ExposureCause;
+import et.restlink.sas.subscriber.ExposureContext;
+import et.restlink.sas.subscriber.ExposureOutcome;
+import et.restlink.sas.subscriber.SubscriberService;
+import et.restlink.sas.subscriber.dto.MonitoringEventReports;
+import et.restlink.sas.subscriber.dto.MonitoringEventSubscription;
+import et.restlink.sas.subscriber.dto.OperatorTokenRedeemReq;
+import et.restlink.sas.subscriber.dto.SimChangeInfo;
+import et.restlink.sas.subscriber.dto.SimChangeReq;
+import et.restlink.sas.subscriber.dto.SubscriberVerificationResult;
+import et.restlink.sas.subscriber.dto.UeIdInfo;
+import et.restlink.sas.subscriber.dto.UeIdReq;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.net.URI;
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * CAMARA side of the split: an operator token minted exactly as sas-ecs mints it
- * (sas-token profile) is accepted once, by a CAMARA server that only knows the ECS's
- * public key and its own decryption key.
+ * Gateway side of layered ADR D3: the token is forwarded unread to the entitlement
+ * server, which alone decides; every refusal, timeout or transport error is fail-closed.
  */
 class OperatorTokenAnchorTest {
 
-    private static final String ECS = "https://ecs.lab.restlink.et";
-    private static final String CAMARA = "https://camara.lab.restlink.et";
-    private static final String MSISDN = "+251911111111";
-
-    private final ECKey ecsSig = Es256Keys.generate(KeyUse.SIGNATURE);
-    private final ECKey camaraEnc = Es256Keys.generate(KeyUse.ENCRYPTION);
+    private static final String TOKEN = "eyJlcGsiOnsia3R5IjoiRUMiLCJjcnYi.a.b.c.d";
 
     private OperatorTokenAnchor anchor;
     private Cfg cfg;
-    private final List<URI> fetched = new ArrayList<>();
+    private final List<OperatorTokenRedeemReq> sent = new ArrayList<>();
+    private final List<ExposureContext> contexts = new ArrayList<>();
+    private Function<OperatorTokenRedeemReq, CompletableFuture<ExposureOutcome<SubscriberVerificationResult>>> ecs;
 
     @BeforeEach
     void setUp() {
         cfg = new Cfg();
-        cfg.issuers = "{\"issuers\":[{\"issuer\":\"" + ECS + "\",\"jwks\":"
-                + Es256Keys.publicJwks(List.of(ecsSig)) + "}]}";
         anchor = new OperatorTokenAnchor();
         anchor.config = cfg;
-        anchor.ledger = new OperatorTokenPorts.InMemoryLedger();
-        anchor.keySource = uri -> {
-            fetched.add(uri);
-            return List.of(ecsSig.toPublicJWK());
-        };
-    }
-
-    private String mint(String audience) {
-        return OperatorToken.issue(ECS, audience, MSISDN, OperatorToken.EAP_AKA, 300, ecsSig,
-                camaraEnc.toPublicJWK(), Clock.systemUTC());
+        anchor.engine = new Engine();
+        ecs = req -> CompletableFuture.completedFuture(ExposureOutcome.ok(
+                new SubscriberVerificationResult("251911111111", "EAP-AKA", "2026-10-01T06:00:00Z",
+                        true, "jti-1")));
     }
 
     @Test
-    void acceptedOnceThenReplayRefused() {
-        String token = mint(CAMARA);
-        IdentityAnchor.OperatorBinding first = anchor.resolveOperatorToken(token);
-        assertNotNull(first);
-        assertEquals(MSISDN, first.msisdn());
-        assertEquals(OperatorToken.EAP_AKA, first.eapMethod());
-        assertNull(first.imsi(), "CAMARA never learns the IMSI");
-        assertNull(anchor.resolveOperatorToken(token), "single-use: second presentation refused");
+    void redeemedAtTheEntitlementServerAndMappedToCanonicalForm() {
+        IdentityAnchor.OperatorBinding b = anchor.resolveOperatorToken(TOKEN, "bank-a");
+        assertNotNull(b);
+        assertEquals("+251911111111", b.msisdn());
+        assertNull(b.imsi(), "the gateway never learns the IMSI");
+        assertEquals("EAP-AKA", b.eapMethod());
+        assertEquals(TOKEN, sent.get(0).operatorToken(), "forwarded unread");
+        assertEquals("bank-a", sent.get(0).clientId());
+        assertEquals("sas-camara", sent.get(0).afId());
+        assertTrue(contexts.get(0).requestId().startsWith("redeem-"));
+        assertEquals(OperatorTokenAnchor.REDEEM_BUDGET_MS, contexts.get(0).budgetMs());
     }
 
     @Test
-    void wrongAudienceRefused() {
-        assertNull(anchor.resolveOperatorToken(mint("https://another-camara")));
+    void unknownClientIsNamedAsTheGateway() {
+        anchor.resolveOperatorToken(TOKEN);
+        assertEquals(OperatorTokenAnchor.UNKNOWN_CLIENT, sent.get(0).clientId());
     }
 
     @Test
-    void untrustedIssuerRefused() {
-        cfg.issuers = "{\"issuers\":[]}";
-        assertNull(anchor.resolveOperatorToken(mint(CAMARA)));
+    void entitlementServerRefusalIsARefusal() {
+        ecs = req -> CompletableFuture.completedFuture(
+                ExposureOutcome.problem(ExposureCause.INVALID_TOKEN, "operator token refused"));
+        assertNull(anchor.resolveOperatorToken(TOKEN));
     }
 
     @Test
-    void jwksUriIssuerFetchedThroughTheHostSeamAndCached() {
-        cfg.issuers = "{\"issuers\":[{\"issuer\":\"" + ECS + "\",\"jwks_uri\":\"" + ECS + "/jwks.json\"}]}";
-        assertNotNull(anchor.resolveOperatorToken(mint(CAMARA)));
-        assertNotNull(anchor.resolveOperatorToken(mint(CAMARA)));
-        assertEquals(1, fetched.size(), "JWKS is cached, not fetched per token");
-        assertEquals(URI.create(ECS + "/jwks.json"), fetched.get(0));
+    void transportFailureOrSilenceFailsClosed() {
+        ecs = req -> CompletableFuture.failedFuture(new java.io.IOException("connection refused"));
+        assertNull(anchor.resolveOperatorToken(TOKEN));
+        ecs = req -> new CompletableFuture<>();
+        long t0 = System.nanoTime();
+        assertNull(anchor.resolveOperatorToken(TOKEN));
+        assertTrue((System.nanoTime() - t0) / 1_000_000L < 2000, "bounded wait");
     }
 
     @Test
-    void rotatedIssuerKeyIsPickedUpWithoutWaitingForTheCache() {
-        cfg.issuers = "{\"issuers\":[{\"issuer\":\"" + ECS + "\",\"jwks_uri\":\"" + ECS + "/jwks.json\"}]}";
-        assertNotNull(anchor.resolveOperatorToken(mint(CAMARA)), "first key, fetched once");
-        ECKey rotated = Es256Keys.generate(KeyUse.SIGNATURE);
-        anchor.keySource = uri -> {
-            fetched.add(uri);
-            return List.of(rotated.toPublicJWK());
-        };
-        String withNewKey = OperatorToken.issue(ECS, CAMARA, MSISDN, OperatorToken.EAP_AKA, 300,
-                rotated, camaraEnc.toPublicJWK(), Clock.systemUTC());
-        assertNotNull(anchor.resolveOperatorToken(withNewKey), "unknown kid forces one refetch");
-        assertEquals(2, fetched.size());
-        // A second unknown kid inside the 30 s window must NOT refetch again.
-        ECKey bogus = Es256Keys.generate(KeyUse.SIGNATURE);
-        String bogusToken = OperatorToken.issue(ECS, CAMARA, MSISDN, OperatorToken.EAP_AKA, 300,
-                bogus, camaraEnc.toPublicJWK(), Clock.systemUTC());
-        assertNull(anchor.resolveOperatorToken(bogusToken));
-        assertEquals(2, fetched.size(), "forced refetch is rate-limited");
+    void answerWithoutSimProofOrNumberIsRefused() {
+        ecs = req -> CompletableFuture.completedFuture(ExposureOutcome.ok(
+                new SubscriberVerificationResult("251911111111", "EAP-AKA", "x", false, "j")));
+        assertNull(anchor.resolveOperatorToken(TOKEN));
+        ecs = req -> CompletableFuture.completedFuture(ExposureOutcome.ok(
+                new SubscriberVerificationResult("not-a-number", "EAP-AKA", "x", true, "j")));
+        assertNull(anchor.resolveOperatorToken(TOKEN));
     }
 
     @Test
-    void failedJwksFetchMeansUntrusted() {
-        cfg.issuers = "{\"issuers\":[{\"issuer\":\"" + ECS + "\",\"jwks_uri\":\"" + ECS + "/jwks.json\"}]}";
-        anchor.keySource = uri -> List.of();
-        assertNull(anchor.resolveOperatorToken(mint(CAMARA)));
-    }
-
-    @Test
-    void disabledServiceRefusesEverything() {
+    void disabledOrUnwiredRefusesWithoutCallingTheEcs() {
         cfg.on = false;
-        assertNull(anchor.resolveOperatorToken(mint(CAMARA)));
+        assertNull(anchor.resolveOperatorToken(TOKEN));
+        cfg.on = true;
+        anchor.engine = null;
+        assertNull(anchor.resolveOperatorToken(TOKEN));
+        assertTrue(sent.isEmpty());
     }
 
     @Test
-    void ledgerFailureFailsClosed() {
-        anchor.ledger = (iss, jti, exp) -> false;
-        assertNull(anchor.resolveOperatorToken(mint(CAMARA)));
-    }
-
-    @Test
-    void candidateExtractionPrecedence() {
+    void candidateExtractionPrecedenceAndTheLabOnlyForms() {
+        assertNull(anchor.extractCandidate("Bearer operatortoken:tk1", null, null),
+                "direct bearer is a lab-only extension (D6), off by default");
+        cfg.direct = true;
         assertEquals("tk1", anchor.extractCandidate("Bearer operatortoken:tk1", "operatortoken:tk2", "tk3"));
         assertEquals("tk2", anchor.extractCandidate("Bearer abc", "operatortoken:tk2", "tk3"));
         assertNull(anchor.extractCandidate(null, null, "tk3"), "header ignored unless enabled");
@@ -145,18 +130,56 @@ class OperatorTokenAnchorTest {
         assertEquals("tk3", anchor.extractCandidate(null, null, "tk3"));
     }
 
-    @Test
-    void publishesOnlyThePublicEncryptionKey() {
-        List<ECKey> pub = anchor.publicEncryptionKeys();
-        assertEquals(1, pub.size());
-        assertFalse(pub.get(0).isPrivate());
-        assertTrue(pub.get(0).getKeyUse().equals(KeyUse.ENCRYPTION));
+    private final class Engine implements SasVerifyEngine {
+        @Override
+        public CompletableFuture<VerifyResult> submit(VerifyRequestEvent evt) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void release(String reqId) {
+        }
+
+        @Override
+        public String afId() {
+            return "sas-camara";
+        }
+
+        @Override
+        public SubscriberService subscribers() {
+            return new SubscriberService() {
+                @Override
+                public CompletableFuture<ExposureOutcome<UeIdInfo>> retrieveUeId(ExposureContext c, UeIdReq r) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public CompletableFuture<ExposureOutcome<MonitoringEventReports>> monitor(
+                        ExposureContext c, String s, MonitoringEventSubscription r) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public CompletableFuture<ExposureOutcome<SimChangeInfo>> retrieveSimChange(
+                        ExposureContext c, SimChangeReq r) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public CompletableFuture<ExposureOutcome<SubscriberVerificationResult>> redeemOperatorToken(
+                        ExposureContext c, OperatorTokenRedeemReq r) {
+                    contexts.add(c);
+                    sent.add(r);
+                    return ecs.apply(r);
+                }
+            };
+        }
     }
 
-    private final class Cfg extends OperatorTokenConfig {
-        String issuers;
+    private static final class Cfg extends OperatorTokenConfig {
         boolean on = true;
         boolean header;
+        boolean direct;
 
         @Override
         public boolean enabled() {
@@ -164,23 +187,13 @@ class OperatorTokenAnchorTest {
         }
 
         @Override
-        public String audience() {
-            return CAMARA;
-        }
-
-        @Override
-        public Optional<String> issuersJson() {
-            return Optional.ofNullable(issuers);
-        }
-
-        @Override
-        public Optional<String> decryptionJwk() {
-            return Optional.of(camaraEnc.toJSONString());
-        }
-
-        @Override
         public boolean headerEnabled() {
             return header;
+        }
+
+        @Override
+        public boolean directBearerEnabled() {
+            return direct;
         }
     }
 }

@@ -7,9 +7,9 @@
 
 package et.restlink.sas.api;
 
+import et.restlink.sas.subscriber.SubscriberService;
 import et.restlink.sas.events.VerifyRequestEvent;
 import et.restlink.sas.model.VerifyResult;
-import et.restlink.sas.ras.resolver.ResolverBackend;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -31,6 +31,12 @@ public interface SasVerifyEngine {
     /** Release the per-request SBB entity after the terminal result is read. */
     void release(String reqId);
 
-    /** Expose the active resolver backend (for the session-tuple collector). */
-    ResolverBackend resolverBackend();
+    /**
+     * The subscriber exposure service (layered ADR R1) — the gateway's only way to the
+     * subscriber: UE ID for network authentication, SIM change, operator-token redemption.
+     */
+    SubscriberService subscribers();
+
+    /** This gateway's AF identity on the exposure hop ({@code afId} / {@code scsAsId}). */
+    String afId();
 }

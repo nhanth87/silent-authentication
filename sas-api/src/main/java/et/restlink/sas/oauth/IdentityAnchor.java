@@ -24,6 +24,14 @@ public interface IdentityAnchor {
     OperatorBinding resolveOperatorToken(String candidate);
 
     /**
+     * Same, naming the OAuth client on whose behalf the token is redeemed (audit at the
+     * entitlement server). Default: the client is not known at this call site.
+     */
+    default OperatorBinding resolveOperatorToken(String candidate, String clientId) {
+        return resolveOperatorToken(candidate);
+    }
+
+    /**
      * Extract the operator-token candidate for the current request, or null if
      * this is not an operator-token request (caller falls through to normal
      * validation). Precedence: Authorization scheme → login_hint → header.

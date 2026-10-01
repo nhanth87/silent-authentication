@@ -23,16 +23,13 @@ public class AdminNavRenderer {
             return """
                     <a class="hover:text-signal" href="/admin">Dashboard</a>
                     <a class="hover:text-signal" href="/admin/http">HTTP</a>
-                    <a class="hover:text-signal" href="/admin/diameter">Diameter</a>
                     <a class="hover:text-signal" href="/admin/cdr">CDR</a>
                     %s
                     """.formatted(auth).trim();
         }
         return """
                 <a class="hover:text-signal" href="/admin">Dashboard</a>
-                <a class="hover:text-signal" href="/admin/ss7">SS7</a>
                 <a class="hover:text-signal" href="/admin/http">HTTP</a>
-                <a class="hover:text-signal" href="/admin/diameter">Diameter</a>
                 <a class="hover:text-signal" href="/admin/cdr">CDR</a>
                 <a class="hover:text-signal" href="/admin/tenants">Tenants</a>
                 <a class="hover:text-signal" href="/admin/users">Users</a>

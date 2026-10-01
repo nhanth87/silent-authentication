@@ -14,25 +14,25 @@ import com.microjainslee.api.SleeEvent;
 import com.microjainslee.api.SleeEventHandler;
 import com.microjainslee.api.annotations.InjectRa;
 
+import et.restlink.sas.api.ExposureAdapters;
 import et.restlink.sas.cdr.SasCdrService;
 import et.restlink.sas.cdr.VerifyFlowJson;
 import et.restlink.sas.coordinator.VerifyCoordinator;
 import et.restlink.sas.events.VerifyRequestEvent;
 import et.restlink.sas.fsm.AssurancePolicy;
-import et.restlink.sas.fsm.SasTimeouts;
 import et.restlink.sas.fsm.VerificationFsm;
 import et.restlink.sas.model.AccessTech;
 import et.restlink.sas.model.FallbackReason;
 import et.restlink.sas.model.ResolverResult;
 import et.restlink.sas.model.VerificationEvidence;
 import et.restlink.sas.model.VerifyResult;
-import et.restlink.sas.ras.mapverifier.command.AbortMapCommand;
-import et.restlink.sas.ras.mapverifier.command.MapVerifyCommand;
-import et.restlink.sas.ras.resolver.command.ResolveCommand;
-import et.restlink.sas.ras.s6averifier.command.AbortS6aCommand;
-import et.restlink.sas.ras.s6averifier.command.S6aVerifyCommand;
-import et.restlink.sas.ras.swxverifier.command.AbortSwxCommand;
-import et.restlink.sas.ras.swxverifier.command.SwxVerifyCommand;
+import et.restlink.sas.ras.exposure.command.SubscriberCallCommand;
+import et.restlink.sas.subscriber.ExposureCause;
+import et.restlink.sas.subscriber.ExposureOutcome;
+import et.restlink.sas.subscriber.dto.MonitoringEventReports;
+import et.restlink.sas.subscriber.dto.SimChangeInfo;
+import et.restlink.sas.subscriber.dto.SimChangeReq;
+import et.restlink.sas.subscriber.dto.UeIdInfo;
 
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.spi.CDI;
@@ -40,6 +40,7 @@ import jakarta.enterprise.inject.spi.CDI;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -47,44 +48,46 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * The entitlement-service SBB. Runs the per-request FSM:
+ * The verification SBB of the CAMARA gateway. Runs the per-request FSM:
  *
  * <pre>
  * RESOLVING → VERIFYING → SCORING → APPROVED | FALLBACK
  * </pre>
  *
- * <p>Drive order is fail-closed end-to-end: resolver miss/timeout, verifier
- * failure/timeout, SIM-swap suspect or a low score all terminate in FALLBACK.
- * Missing evidence never approves.</p>
+ * <p>Layered ADR §6/§7: every stage is a subscriber exposure call through
+ * {@code exposure-ra}; this SBB owns the orchestration and the scoring, the entitlement
+ * server owns the signalling.</p>
+ * <ul>
+ *   <li>RESOLVING — cellular: UE ID retrieval of {@code IP:port:ts} (400 ms). Wi-Fi: the
+ *       number of a redeemed operator token; Wi-Fi without one has no proof → FALLBACK.</li>
+ *   <li>VERIFYING — monitoring (reachability + location metadata) ∥ SIM change (2.2 s).</li>
+ *   <li>SCORING — {@link VerificationFsm} with the gateway's location policy.</li>
+ * </ul>
  *
- * <p>Exactly one full-flow CDR row is written per request, at this terminal
- * point ({@code phase=FLOW}): decision, assurance snapshot, stage outcomes and
- * total latency. The MSISDN is masked before persisting; the IMSI never
- * reaches the CDR at all. CDR failure is logged and swallowed — it must never
- * alter the fail-closed verification outcome.</p>
+ * <p>Fail-closed end-to-end: any exposure problem, timeout or transport error, a recent
+ * or unknown SIM change, or a low score terminates in FALLBACK. Exactly one flow CDR row
+ * is written per request; it carries the internal evidence sources (ADR R4), the CAMARA
+ * response never does.</p>
  */
 public final class VerifySbb implements Sbb, SleeEventHandler {
 
     private static final Logger LOG = LogManager.getLogger(VerifySbb.class);
+    private static final long WAIT_GRACE_MS = 200L;
 
     private final VerifyCoordinator coordinator;
     private final VerificationFsm fsm;
+    private final String afId;
+    private final ExposureAdapters.LocationPolicy locationPolicy;
 
-    @InjectRa(name = "resolver-ra")
-    private volatile RaCommandPort resolverRa;
+    @InjectRa(name = "exposure-ra")
+    private volatile RaCommandPort exposureRa;
 
-    @InjectRa(name = "map-verifier-ra")
-    private volatile RaCommandPort mapVerifierRa;
-
-    @InjectRa(name = "s6a-verifier-ra")
-    private volatile RaCommandPort s6aVerifierRa;
-
-    @InjectRa(name = "swx-verifier-ra")
-    private volatile RaCommandPort swxVerifierRa;
-
-    public VerifySbb(VerifyCoordinator coordinator, VerificationFsm fsm) {
+    public VerifySbb(VerifyCoordinator coordinator, VerificationFsm fsm, String afId,
+                     ExposureAdapters.LocationPolicy locationPolicy) {
         this.coordinator = coordinator;
         this.fsm = fsm;
+        this.afId = afId;
+        this.locationPolicy = locationPolicy;
     }
 
     @Override
@@ -92,11 +95,10 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         if (!(event instanceof VerifyRequestEvent evt)) {
             return;
         }
-        LOG.info("[SAS] verify start reqId={} ip={}:{} ts={} claimed={} access={} risk={}",
-                evt.reqId(), evt.srcIp(), evt.srcPort(), evt.tsEpochMs(),
-                evt.claimedMsisdn(), evt.accessTech(),
-                evt.riskClass() == null
-                        ? AssurancePolicy.RiskClass.LOGIN : evt.riskClass());
+        LOG.info("[SAS] verify start reqId={} ip={}:{} ts={} access={} anchored={} risk={}",
+                evt.reqId(), evt.srcIp(), evt.srcPort(), evt.tsEpochMs(), evt.accessTech(),
+                evt.operatorAnchored(),
+                evt.riskClass() == null ? AssurancePolicy.RiskClass.LOGIN : evt.riskClass());
 
         long startNanos = System.nanoTime();
         DriveOutcome outcome = drive(evt);
@@ -115,39 +117,32 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
                                 String evidenceSource) {
     }
 
-    private DriveOutcome drive(VerifyRequestEvent evt) throws Exception {
-        // RESOLVING — Wi-Fi has no cellular bearer; the SIM/TS.43 EAP-AKA path
-        // uses the SWx verifier (TS 29.273) instead of the IP resolver.
+    private DriveOutcome drive(VerifyRequestEvent evt) throws InterruptedException {
+        ResolverResult resolver;
+        String resolverStatus;
         if (evt.accessTech() == AccessTech.WIFI) {
-            return verifySwx(evt);
+            // No cellular bearer: the only proof of the subscriber is a redeemed operator
+            // token (EAP-AKA at the entitlement server). A Wi-Fi claim without one proves nothing.
+            if (!evt.operatorAnchored() || evt.claimedMsisdn() == null) {
+                return new DriveOutcome(fsm.fallback(evt.reqId(), FallbackReason.WIFI_NOT_READY,
+                        null, null, riskClass(evt)), "WIFI_UNANCHORED", null);
+            }
+            resolver = ResolverResult.bound(evt.claimedMsisdn(), null, 0L);
+            resolverStatus = "OPERATOR_TOKEN";
+        } else {
+            resolver = resolve(evt);
+            if (resolver == null || !resolver.found()) {
+                FallbackReason why = resolver != null && resolver.miss() != null
+                        ? resolver.miss() : FallbackReason.RESOLVER_ERROR;
+                return new DriveOutcome(fsm.fallback(evt.reqId(), why, resolver, null, riskClass(evt)),
+                        why.name(), null);
+            }
+            resolverStatus = "BOUND";
         }
-
-        ResolverResult resolver = resolve(evt);
-        if (resolver == null || !resolver.found()) {
-            FallbackReason why = resolver != null && resolver.miss() != null
-                    ? resolver.miss() : FallbackReason.RESOLVER_ERROR;
-            return new DriveOutcome(
-                    fsm.fallback(evt.reqId(), why, resolver, null, riskClass(evt)),
-                    statusOf(resolver), null);
-        }
-
-        // VERIFYING — 2G/3G rides MAP PSI/SAI; LTE/NR rides Diameter S6a.
-        VerificationEvidence evidence = verify(evt, resolver);
-
-        // SCORING → terminal
+        VerificationEvidence evidence = verify(evt, resolver.msisdn());
         return new DriveOutcome(
-                fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
-                        riskClass(evt)),
-                statusOf(resolver),
-                evidence == null ? null : evidence.protocol());
-    }
-
-    /** Resolver stage outcome label for the flow CDR. */
-    private static String statusOf(ResolverResult resolver) {
-        if (resolver == null) {
-            return FallbackReason.RESOLVER_ERROR.name();
-        }
-        return resolver.found() ? "BOUND" : resolver.miss().name();
+                fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(), riskClass(evt)),
+                resolverStatus, evidence == null ? null : evidence.protocol());
     }
 
     /**
@@ -158,123 +153,70 @@ public final class VerifySbb implements Sbb, SleeEventHandler {
         return evt.riskClass() == null ? AssurancePolicy.RiskClass.LOGIN : evt.riskClass();
     }
 
-    /** Route the identity-plane verify to the correct RA by access technology. */
-    private VerificationEvidence verify(VerifyRequestEvent evt, ResolverResult resolver)
-            throws Exception {
-        return switch (evt.accessTech()) {
-            case LTE, NR -> verifyS6a(evt, resolver);
-            case WIFI -> VerificationEvidence.fail(FallbackReason.WIFI_NOT_READY, "SWX");
-            case GS_2G3G -> verifyMap(evt, resolver);
-        };
+    // ---- RESOLVING: UE ID retrieval ------------------------------------------
+
+    private ResolverResult resolve(VerifyRequestEvent evt) throws InterruptedException {
+        ExposureOutcome<UeIdInfo> answer = call(evt.reqId() + ":ue-id",
+                svc -> svc.retrieveUeId(ExposureAdapters.context("ueid", ExposureAdapters.UE_ID_BUDGET_MS),
+                        ExposureAdapters.ueIdRequest(afId, evt.srcIp(), evt.srcPort(), evt.tsEpochMs())),
+                ExposureAdapters.UE_ID_BUDGET_MS);
+        return ExposureAdapters.resolverResult(answer, evt.tsEpochMs());
     }
 
-    private ResolverResult resolve(VerifyRequestEvent evt) throws Exception {
-        RaCommandPort port = resolverRa;
-        if (port == null) {
-            return ResolverResult.miss(FallbackReason.RESOLVER_ERROR);
-        }
-        CompletableFuture<ResolverResult> reply = new CompletableFuture<>();
-        port.sendCommand(new ResolveCommand(evt.reqId(), evt.srcIp(), evt.srcPort(),
-                evt.tsEpochMs(), reply));
+    // ---- VERIFYING: monitoring ∥ SIM change ----------------------------------
+
+    private VerificationEvidence verify(VerifyRequestEvent evt, String msisdnE164)
+            throws InterruptedException {
+        String digits;
         try {
-            return reply.get(SasTimeouts.RESOLVER_MS + 50L, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException te) {
-            return ResolverResult.miss(FallbackReason.RESOLVER_TIMEOUT);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            return ResolverResult.miss(FallbackReason.RESOLVER_ERROR);
-        } catch (ExecutionException ee) {
-            return ResolverResult.miss(FallbackReason.RESOLVER_ERROR);
+            digits = ExposureAdapters.digits(msisdnE164);
+        } catch (IllegalArgumentException e) {
+            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "EXPOSURE");
         }
+        int budget = ExposureAdapters.EVIDENCE_BUDGET_MS;
+        CompletableFuture<ExposureOutcome<MonitoringEventReports>> monitoring = send(
+                evt.reqId() + ":monitoring",
+                svc -> svc.monitor(ExposureAdapters.context("mon", budget), afId,
+                        ExposureAdapters.monitoringRequest(msisdnE164)));
+        CompletableFuture<ExposureOutcome<SimChangeInfo>> simChange = send(
+                evt.reqId() + ":sim-change",
+                svc -> svc.retrieveSimChange(ExposureAdapters.context("sim", budget),
+                        new SimChangeReq(afId, digits)));
+        return ExposureAdapters.evidence(await(monitoring, budget), await(simChange, budget),
+                Instant.now(), locationPolicy);
     }
 
-    private VerificationEvidence verifyMap(VerifyRequestEvent evt, ResolverResult resolver)
-            throws Exception {
-        RaCommandPort port = mapVerifierRa;
+    // ---- exposure-ra plumbing ------------------------------------------------
+
+    private <T> CompletableFuture<ExposureOutcome<T>> send(
+            String id, java.util.function.Function<et.restlink.sas.subscriber.SubscriberService,
+                    CompletableFuture<ExposureOutcome<T>>> call) {
+        CompletableFuture<ExposureOutcome<T>> reply = new CompletableFuture<>();
+        RaCommandPort port = exposureRa;
         if (port == null) {
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "MAP");
+            reply.complete(ExposureOutcome.problem(ExposureCause.TRANSPORT_UNAVAILABLE, "no exposure RA bound"));
+        } else {
+            port.sendCommand(new SubscriberCallCommand<>(id, call, reply));
         }
-        CompletableFuture<VerificationEvidence> reply = new CompletableFuture<>();
-        port.sendCommand(new MapVerifyCommand(evt.reqId(), resolver.msisdn(), resolver.imsi(),
-                evt.accessTech(), reply));
-        try {
-            return reply.get(SasTimeouts.MAP_MS + 100L, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException te) {
-            // Safety net: the RA already aborts on its own budget; this covers
-            // the case where the backend stalls past the RA's completeOnTimeout.
-            port.sendCommand(new AbortMapCommand(evt.reqId(), "dialog:" + evt.reqId()));
-            return VerificationEvidence.fail(FallbackReason.VERIFY_TIMEOUT, "MAP");
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "MAP");
-        } catch (ExecutionException ee) {
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "MAP");
-        }
+        return reply;
     }
 
-    private VerificationEvidence verifyS6a(VerifyRequestEvent evt, ResolverResult resolver)
-            throws Exception {
-        RaCommandPort port = s6aVerifierRa;
-        if (port == null) {
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A");
-        }
-        CompletableFuture<VerificationEvidence> reply = new CompletableFuture<>();
-        port.sendCommand(new S6aVerifyCommand(evt.reqId(), resolver.msisdn(), resolver.imsi(),
-                evt.accessTech(), reply));
-        try {
-            return reply.get(SasTimeouts.DIAMETER_MS + 100L, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException te) {
-            // Safety net: the RA already aborts on its own budget.
-            port.sendCommand(new AbortS6aCommand(evt.reqId(), "session:" + evt.reqId()));
-            return VerificationEvidence.fail(FallbackReason.VERIFY_TIMEOUT, "S6A");
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A");
-        } catch (ExecutionException ee) {
-            return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "S6A");
-        }
+    private <T> ExposureOutcome<T> call(
+            String id, java.util.function.Function<et.restlink.sas.subscriber.SubscriberService,
+                    CompletableFuture<ExposureOutcome<T>>> call, int budgetMs) throws InterruptedException {
+        return await(send(id, call), budgetMs);
     }
 
-    private DriveOutcome verifySwx(VerifyRequestEvent evt) throws Exception {
-        // Wi-Fi path: the claimed MSISDN is the identity anchor (no IP resolver).
-        // Missing anchor ⇒ fail closed before touching the SWx RA.
-        if (evt.claimedMsisdn() == null || evt.claimedMsisdn().isBlank()) {
-            return new DriveOutcome(
-                    fsm.fallback(evt.reqId(), FallbackReason.INVALID_REQUEST, null, null,
-                            riskClass(evt)),
-                    "SKIPPED_WIFI", null);
-        }
-        RaCommandPort port = swxVerifierRa;
-        if (port == null) {
-            return new DriveOutcome(
-                    fsm.fallback(evt.reqId(), FallbackReason.VERIFY_ERROR, null, null,
-                            riskClass(evt)),
-                    "SKIPPED_WIFI", null);
-        }
-        CompletableFuture<VerificationEvidence> reply = new CompletableFuture<>();
-        // B2: claimed IMSI (from the TS.43 entitlement token) rides with the
-        // SWx verify; the backend treats a mismatch as SIM-swap suspect.
-        port.sendCommand(new SwxVerifyCommand(evt.reqId(), evt.claimedMsisdn(),
-                evt.claimedImsi(), evt.accessTech(), reply));
-        VerificationEvidence evidence;
+    /** Bounded wait; a silent entitlement server is a timeout, never a pass. */
+    private static <T> ExposureOutcome<T> await(CompletableFuture<ExposureOutcome<T>> answer, int budgetMs)
+            throws InterruptedException {
         try {
-            evidence = reply.get(SasTimeouts.DIAMETER_MS + 100L, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException te) {
-            port.sendCommand(new AbortSwxCommand(evt.reqId(), "session:" + evt.reqId()));
-            evidence = VerificationEvidence.fail(FallbackReason.VERIFY_TIMEOUT, "SWX");
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-            evidence = VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "SWX");
-        } catch (ExecutionException ee) {
-            evidence = VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "SWX");
+            return answer.get(budgetMs + WAIT_GRACE_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            return ExposureOutcome.problem(ExposureCause.NETWORK_TIMEOUT, "no answer within the budget");
+        } catch (ExecutionException e) {
+            return ExposureOutcome.problem(ExposureCause.INTERNAL_ERROR, "exposure call failed");
         }
-        // Wi-Fi path: no resolver — use claimed MSISDN as the identity anchor.
-        ResolverResult resolver = ResolverResult.bound(evt.claimedMsisdn(), null, 0L);
-        return new DriveOutcome(
-                fsm.decide(evt.reqId(), resolver, evidence, evt.claimedMsisdn(),
-                        riskClass(evt)),
-                "SKIPPED_WIFI",
-                evidence == null ? null : evidence.protocol());
     }
 
     // ---- full-flow CDR ----------------------------------------------------

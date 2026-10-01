@@ -28,10 +28,10 @@ main/
 ├── sas-token/                ← shared JOSE: ES256 JWS + operator token (JWS in JWE), Nimbus
 ├── sas-subscriber-api/       ← exposure contract in Java: SubscriberService, DTOs, causes, validator
 ├── sas-operator-adapter/     ← operator adapter RAs: MAP (jSS7) + Diameter S6a/SWx + Gx/RADIUS/CGNAT resolver, auth-vector, binding
-├── sas-api/                  ← CAMARA library (/verify, SIM Swap, OTP, OAuth AS, operator-token accept)
+├── sas-api/                  ← CAMARA library (/verify, SIM Swap, OTP, OAuth AS, exposure adapters)
 ├── sas-entitlement/          ← entitlement library (EAP-AKA, /ts43, /entitlement, token issuer + redemption)
 ├── sas-subscriber-exposure/  ← /sas-subscriber-exposure/v1 resource + event + coordinator (sas-ecs only)
-├── sas-host/                 ← BINARY sas-camara :8085 (SasBootstrap, VerifySbb, CDR, admin)
+├── sas-host/                 ← BINARY sas-camara :8085 (SasBootstrap, VerifySbb, exposure-ra, CDR, admin)
 ├── sas-ecs-host/             ← BINARY sas-ecs :8095 (EcsBootstrap, EntitlementSbb) — TS.43 ECS
 ├── sas-diameter-testapp/     ← lab HSS/AAA/PCRF(Gx) Diameter simulator (corsac), :3868
 ├── sas-jss7-testapp/         ← lab home-HLR simulator (jSS7 coral-valley), SCTP :2906
@@ -46,16 +46,19 @@ main/
 
 Build boundaries that are easy to get wrong:
 
-- **Two binaries** (plan of record: `docs/design/sas-two-binary-architecture.md`):
-  `sas-host` = **sas-camara** (CAMARA APIs + OAuth AS) and `sas-ecs-host` = **sas-ecs**
-  (TS.43 entitlement server, EAP-AKA over MAP/Diameter). They share `sas-common`,
-  `sas-token`, `sas-operator-adapter` and meet only through the operator token; gate **H25**
-  fails the build tree if either side depends on or imports the other.
+- **Two binaries, split by layer** (plan of record: `docs/design/sas-layered-architecture.md`):
+  `sas-host` = **sas-camara**, the CAMARA API gateway (CAMARA APIs, OAuth AS, consent,
+  scoring) — it signals **no** core network and carries no MAP/Diameter/SCTP artifact;
+  `sas-ecs-host` = **sas-ecs**, the entitlement server (TS.43 `/ts43`, `/session-tuple`,
+  token issuance + single-use redemption, subscriber exposure API, all MAP/Diameter via
+  `sas-operator-adapter`). The gateway reaches the subscriber only through `SubscriberService`
+  (`sas-subscriber-api`) over `exposure-ra` (HTTP). Gate **H25** and
+  `scripts/check-dependency-boundary.sh` fail the build if the boundary is crossed.
 - Root aggregator builds the 9 modules above (`sas-common` … `sas-ecs-host`).
-- **Layered redesign in progress** (`docs/design/sas-layered-architecture.md`, accepted;
-  contract `docs/design/openapi/sas-subscriber-exposure-v1.yaml` v1.0.0): M0–M2 done —
-  sas-ecs serves the subscriber exposure API (lab only until M4); sas-camara still signals
-  the core itself until M3.
+- **Layered migration** (contract `docs/design/openapi/sas-subscriber-exposure-v1.yaml`
+  v1.0.0): M0–M3 done. Until M4 the exposure hop has no client authentication, so the
+  sas-ecs prod profile keeps the exposure surface off (PRO-35) — the pair is not
+  production-deployable before M4.
   The two test apps (`sas-diameter-testapp`, `sas-jss7-testapp`) and all `ue-sdk*`
   modules are **standalone builds** — `cd` in and build them individually.
 - `dist/`, `dist-ecs/`, `slides/`, `*/target/`, `sas-host/data/` are **gitignored local artifacts** —
@@ -64,7 +67,7 @@ Build boundaries that are easy to get wrong:
 ## 1. Commands
 
 ```bash
-# Full build + tests (JDK 25 via mise; 9 modules, 737 tests)
+# Full build + tests (JDK 25 via mise; 9 modules, 733 tests)
 mvn -o test                                  # from repo root
 mvn -o test -pl sas-host -am -Dtest=ClassName -Dsurefire.failIfNoSpecifiedTests=false
 
@@ -76,7 +79,8 @@ QUARKUS_PROFILE=prod dist/run.sh             # prod — env vars from applicatio
                                              # preflight refuses a lab-shaped boot
 scripts/split-smoke.sh                       # both binaries end to end + pcap (no root; user netns)
 scripts/exposure-smoke.sh                    # sas-ecs exposure API vs HLR sim (MAP SendIMSI+PSI) + pcap
-scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapter; sas-camara none (enforced from M3)
+scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapter; sas-camara no MAP/Diameter/SCTP jar
+scripts/check-no-sctp.sh <pid> [label]       # runtime: a process owns no SCTP socket (used by the smokes)
 
 # UE SDKs
 (cd ue-sdk && mvn -o test) && (cd ue-sdk-android && mvn -o test)
@@ -110,7 +114,7 @@ Start sas-ecs for it with the MAP transports (own association, ss7-ecs.json):
 python3 harness/run_hardness.py              # 37/37 gates H1–H27, exit 0 = pass
 python3 harness/run_hardness.py --mutations  # H24 10/10 + H25 9/9 mutation self-tests
 python3 harness/preflight_prod.py --service camara|ecs|all   # prod verdict for THIS env
-python3 harness/preflight_prod.py --selftest # 44/44 scenarios (camara + ecs baselines + mutations)
+python3 harness/preflight_prod.py --selftest # 45/45 scenarios (camara + ecs baselines + mutations)
 
 # Artifacts
 python3 proposal/scripts/build_proposal_docx.py
@@ -174,7 +178,7 @@ IP:port:ts  ──[Resolver]──►  MSISDN/IMSI  ──[Verifier]──►  a
   SendIMSI binding share ONE stack. Two stacks collide on the same SCTP local port and the
   loser never gets an association (`No AS found for routing message ... si=3`).
 - **MAP SSN** — SAI/PSI ride SSN 6 (HLR); `SendIMSI` rides **SSN 3 (OAM)**
-  (TS 29.002). `ss7-sas.json` routes both, and `MAPService*.activate()` must be called
+  (TS 29.002). `ss7-ecs.json` routes both, and `MAPService*.activate()` must be called
   after stack start — this jSS7 fork does not activate services itself.
   Shape R retained as production fallback — see
   `docs/design/entitlement-core-nw-plan-2.md` §2.1.1–§2.1.2 and the gate that must
@@ -362,8 +366,10 @@ Open items (do not silently invent answers):
       authorization codes / CIBA bindings (sticky LB until then).
 - [x] **Two binaries (2026-10-01)** — `sas-camara` (`sas-host`) and `sas-ecs`
       (`sas-ecs-host`) on micro-jainslee + Java 25; operator token = ES256 JWS nested
-      in ECDH-ES/A256GCM JWE, verified by CAMARA via issuer JWKS, single use via the
-      durable `sas_operator_token_jti` ledger. Doc: `docs/design/sas-two-binary-architecture.md`.
+      in ECDH-ES/A256GCM JWE. **Since M3 (layered ADR D3/D7/D8):** the token is encrypted to
+      and redeemed by the ECS alone (`/operator-token/redeem`, durable
+      `ecs_operator_token_jti` ledger); the gateway holds no key and no ledger.
+      Doc: `docs/design/sas-layered-architecture.md`.
 - [ ] **EAP-AKA wire codec is not RFC 4187** (P1 blocker — architecture doc §9): attribute
       length units, Subtype/Reserved, reserved octets, AT_RES bit length, AT_AUTS 14,
       AT_KDF 2 octets, fabricated attribute table, Challenge without AT_MAC, resync keys,
@@ -372,8 +378,8 @@ Open items (do not silently invent answers):
 - [ ] `/ts43` → GSMA TS.43 wire format + abuse controls (per-IMSI rate limit, no IMSI
       existence oracle).
 - [x] **P2 real MAP transport** — `Jss7MapVerifierBackend` (jSS7 coral-valley) drives
-      PSI + SAI dialogs against the own HLR/HSS, never ATI. Opt-in via
-      `sas.transport.map=jss7` (sample config `sas-host/src/main/resources/ss7-sas.json`).
+      PSI + SAI dialogs against the own HLR/HSS, never ATI. Runs in **sas-ecs** only
+      (`sas.transport.map=jss7`, `ss7-ecs.json`); monitoring answers from it.
 - [x] **Diameter S6a/SWx verifier** — `ras/s6averifier` + `ras/swxverifier` over a local
       AGPL fork of Mobius corsac-diameter; lab peer is `sas-diameter-testapp` (HSS/AAA/Gx).
 - [ ] Assurance weights + per-risk thresholds

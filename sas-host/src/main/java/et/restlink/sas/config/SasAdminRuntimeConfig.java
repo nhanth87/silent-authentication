@@ -22,8 +22,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Admin runtime configuration backed by the {@code sas_config} table with an
- * in-memory cache. Keeps the legacy {@code read/write/contains} surface used by
- * {@code DiameterConfigService} working while adding typed get/put accessors.
+ * in-memory cache: the legacy {@code read/write/contains} surface plus typed get/put
+ * accessors.
  */
 @ApplicationScoped
 public class SasAdminRuntimeConfig {
@@ -131,8 +131,6 @@ public class SasAdminRuntimeConfig {
 
     public static final class Keys {
         private Keys() {}
-        public static final String DIAMETER_JSON = "diameter.json";
-        public static final String SS7_JSON = "ss7.json";
         public static final String HTTP_RA_PORT = "http.ra.port";
         public static final String ADMIN_KEY = "sas.admin.key";
     }

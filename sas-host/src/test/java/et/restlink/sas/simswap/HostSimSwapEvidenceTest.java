@@ -7,132 +7,123 @@
 
 package et.restlink.sas.simswap;
 
-import et.restlink.sas.bootstrap.SasBootstrap;
-import et.restlink.sas.ras.mapverifier.InMemoryMapVerifierBackend;
-import et.restlink.sas.ras.s6averifier.InMemoryS6aVerifierBackend;
-import et.restlink.sas.ras.swxverifier.InMemorySwxVerifierBackend;
+import et.restlink.sas.api.SasVerifyEngine;
+import et.restlink.sas.events.VerifyRequestEvent;
+import et.restlink.sas.model.VerifyResult;
+import et.restlink.sas.subscriber.ExposureCause;
+import et.restlink.sas.subscriber.ExposureContext;
+import et.restlink.sas.subscriber.ExposureOutcome;
+import et.restlink.sas.subscriber.SubscriberService;
+import et.restlink.sas.subscriber.dto.MonitoringEventReports;
+import et.restlink.sas.subscriber.dto.MonitoringEventSubscription;
+import et.restlink.sas.subscriber.dto.OperatorTokenRedeemReq;
+import et.restlink.sas.subscriber.dto.SimChangeInfo;
+import et.restlink.sas.subscriber.dto.SimChangeReq;
+import et.restlink.sas.subscriber.dto.SubscriberVerificationResult;
+import et.restlink.sas.subscriber.dto.UeIdInfo;
+import et.restlink.sas.subscriber.dto.UeIdReq;
 
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * SIM-change evidence adapter: reads the binding age the Verifier already
- * scores as {@code notSimSwapped}, in the order MAP → S6a (read-only Sh UDR) →
- * SWx, and fails closed (empty ⇒ northbound {@code 404 IDENTIFIER_NOT_FOUND})
- * when no source knows the subscriber or no source is wired at all.
- */
+/** SIM Swap evidence comes from the entitlement server only, and absence fails closed. */
 class HostSimSwapEvidenceTest {
 
-    private static final String MSISDN = "+251911111111";
-    private static final String IMSI = "655010000000001";
+    private final List<SimChangeReq> asked = new ArrayList<>();
 
-    @Test
-    void noBackendWired_failsClosedEmpty() {
+    private HostSimSwapEvidence with(Function<SimChangeReq, CompletableFuture<ExposureOutcome<SimChangeInfo>>> ecs) {
         HostSimSwapEvidence evidence = new HostSimSwapEvidence();
-        evidence.bootstrap = new SasBootstrap();
-        assertTrue(evidence.lastSimChange(MSISDN).isEmpty());
-    }
-
-    @Test
-    void noBootstrapAtAll_failsClosedEmpty() {
-        HostSimSwapEvidence evidence = new HostSimSwapEvidence();
-        assertTrue(evidence.lastSimChange(MSISDN).isEmpty());
-    }
-
-    @Test
-    void blankOrUnknownIdentifier_failsClosedEmpty() {
-        SasBootstrap bootstrap = new SasBootstrap();
-        setField(bootstrap, "inMemoryS6aBackend", seededS6a(daysAgo(10)));
-        HostSimSwapEvidence evidence = withBootstrap(bootstrap);
-
-        assertTrue(evidence.lastSimChange(null).isEmpty());
-        assertTrue(evidence.lastSimChange("  ").isEmpty());
-        assertTrue(evidence.lastSimChange("+251999999999").isEmpty());
-    }
-
-    @Test
-    void mapEvidenceWins_overS6aAndSwx() {
-        SasBootstrap bootstrap = new SasBootstrap();
-        setField(bootstrap, "inMemoryMapBackend", seededMap(daysAgo(3)));
-        setField(bootstrap, "inMemoryS6aBackend", seededS6a(daysAgo(10)));
-        setField(bootstrap, "inMemorySwxBackend", seededSwx(daysAgo(20)));
-
-        Optional<Instant> last = withBootstrap(bootstrap).lastSimChange(MSISDN);
-
-        assertTrue(last.isPresent());
-        assertEquals(daysAgo(3) / 1000L, last.get().getEpochSecond());
-    }
-
-    @Test
-    void fallsThroughToS6a_thenSwx_whenTheEarlierSourceIsSilent() {
-        SasBootstrap s6aOnly = new SasBootstrap();
-        setField(s6aOnly, "inMemoryS6aBackend", seededS6a(daysAgo(10)));
-        assertEquals(daysAgo(10) / 1000L,
-                withBootstrap(s6aOnly).lastSimChange(MSISDN).orElseThrow().getEpochSecond());
-
-        SasBootstrap swxOnly = new SasBootstrap();
-        setField(swxOnly, "inMemorySwxBackend", seededSwx(daysAgo(1)));
-        assertEquals(daysAgo(1) / 1000L,
-                withBootstrap(swxOnly).lastSimChange(MSISDN).orElseThrow().getEpochSecond());
-    }
-
-    @Test
-    void freshSwapIsReported_notSuppressed() {
-        SasBootstrap bootstrap = new SasBootstrap();
-        setField(bootstrap, "inMemoryS6aBackend", seededS6a(minutesAgo(5)));
-
-        Optional<Instant> last = withBootstrap(bootstrap).lastSimChange(MSISDN);
-
-        assertTrue(last.isPresent());
-        assertTrue(last.get().isAfter(Instant.now().minusSeconds(600)),
-                "a 5-minute-old SIM change must surface so /check answers swapped=true");
-    }
-
-    // ---- fixtures ----
-
-    private static HostSimSwapEvidence withBootstrap(SasBootstrap bootstrap) {
-        HostSimSwapEvidence evidence = new HostSimSwapEvidence();
-        evidence.bootstrap = bootstrap;
+        evidence.bootstrap = new Engine(ecs);
         return evidence;
     }
 
-    private static InMemoryMapVerifierBackend seededMap(long lastImsiChangeEpochMs) {
-        InMemoryMapVerifierBackend b = new InMemoryMapVerifierBackend();
-        b.seed(MSISDN, IMSI, true, lastImsiChangeEpochMs, "AA");
-        return b;
+    @Test
+    void evidenceFromTheEntitlementServer() {
+        Instant at = Instant.parse("2026-09-01T10:00:00Z");
+        HostSimSwapEvidence evidence = with(req -> CompletableFuture.completedFuture(ExposureOutcome.ok(
+                new SimChangeInfo(req.msisdn(), at.toString(), Instant.now().toString(), "LAB_HLR"))));
+        assertEquals(Optional.of(at), evidence.lastSimChange("+251 911 111 111"));
+        assertEquals("251911111111", asked.get(0).msisdn(), "internal digit form on the wire");
+        assertEquals("sas-camara", asked.get(0).afId());
     }
 
-    private static InMemoryS6aVerifierBackend seededS6a(long lastImsiChangeEpochMs) {
-        InMemoryS6aVerifierBackend b = new InMemoryS6aVerifierBackend();
-        b.seed(MSISDN, IMSI, true, lastImsiChangeEpochMs, "AA");
-        return b;
+    @Test
+    void noEvidenceRefusalOrSilenceIsEmpty() {
+        assertEquals(Optional.empty(), with(req -> CompletableFuture.completedFuture(
+                ExposureOutcome.problem(ExposureCause.NO_EVIDENCE, "x"))).lastSimChange("+251911111111"));
+        assertEquals(Optional.empty(), with(req -> CompletableFuture.completedFuture(
+                ExposureOutcome.problem(ExposureCause.TRANSPORT_UNAVAILABLE, "x"))).lastSimChange("+251911111111"));
+        assertEquals(Optional.empty(), with(req -> CompletableFuture.failedFuture(new IllegalStateException()))
+                .lastSimChange("+251911111111"));
     }
 
-    private static InMemorySwxVerifierBackend seededSwx(long lastImsiChangeEpochMs) {
-        InMemorySwxVerifierBackend b = new InMemorySwxVerifierBackend();
-        b.seed(MSISDN, IMSI, true, lastImsiChangeEpochMs, "AA");
-        return b;
+    @Test
+    void notANumberOrNoWiringNeverAsks() {
+        assertEquals(Optional.empty(), with(req -> {
+            throw new AssertionError("must not be asked");
+        }).lastSimChange("not-a-number"));
+        HostSimSwapEvidence unwired = new HostSimSwapEvidence();
+        assertEquals(Optional.empty(), unwired.lastSimChange("+251911111111"));
+        assertTrue(asked.isEmpty());
     }
 
-    private static long daysAgo(long days) {
-        return System.currentTimeMillis() - days * 24L * 3600L * 1000L;
-    }
+    private final class Engine implements SasVerifyEngine {
+        private final Function<SimChangeReq, CompletableFuture<ExposureOutcome<SimChangeInfo>>> ecs;
 
-    private static long minutesAgo(long minutes) {
-        return System.currentTimeMillis() - minutes * 60L * 1000L;
-    }
+        Engine(Function<SimChangeReq, CompletableFuture<ExposureOutcome<SimChangeInfo>>> ecs) {
+            this.ecs = ecs;
+        }
 
-    private static void setField(Object target, String name, Object value) {
-        try {
-            var field = target.getClass().getDeclaredField(name);
-            field.setAccessible(true);
-            field.set(target, value);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
+        @Override
+        public CompletableFuture<VerifyResult> submit(VerifyRequestEvent evt) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void release(String reqId) {
+        }
+
+        @Override
+        public String afId() {
+            return "sas-camara";
+        }
+
+        @Override
+        public SubscriberService subscribers() {
+            return new SubscriberService() {
+                @Override
+                public CompletableFuture<ExposureOutcome<UeIdInfo>> retrieveUeId(ExposureContext c, UeIdReq r) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public CompletableFuture<ExposureOutcome<MonitoringEventReports>> monitor(
+                        ExposureContext c, String s, MonitoringEventSubscription r) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public CompletableFuture<ExposureOutcome<SimChangeInfo>> retrieveSimChange(
+                        ExposureContext c, SimChangeReq r) {
+                    asked.add(r);
+                    return ecs.apply(r);
+                }
+
+                @Override
+                public CompletableFuture<ExposureOutcome<SubscriberVerificationResult>> redeemOperatorToken(
+                        ExposureContext c, OperatorTokenRedeemReq r) {
+                    throw new UnsupportedOperationException();
+                }
+            };
         }
     }
 }

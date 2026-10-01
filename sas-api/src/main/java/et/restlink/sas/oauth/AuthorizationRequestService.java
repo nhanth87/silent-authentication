@@ -7,6 +7,7 @@
 
 package et.restlink.sas.oauth;
 
+import et.restlink.sas.api.ExposureAdapters;
 import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.api.SasVerifyEngine;
 import et.restlink.sas.model.ResolverResult;
@@ -85,7 +86,7 @@ public class AuthorizationRequestService {
         long nowSec = System.currentTimeMillis() / 1000L;
         evictExpired(nowSec);
 
-        IdentityAnchor.OperatorBinding anchor = resolveAnchor(loginHint, srcIp, srcPort, nowSec);
+        IdentityAnchor.OperatorBinding anchor = resolveAnchor(loginHint, srcIp, srcPort, nowSec, clientId);
         String msisdn = PhoneNumberNormalizer.toE164(anchor.msisdn()).orElse(null);
         if (msisdn == null) {
             LOG.warn("bc-authorize: anchor resolved a non-E.164 identity — rejecting");
@@ -142,11 +143,12 @@ public class AuthorizationRequestService {
     // ---- identity anchors ----
 
     private IdentityAnchor.OperatorBinding resolveAnchor(
-            String loginHint, String srcIp, int srcPort, long nowSec) {
+            String loginHint, String srcIp, int srcPort, long nowSec, String clientId) {
         String hint = loginHint == null ? "" : loginHint.trim();
         String candidate = IdentityAnchor.parseLoginHint(hint);
         if (candidate != null) {
-            IdentityAnchor.OperatorBinding binding = operatorAnchor.resolveOperatorToken(candidate);
+            IdentityAnchor.OperatorBinding binding =
+                    operatorAnchor.resolveOperatorToken(candidate, clientId);
             if (binding == null || binding.msisdn() == null || binding.msisdn().isBlank()) {
                 throw CibaException.accessDenied(
                         "operator token is invalid, expired or already used");
@@ -210,12 +212,13 @@ public class AuthorizationRequestService {
             return override;
         }
         if (bootstrap == null) {
-            LOG.error("No resolver backend wired — failing closed");
+            LOG.error("No subscriber exposure wired — failing closed");
             return (ip, port, ts) ->
                     CompletableFuture.completedFuture(ResolverResult.miss(
                             et.restlink.sas.model.FallbackReason.RESOLVER_ERROR));
         }
-        return bootstrap.resolverBackend();
+        // UE ID retrieval at the entitlement server (layered ADR §4.1).
+        return ExposureAdapters.resolver(bootstrap.subscribers(), bootstrap.afId());
     }
 
     // ---- helpers ----

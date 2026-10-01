@@ -11,38 +11,19 @@ import com.microjainslee.api.ActivityContextInterface;
 import com.microjainslee.core.MicroSleeContainer;
 import com.microjainslee.core.SimpleSbbLocalObject;
 
+import et.restlink.sas.api.ExposureAdapters;
 import et.restlink.sas.api.SasVerifyEngine;
 import et.restlink.sas.config.SasAdminRuntimeConfig;
-import et.restlink.sas.config.SasTransportConfig;
 import et.restlink.sas.coordinator.VerifyCoordinator;
 import et.restlink.sas.events.VerifyRequestEvent;
 import et.restlink.sas.fsm.AssurancePolicy;
 import et.restlink.sas.fsm.SasTimeouts;
 import et.restlink.sas.fsm.VerificationFsm;
 import et.restlink.sas.model.VerifyResult;
-import et.restlink.sas.ras.mapverifier.InMemoryMapVerifierBackend;
-import et.restlink.sas.ras.mapverifier.Jss7MapVerifierBackend;
-import et.restlink.sas.ras.mapverifier.MapVerifierBackend;
-import et.restlink.sas.ras.mapverifier.MapVerifierRaEndpoint;
-import et.restlink.sas.ras.mapverifier.MapVerifierResourceAdaptor;
-import et.restlink.sas.ras.resolver.CgnatLogResolverBackend;
-import et.restlink.sas.ras.resolver.InMemoryResolverBackend;
-import et.restlink.sas.ras.resolver.PcrfSdResolverBackend;
-import et.restlink.sas.ras.resolver.RadiusAccountingListenerBackend;
-import et.restlink.sas.ras.resolver.ResolverBackend;
-import et.restlink.sas.ras.resolver.ResolverRaEndpoint;
-import et.restlink.sas.ras.resolver.ResolverResourceAdaptor;
-import et.restlink.sas.ras.s6averifier.CorsacS6aVerifierBackend;
-import et.restlink.sas.ras.s6averifier.InMemoryS6aVerifierBackend;
-import et.restlink.sas.ras.s6averifier.S6aVerifierBackend;
-import et.restlink.sas.ras.s6averifier.S6aVerifierRaEndpoint;
-import et.restlink.sas.ras.s6averifier.S6aVerifierResourceAdaptor;
-import et.restlink.sas.ras.swxverifier.CorsacSwxVerifierBackend;
-import et.restlink.sas.ras.swxverifier.InMemorySwxVerifierBackend;
-import et.restlink.sas.ras.swxverifier.SwxVerifierBackend;
-import et.restlink.sas.ras.swxverifier.SwxVerifierRaEndpoint;
-import et.restlink.sas.ras.swxverifier.SwxVerifierResourceAdaptor;
+import et.restlink.sas.ras.exposure.ExposureClient;
+import et.restlink.sas.ras.exposure.ExposureRaEndpoint;
 import et.restlink.sas.sbbs.VerifySbb;
+import et.restlink.sas.subscriber.SubscriberService;
 
 import io.quarkus.runtime.StartupEvent;
 
@@ -53,18 +34,19 @@ import jakarta.inject.Inject;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Clone of the Elisa {@code ElisaBootstrap} wiring pattern, specialized for the
- * Silent Auth SAS: start the micro-container, register the Resolver + MAP
- * Verifier RAs, register the {@link VerifySbb} type, map the request event,
- * and expose a synchronous {@link #submit} bridge for the CAMARA REST surface.
+ * The CAMARA gateway's (sas-camara) only seam into micro-jainslee (gate H24): start the
+ * container, register {@code exposure-ra} and the {@link VerifySbb} type, map the request
+ * event, and bridge the CAMARA REST surface into the event router.
  *
- * <p>This is the CAMARA server (sas-camara). The TS.43 entitlement server is a
- * separate binary (sas-ecs, {@code EcsBootstrap}); the two meet only through the
- * operator token (sas-token), never through a shared container or RA.</p>
+ * <p>Layered ADR (§2): this binary never signals the core. Every fact about a subscriber
+ * — who holds an IP:port, reachability, location metadata, SIM change, operator-token
+ * redemption — comes from the entitlement server's subscriber exposure API through
+ * {@code exposure-ra}. No MAP, Diameter or SCTP stack exists in this process.</p>
  */
 @ApplicationScoped
 public class SasBootstrap implements SasVerifyEngine {
@@ -78,29 +60,32 @@ public class SasBootstrap implements SasVerifyEngine {
     VerifyCoordinator coordinator;
 
     @Inject
-    SasTransportConfig transportConfig;
-
-    @Inject
     SasAdminRuntimeConfig adminRuntimeConfig;
 
+    /** Exposure API root on sas-ecs (lab: plain HTTP on loopback; prod: HTTPS, PRO-36). */
+    @Inject
+    @ConfigProperty(name = "sas.exposure.client.base-url",
+            defaultValue = "http://127.0.0.1:8095/sas-subscriber-exposure/v1")
+    String exposureBaseUrl;
+
+    /** This gateway's AF identity on the exposure hop. */
+    @Inject
+    @ConfigProperty(name = "sas.exposure.client.af-id", defaultValue = "sas-camara")
+    String exposureAfId;
+
+    /** CAMARA location policy (ADR R8): the home PLMN, MCC+MNC digits. */
+    @Inject
+    @ConfigProperty(name = "sas.policy.home-plmn", defaultValue = "63601")
+    String homePlmn;
+
+    @Inject
+    @ConfigProperty(name = "sas.policy.location-max-age-minutes", defaultValue = "1440")
+    int locationMaxAgeMinutes;
 
     private volatile AssurancePolicy policy;
     private volatile VerificationFsm fsm;
-
-    private volatile ResolverRaEndpoint resolverEndpoint;
-    private volatile ResolverBackend resolverBackendRef;
-    private volatile MapVerifierRaEndpoint mapVerifierEndpoint;
-    private volatile S6aVerifierRaEndpoint s6aVerifierEndpoint;
-    private volatile SwxVerifierRaEndpoint swxVerifierEndpoint;
-    private volatile Jss7MapVerifierBackend jss7MapBackend;
-    private volatile CorsacS6aVerifierBackend corsacS6aBackend;
-    private volatile CorsacSwxVerifierBackend corsacSwxBackend;
-    private volatile RadiusAccountingListenerBackend radiusListenerBackend;
-    private volatile CgnatLogResolverBackend cgnatLogBackend;
-    private volatile PcrfSdResolverBackend sdResolverBackend;
-    private volatile InMemoryMapVerifierBackend inMemoryMapBackend;
-    private volatile InMemoryS6aVerifierBackend inMemoryS6aBackend;
-    private volatile InMemorySwxVerifierBackend inMemorySwxBackend;
+    private volatile ExposureClient exposureClient;
+    private volatile ExposureRaEndpoint exposureEndpoint;
     private volatile boolean started;
 
     void onStart(@Observes StartupEvent ev) {
@@ -110,160 +95,34 @@ public class SasBootstrap implements SasVerifyEngine {
         started = true;
         policy = assurancePolicy();
         fsm = new VerificationFsm(policy);
-        LOG.info("Silent Auth SAS bootstrap starting (fail-closed)");
+        LOG.info("Silent Auth CAMARA gateway bootstrap starting (fail-closed)");
         if (container.getState() != MicroSleeContainer.State.STARTED) {
             container.start();
         }
-        wireResolverRa();
-        wireMapVerifierRa();
-        wireS6aVerifierRa();
-        wireSwxVerifierRa();
-        registerSbbTypes();
-        mapEventToSbb();
-        LOG.info("=== Silent Auth SAS ready — resolver={}ms map={}ms s6a={}ms swx={}ms total={}ms ===",
-                SasTimeouts.RESOLVER_MS, SasTimeouts.MAP_MS,
-                SasTimeouts.DIAMETER_MS, SasTimeouts.DIAMETER_MS, SasTimeouts.TOTAL_MS);
-    }
-
-    private void wireResolverRa() {
-        ResolverBackend backend;
-        if (transportConfig.useCgnatResolver()) {
-            String logPath = transportConfig.cgnatLogPath();
-            if (logPath == null || logPath.isBlank()) {
-                LOG.warn("[SAS] sas.transport.resolver=cgnat but cgnat-log is empty — "
-                        + "falling back to in-memory resolver (fail-closed)");
-                backend = inMemoryResolver();
-            } else {
-                CgnatLogResolverBackend cgnat = new CgnatLogResolverBackend(
-                        java.nio.file.Path.of(logPath),
-                        transportConfig.cgnatRefreshMs(),
-                        transportConfig.cgnatStaleMs());
-                cgnat.reload();
-                cgnat.start();
-                cgnatLogBackend = cgnat;
-                backend = cgnat;
-                LOG.info("[SAS] Resolver transport = CGNAT log tail ({}, refresh={}ms, stale={}ms)",
-                        logPath, transportConfig.cgnatRefreshMs(), transportConfig.cgnatStaleMs());
-            }
-        } else if (transportConfig.useRadiusResolver()) {
-            RadiusAccountingListenerBackend radius = new RadiusAccountingListenerBackend(
-                    transportConfig.radiusPort(),
-                    transportConfig.radiusSecret(),
-                    transportConfig.radiusStaleAfterMs());
-            radius.start();
-            radiusListenerBackend = radius;
-            backend = radius;
-            LOG.info("[SAS] Resolver transport = RADIUS accounting listener (udp/{}, stale={}ms)",
-                    radius.localPort(), transportConfig.radiusStaleAfterMs());
-        } else if (transportConfig.useSdResolver()) {
-            try {
-                PcrfSdResolverBackend sd = new PcrfSdResolverBackend(
-                        transportConfig.diameterPeerHost(),
-                        transportConfig.sdPeerPort(),
-                        transportConfig.sdSctp(),
-                        (int) transportConfig.sdTimeoutMs(),
-                        transportConfig.sdStaleAfterMs());
-                sd.start();
-                sdResolverBackend = sd;
-                backend = sd;
-                LOG.info("[SAS] Resolver transport = PCRF Sd/Gx probe ({}:{}, sctp={}, timeout={}ms)",
-                        transportConfig.diameterPeerHost(), transportConfig.sdPeerPort(),
-                        transportConfig.sdSctp(), transportConfig.sdTimeoutMs());
-            } catch (Exception e) {
-                LOG.warn("[SAS] PCRF Sd resolver start failed — falling back to in-memory", e);
-                backend = inMemoryResolver();
-            }
-        } else {
-            backend = inMemoryResolver();
-        }
-        ResolverResourceAdaptor ra = new ResolverResourceAdaptor();
-        ra.setBackend(backend);
-        resolverBackendRef = backend;
-        resolverEndpoint = new ResolverRaEndpoint(ra);
-        container.registerRa(resolverEndpoint, resolverEndpoint);
-        LOG.info("Resolver RA wired (CGNAT-safe IP:port:ts)");
-    }
-
-    private void wireMapVerifierRa() {
-        MapVerifierBackend backend;
-        if (transportConfig.useJss7Map()) {
-            String cfgPath = transportConfig.jss7ConfigPath();
-            if (cfgPath == null || cfgPath.isBlank()) {
-                LOG.warn("[SAS] sas.transport.map=jss7 but sas.transport.jss7.config is empty — "
-                        + "falling back to in-memory MAP backend (fail-closed)");
-                backend = mapBackend();
-            } else {
-                jss7MapBackend = new Jss7MapVerifierBackend(
-                        java.nio.file.Path.of(cfgPath),
-                        transportConfig.jss7HlrGt(),
-                        transportConfig.jss7LocalGt());
-                jss7MapBackend.start();
-                backend = jss7MapBackend;
-                LOG.info("[SAS] MAP verifier transport = jSS7 (HLR GT={})",
-                        transportConfig.jss7HlrGt());
-            }
-        } else {
-            backend = mapBackend();
-        }
-        MapVerifierResourceAdaptor ra = new MapVerifierResourceAdaptor();
-        ra.setBackend(backend);
-        mapVerifierEndpoint = new MapVerifierRaEndpoint(ra);
-        container.registerRa(mapVerifierEndpoint, mapVerifierEndpoint);
-        LOG.info("MAP verifier RA wired (PSI+SAI, no interconnect ATI)");
-    }
-
-    private void wireS6aVerifierRa() {
-        S6aVerifierBackend backend;
-        if (transportConfig.useCorsacS6a()) {
-            corsacS6aBackend = new CorsacS6aVerifierBackend(transportConfig);
-            try {
-                corsacS6aBackend.start();
-                backend = corsacS6aBackend;
-                LOG.info("[SAS] S6a transport = corsac-diameter");
-            } catch (Exception e) {
-                LOG.warn("[SAS] S6a corsac start failed — falling back to in-memory", e);
-                backend = s6aBackend();
-            }
-        } else {
-            backend = s6aBackend();
-        }
-        S6aVerifierResourceAdaptor ra = new S6aVerifierResourceAdaptor();
-        ra.setBackend(backend);
-        s6aVerifierEndpoint = new S6aVerifierRaEndpoint(ra);
-        container.registerRa(s6aVerifierEndpoint, s6aVerifierEndpoint);
-        LOG.info("S6a verifier RA wired (ULR/ULA+Sh UDR, own HSS only)");
-    }
-
-    private void wireSwxVerifierRa() {
-        SwxVerifierBackend backend;
-        if (transportConfig.useCorsacSwx()) {
-            corsacSwxBackend = new CorsacSwxVerifierBackend(transportConfig);
-            try {
-                corsacSwxBackend.start();
-                backend = corsacSwxBackend;
-                LOG.info("[SAS] SWx transport = corsac-diameter");
-            } catch (Exception e) {
-                LOG.warn("[SAS] SWx corsac start failed — falling back to in-memory", e);
-                backend = swxBackend();
-            }
-        } else {
-            backend = swxBackend();
-        }
-        SwxVerifierResourceAdaptor ra = new SwxVerifierResourceAdaptor();
-        ra.setBackend(backend);
-        swxVerifierEndpoint = new SwxVerifierRaEndpoint(ra);
-        container.registerRa(swxVerifierEndpoint, swxVerifierEndpoint);
-        LOG.info("SWx verifier RA wired (EAP-AKA, TS 29.273, own AAA/HSS only)");
-    }
-
-    private void registerSbbTypes() {
-        container.registerSbbType(VerifySbb.class, () -> new VerifySbb(coordinator, fsm));
-        LOG.info("SBB types registered: VerifySbb");
-    }
-
-    private void mapEventToSbb() {
+        wireExposureRa();
+        ExposureAdapters.LocationPolicy location = locationPolicy();
+        container.registerSbbType(VerifySbb.class,
+                () -> new VerifySbb(coordinator, fsm, afId(), location));
         container.mapEventToSbb(VerifyRequestEvent.class, "VerifySbb");
-        LOG.info("Event→SBB mapping bound: VerifyRequestEvent → VerifySbb");
+        LOG.info("=== sas-camara ready — subscriber exposure at {} (af={}), ue-id={}ms evidence={}ms total={}ms ===",
+                exposureClient.baseUri(), afId(), ExposureAdapters.UE_ID_BUDGET_MS,
+                ExposureAdapters.EVIDENCE_BUDGET_MS, SasTimeouts.TOTAL_MS);
+    }
+
+    private void wireExposureRa() {
+        exposureClient = new ExposureClient(exposureBaseUrl);
+        exposureEndpoint = new ExposureRaEndpoint(exposureClient);
+        container.registerRa(exposureEndpoint, exposureEndpoint);
+        LOG.info("Exposure RA wired — the gateway's only path to the subscriber");
+    }
+
+    private ExposureAdapters.LocationPolicy locationPolicy() {
+        try {
+            return ExposureAdapters.LocationPolicy.of(homePlmn, locationMaxAgeMinutes);
+        } catch (RuntimeException e) {
+            LOG.error("[SAS] invalid sas.policy.home-plmn={} — no location counts as plausible", homePlmn);
+            return new ExposureAdapters.LocationPolicy("---", "--", -1);
+        }
     }
 
     /**
@@ -271,6 +130,7 @@ public class SasBootstrap implements SasVerifyEngine {
      * router. Idempotent per {@code reqId}: completed requests return the
      * cached result, in-flight duplicates await the same future.
      */
+    @Override
     public CompletableFuture<VerifyResult> submit(VerifyRequestEvent evt) {
         String reqId = evt.reqId();
         VerifyResult cached = coordinator.cached(reqId);
@@ -289,6 +149,7 @@ public class SasBootstrap implements SasVerifyEngine {
     }
 
     /** Release the per-request SBB entity after the terminal result is read. */
+    @Override
     public void release(String reqId) {
         try {
             container.releaseEntity(reqId);
@@ -298,92 +159,35 @@ public class SasBootstrap implements SasVerifyEngine {
         coordinator.forget(reqId);
     }
 
-    /** Expose the active resolver backend (for the session-tuple collector). */
-    public ResolverBackend resolverBackend() {
-        return resolverBackendRef;
+    /**
+     * The exposure client behind {@code exposure-ra}, for the callers that are not SBBs:
+     * the OAuth network anchor, operator-token redemption and SIM Swap (H24 allow-list).
+     */
+    @Override
+    public SubscriberService subscribers() {
+        return exposureClient;
     }
 
-    /**
-     * Read-only SIM-change evidence for the CAMARA SimSwap surface
-     * ({@code /sim-swap/v2}): the same binding age the Verifier scores as
-     * {@code notSimSwapped}, read in the order MAP (SAI/PSI
-     * {@code lastUpdateLocation}) → S6a (read-only Sh UDR) → SWx (EAP-AKA
-     * identity). First known value wins.
-     *
-     * <p>Fail-closed: empty means "no evidence" — an unknown subscriber, or a
-     * live jSS7/corsac transport with no binding-age source wired — and the
-     * northbound answers {@code 404 IDENTIFIER_NOT_FOUND} instead of claiming
-     * "not swapped". No AIR/AIA (never advances the AuC SQN), no IDR/IDA, no
-     * interconnect ATI.</p>
-     */
-    public java.util.Optional<java.time.Instant> lastSimChange(String msisdn) {
-        if (msisdn == null || msisdn.isBlank()) {
-            return java.util.Optional.empty();
-        }
-        String key = msisdn.trim();
-        InMemoryMapVerifierBackend map = inMemoryMapBackend;
-        if (map != null) {
-            java.util.Optional<Long> epochMs = map.lastImsiChangeEpochMs(key);
-            if (epochMs.isPresent()) {
-                return java.util.Optional.of(java.time.Instant.ofEpochMilli(epochMs.get()));
-            }
-        }
-        InMemoryS6aVerifierBackend s6a = inMemoryS6aBackend;
-        if (s6a != null) {
-            java.util.Optional<Long> epochMs = s6a.lastImsiChangeEpochMs(key);
-            if (epochMs.isPresent()) {
-                return java.util.Optional.of(java.time.Instant.ofEpochMilli(epochMs.get()));
-            }
-        }
-        InMemorySwxVerifierBackend swx = inMemorySwxBackend;
-        if (swx != null) {
-            java.util.Optional<Long> epochMs = swx.lastImsiChangeEpochMs(key);
-            if (epochMs.isPresent()) {
-                return java.util.Optional.of(java.time.Instant.ofEpochMilli(epochMs.get()));
-            }
-        }
-        return java.util.Optional.empty();
+    /** Configured exposure API root, for the admin status page. */
+    public String exposureBaseUrl() {
+        return exposureBaseUrl;
+    }
+
+    @Override
+    public String afId() {
+        return exposureAfId == null || exposureAfId.isBlank() ? "sas-camara" : exposureAfId.trim();
     }
 
     @PreDestroy
     void shutdown() {
-        if (swxVerifierEndpoint != null) {
-            swxVerifierEndpoint.deactivate();
-        }
-        if (s6aVerifierEndpoint != null) {
-            s6aVerifierEndpoint.deactivate();
-        }
-        if (mapVerifierEndpoint != null) {
-            mapVerifierEndpoint.deactivate();
-        }
-        if (jss7MapBackend != null) {
-            jss7MapBackend.stop();
-        }
-        if (corsacS6aBackend != null) {
-            corsacS6aBackend.stop();
-        }
-        if (corsacSwxBackend != null) {
-            corsacSwxBackend.stop();
-        }
-        if (resolverEndpoint != null) {
-            resolverEndpoint.deactivate();
-        }
-        if (radiusListenerBackend != null) {
-            radiusListenerBackend.stop();
-        }
-        if (cgnatLogBackend != null) {
-            cgnatLogBackend.stop();
-        }
-        if (sdResolverBackend != null) {
-            sdResolverBackend.stop();
+        if (exposureEndpoint != null) {
+            exposureEndpoint.deactivate();
         }
         if (container.getState() == MicroSleeContainer.State.STARTED) {
             container.stop();
         }
-        LOG.info("Silent Auth SAS stopped");
+        LOG.info("sas-camara stopped");
     }
-
-    // ---- pilot seeds (replace with operator-side PGW/HLR adapters) ----
 
     private AssurancePolicy assurancePolicy() {
         try {
@@ -392,40 +196,5 @@ public class SasBootstrap implements SasVerifyEngine {
             LOG.error("[SAS] invalid sas.assurance.* config — using built-in defaults (fail-closed)", e);
             return AssurancePolicy.defaults();
         }
-    }
-
-    private InMemoryResolverBackend inMemoryResolver() {
-        InMemoryResolverBackend b = new InMemoryResolverBackend();
-        // Demo cellular session — the /verify demo headers default to this tuple.
-        b.seed("10.20.30.40", 55555, "+251911111111", "655010000000001", 30_000L);
-        return b;
-    }
-
-    private InMemoryMapVerifierBackend mapBackend() {
-        InMemoryMapVerifierBackend b = new InMemoryMapVerifierBackend();
-        // attached, last IMSI change 10 days ago (no SIM swap), region "AA".
-        b.seed("+251911111111", "655010000000001", true, daysAgo(10), "AA");
-        inMemoryMapBackend = b;
-        return b;
-    }
-
-    private InMemoryS6aVerifierBackend s6aBackend() {
-        InMemoryS6aVerifierBackend b = new InMemoryS6aVerifierBackend();
-        // registered (ULR/ULA), last IMSI change 10 days ago (read-only Sh UDR), region "AA".
-        b.seed("+251911111111", "655010000000001", true, daysAgo(10), "AA");
-        inMemoryS6aBackend = b;
-        return b;
-    }
-
-    private InMemorySwxVerifierBackend swxBackend() {
-        InMemorySwxVerifierBackend b = new InMemorySwxVerifierBackend();
-        // EAP-AKA registered, last IMSI change 10 days ago, region "AA".
-        b.seed("+251911111111", "655010000000001", true, daysAgo(10), "AA");
-        inMemorySwxBackend = b;
-        return b;
-    }
-
-    private static long daysAgo(long days) {
-        return System.currentTimeMillis() - days * 24L * 3600L * 1000L;
     }
 }

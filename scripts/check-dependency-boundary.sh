@@ -5,9 +5,8 @@
 #   * sas-ecs MUST ship the operator adapter (it is the only binary that signals the core);
 #   * sas-camara MUST NOT ship any MAP / Diameter / SCTP / SS7 artifact.
 #
-# The gateway half cannot hold before migration step M3 (sas-camara still carries the
-# resolver and S6a RAs). Until then it is reported as known debt; set
-# SAS_BOUNDARY_GATEWAY=enforce (the default from M3 on) to make it fail.
+# Both halves are enforced since migration step M3 (the gateway signals nothing).
+# SAS_BOUNDARY_GATEWAY=report downgrades the gateway half to a report (debugging only).
 #
 # Usage: scripts/check-dependency-boundary.sh [camara-app-dir] [ecs-app-dir]
 #   defaults: sas-host/target/quarkus-app  sas-ecs-host/target/quarkus-app
@@ -17,7 +16,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CAMARA="${1:-$REPO/sas-host/target/quarkus-app}"
 ECS="${2:-$REPO/sas-ecs-host/target/quarkus-app}"
-GATEWAY_MODE="${SAS_BOUNDARY_GATEWAY:-report}"
+GATEWAY_MODE="${SAS_BOUNDARY_GATEWAY:-enforce}"
 
 # Signalling artifacts by file name: jSS7 (org.restcomm.protocols.ss7.*), SCTP stacks
 # (mobicents / mobius / netty-transport-sctp), Diameter (mobius corsac), our adapter.
@@ -48,7 +47,7 @@ elif [[ "$GATEWAY_MODE" == enforce ]]; then
   printf '        %s\n' "${leaked[@]}"
   rc=1
 else
-  echo "DEBT  sas-camara still ships ${#leaked[@]} signalling artifact(s) — removed in M3"
-  echo "      (SAS_BOUNDARY_GATEWAY=enforce turns this into a failure)"
+  echo "REPORT sas-camara ships ${#leaked[@]} signalling artifact(s) (SAS_BOUNDARY_GATEWAY=report)"
+  printf '        %s\n' "${leaked[@]}"
 fi
 exit $rc

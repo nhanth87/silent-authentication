@@ -17,7 +17,6 @@ import et.restlink.sas.model.AssuranceLevel;
 import et.restlink.sas.model.FallbackReason;
 import et.restlink.sas.model.VerifyResult;
 import et.restlink.sas.oauth.IdentityAnchor;
-import et.restlink.sas.ras.resolver.InMemoryResolverBackend;
 import et.restlink.sas.security.ReplayGuard;
 import et.restlink.sas.security.RequestValidator;
 import et.restlink.sas.security.SasSecurityConfig;
@@ -73,8 +72,13 @@ class VerifyResourceTest {
         }
 
         @Override
-        public InMemoryResolverBackend resolverBackend() {
-            return new InMemoryResolverBackend();
+        public et.restlink.sas.subscriber.SubscriberService subscribers() {
+            return null;
+        }
+
+        @Override
+        public String afId() {
+            return "sas-camara";
         }
     }
 

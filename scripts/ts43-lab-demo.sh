@@ -96,8 +96,8 @@ if [[ "$CAMARA" == "-" ]]; then
 fi
 
 step "bank → CAMARA  POST /camara/number-verification/v2/verify (Wi-Fi path, operator token)"
-note "sas-camara decrypts the JWE, verifies the ECS signature from its /jwks.json and"
-note "records the jti in its ledger — the number comes from the token, never the body"
+note "sas-camara forwards the token unread to the ECS /operator-token/redeem, which decrypts,"
+note "verifies and spends it once — the number comes from the ECS answer, never the body"
 VERIFIED="$(curl -sS --max-time 10 -X POST "$CAMARA/camara/number-verification/v2/verify" \
   -H 'Content-Type: application/json' -H "Authorization: Bearer operatortoken:$TOKEN" \
   -H 'X-Sas-Access-Tech: WIFI' -H 'x-correlator: ts43-demo-1' \
