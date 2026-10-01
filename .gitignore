@@ -38,3 +38,6 @@ slides/
 *-tcap_*.xml
 *-map_*.xml
 M3ua_*.xml
+
+# local research oracle — never part of the repository
+harness/oracle/

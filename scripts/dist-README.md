@@ -4,15 +4,15 @@ This dist is one of two binaries — `.service` says which:
 
 | `.service` | Binary | Port (lab) | Built by |
 |---|---|---|---|
-| `camara` | **sas-camara** — CAMARA NV / SIM Swap / OTP-SMS + OAuth AS | 8085 | `./scripts/package-dist.sh camara` → `dist/` |
-| `ecs` | **sas-ecs** — TS.43 entitlement server (EAP-AKA over MAP/Diameter) | 8095 | `./scripts/package-dist.sh ecs` → `dist-ecs/` |
+| `camara` | **sas-camara** — CAMARA API gateway: NV / SIM Swap / OTP-SMS + OAuth AS; no signalling stack | 8085 | `./scripts/package-dist.sh camara` → `dist/` |
+| `ecs` | **sas-ecs** — entitlement server: TS.43, token redemption, subscriber exposure API, all MAP/Diameter | 8095 | `./scripts/package-dist.sh ecs` → `dist-ecs/` |
 
-`sas-ecs` has no admin UI (`app/`) and no database. The sections below describe the
+`sas-ecs` has no admin UI (`app/`); its database holds only the operator-token ledger. The sections below describe the
 CAMARA dist; for sas-ecs see `sas-ecs-host/README.md` in the source tree.
 
 Self-contained Quarkus **fast-jar** runtime for the Silent Auth SAS
-(CAMARA NumberVerification `/verify` over Resolver → Verifier → Policy,
-fail-closed).
+(CAMARA NumberVerification `/verify`: UE ID → monitoring ∥ SIM change at the entitlement
+server → policy at the gateway, fail-closed).
 
 ```bash
 ./run.sh
@@ -27,7 +27,7 @@ fail-closed).
 | `lib/boot/` · `lib/main/` | Dependencies (replaceable jars) |
 | `quarkus/` | Generated Quarkus model (ship together with the app jar) |
 | `app/html/` | Admin UI only — **never jars here** |
-| `configs/` | `application.properties` + `application-prod.properties` + `ss7-sas.json` |
+| `configs/` | `application.properties` + `application-prod.properties` (+ `ss7-ecs.json` in the sas-ecs dist) |
 | `data/` · `logs/` | Runtime state |
 
 - Never `java -jar sas-host-app.jar` alone.
@@ -75,7 +75,9 @@ python3 harness/preflight_prod.py
   H2 backend. A PostgreSQL production artifact needs a repackage with that db-kind
   baked in; switching it by editing `configs/application.properties` alone is not
   enough.
-- `ss7-sas.json` is the jSS7 MAP stack sample (`sas.transport.map=jss7`).
+- sas-camara points at the entitlement server with `sas.exposure.client.base-url`; it has
+  no SS7/Diameter configuration. `ss7-ecs.json` (sas-ecs dist only) is the jSS7 MAP stack
+  sample (`sas.transport.map=jss7`, `sas.transport.authvector=map`).
 
 Dual-licensed — pick exactly one (full terms: `../../LICENSE.md`):
 `AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`.

@@ -22,7 +22,7 @@ case "$SERVICE" in
     HOST_DIR="$REPO_DIR/sas-host"
     DIST_ROOT="${SAS_DIST_DIR:-${DIST_DIR:-$REPO_DIR/dist}}"
     APP_JAR_NAME="sas-host-app.jar"
-    SS7_JSON="ss7-sas.json"
+    SS7_JSON=""   # the CAMARA gateway runs no SS7 stack (layered ADR §2)
     HAS_UI=1 ;;
   ecs)
     HOST_DIR="$REPO_DIR/sas-ecs-host"
@@ -127,8 +127,10 @@ install_config "${HOST_DIR}/src/main/resources/application.properties" \
   "${DIST_ROOT}/configs/application.properties"
 install_config "${HOST_DIR}/src/main/resources/application-prod.properties" \
   "${DIST_ROOT}/configs/application-prod.properties"
-install_config "${HOST_DIR}/src/main/resources/${SS7_JSON}" \
-  "${DIST_ROOT}/configs/${SS7_JSON}"
+if [[ -n "$SS7_JSON" ]]; then
+  install_config "${HOST_DIR}/src/main/resources/${SS7_JSON}" \
+    "${DIST_ROOT}/configs/${SS7_JSON}"
+fi
 
 cp -f "${SCRIPT_DIR}/run.sh" "${DIST_ROOT}/run.sh"
 chmod +x "${DIST_ROOT}/run.sh"

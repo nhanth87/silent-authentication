@@ -2,8 +2,9 @@
 # Silent Auth — lab launcher for a Quarkus fast-jar dist (either binary).
 #
 # The dist knows which binary it is (.service / .app-jar, written by
-# scripts/package-dist.sh): sas-camara (CAMARA APIs + OAuth AS, :8085, H2 under data/)
-# or sas-ecs (TS.43 entitlement server, :8095, no database).
+# scripts/package-dist.sh): sas-camara (CAMARA API gateway + OAuth AS, :8085, H2 under
+# data/, no signalling stack) or sas-ecs (entitlement server + subscriber exposure, :8095,
+# token ledger under data/, the only binary that loads SCTP for MAP/Diameter).
 # Lab defaults: in-memory transports, plain HTTP. Production is the same launcher with QUARKUS_PROFILE=prod plus the
 # env vars application-prod.properties demands — see
 # harness/preflight_prod.py (fail-closed: missing env vars refuse to boot).
@@ -70,12 +71,17 @@ fi
 
 # shellcheck disable=SC2206
 EXTRA_JAVA_OPTS=( ${JAVA_OPTS:-${SAS_JAVA_OPTS:-}} )
+# Only the entitlement server speaks SCTP (MAP/M3UA, Diameter); the gateway never loads it.
+SCTP_OPTS=()
+if [[ "$(cat "$APP_HOME/.service" 2>/dev/null || echo camara)" == ecs ]]; then
+  SCTP_OPTS=(--add-modules jdk.sctp)
+fi
 
 exec "$JAVA_HOME/bin/java" \
   "-Xms${SAS_XMS}" "-Xmx${SAS_XMX}" \
   -XX:+UseZGC -XX:+ExitOnOutOfMemoryError \
   --enable-native-access=ALL-UNNAMED \
-  --add-modules jdk.sctp \
+  "${SCTP_OPTS[@]}" \
   "-Dquarkus.profile=${QUARKUS_PROFILE}" \
   "-Dquarkus.config.locations=file:$APP_HOME/configs/application.properties" \
   "-Duser.dir=$APP_HOME" \
