@@ -10,7 +10,7 @@ openapi: 3.1.0
 
 info:
   title: SAS subscriber exposure API
-  version: 1.0.0-draft.1
+  version: 1.0.0
   summary: 3GPP-inspired subscriber exposure between the CAMARA gateway and the entitlement server.
   description: |
     Internal API of the Restlink Silent Auth Service. **Caller: sas-camara only.**
@@ -26,13 +26,21 @@ info:
       answer. A caller that receives anything other than 200 must not approve.
     * **Idempotency.** `X-Request-Id` + operation is the dedup key for 60 s. A repeat with the
       same key and body returns the recorded answer and opens no new MAP/Diameter dialog.
-      This also holds for `operator-token/redeem`: a retried redeem after a lost response
-      returns the recorded 200 instead of burning the token into a 401.
+      For `operator-token/redeem` the key is `(token jti, X-Request-Id)`: a retried redeem
+      after a lost response returns the recorded 200 instead of burning the token into a 401.
     * **Budget.** `X-Sas-Budget-Ms` is what the caller can still wait. sas-ecs clamps every
       network stage to it, aborts dialogs it can no longer use, and answers 504
       `BUDGET_EXHAUSTED` without signalling when the budget cannot cover one stage.
-    * **Privacy.** IMSI never appears in any response. MSISDN leaves sas-ecs only towards
-      sas-camara, which never returns it to the mobile app.
+    * **Privacy.** IMSI/SUPI never appears in any response; the SUPI ↔ GPSI mapping exists
+      only inside the operator domain (sas-ecs and the core). MSISDN leaves sas-ecs only
+      towards sas-camara, which never returns it to the mobile app.
+    * **Identifiers.** Each operation uses the identifier form of the 3GPP API it borrows
+      from: `gpsi` (`msisdn-<digits>`, TS 29.571) in the UE ID answer, `msisdn` (TS 23.003
+      digits, no "+") everywhere else. Both binaries convert only through the single
+      `PhoneNumberNormalizer` in sas-common; no service normalizes on its own.
+    * **Not a public OAuth authority.** The token endpoint below serves the
+      sas-camara → sas-ecs hop only. External clients (bank, app, sandbox) authenticate
+      at CAMARA OAuth on sas-camara and never call sas-ecs.
     * **Audit.** `evidenceSource` is internal. sas-camara writes it to its CDR and never
       returns it on a CAMARA response.
   x-reference-specs:
@@ -78,9 +86,11 @@ paths:
         - field: UeIdInfo.externalId
           3gpp: mandatory AF-specific external identifier
           here: replaced by `gpsi` (msisdn-<digits>)
-          why: CAMARA NV compares a phone number. The caller is the operator-side gateway, so
-            no pseudonym is needed on this hop; the phone number still never reaches the app.
-            A future mapping onto a real NEF has to obtain the GPSI from the operator.
+          why: CAMARA NV compares a phone number. A production NEF may expose an AF-scoped
+            external identifier instead; this SAS profile exposes the GPSI for a closed
+            operator sandbox / testing. This is NOT standard Nnef_UEId behaviour. IMSI/SUPI is
+            never exposed, the phone number never reaches the app, and a future mapping onto
+            a real NEF has to obtain the GPSI from the operator.
         - field: UeIdReq.portNumber
           3gpp: optional
           here: mandatory
@@ -174,8 +184,10 @@ paths:
           why: PSI is sent without a current-location request (no paging).
         - field: MonitoringEventReport.locationInfo
           3gpp: cell / TA / RA / geographic detail
-          here: only ageOfLocationInfo; plmnId at report level
-          why: data minimisation — no cell identity crosses to the gateway.
+          here: location evidence metadata only — ageOfLocationInfo, plus plmnId at report level
+          why: data minimisation. No latitude/longitude, ECGI/NCGI, TAC or cell identity crosses
+            to the gateway. The verifier in sas-ecs produces the evidence; the CAMARA policy
+            engine decides freshness and relevance.
         - field: MonitoringEventReport.ueReachable, MonitoringEventReports.evidenceSource
           3gpp: not defined
           here: extensions
@@ -315,6 +327,11 @@ paths:
 
         Every refusal is the same `401 INVALID_TOKEN` (malformed, bad signature, wrong
         audience, expired, already redeemed), so the answer is no oracle.
+
+        Idempotency is keyed on `(token jti, X-Request-Id)`, never on the request id alone:
+        a retry of the same redemption returns the recorded 200, while a request id reused
+        with a different token (client bug) gets no replay. The token is redeemed at most
+        once either way.
       operationId: RedeemOperatorToken
       x-required-scope: exposure:operator-token
       x-sas-stage-budget-ms: 200
@@ -378,7 +395,9 @@ components:
         Access token from the sas-ecs exposure token endpoint: grant `client_credentials`,
         client authentication `tls_client_auth` (RFC 8705 §2.1), ES256 `at+jwt`,
         `aud` = this API, certificate-bound (`cnf.x5t#S256`, RFC 8705 §3), lifetime ≤ 300 s.
-        Pattern after CAPIF (TS 33.122); CAPIF itself is not implemented.
+        Pattern after CAPIF (TS 33.122); CAPIF itself is not implemented. Issued only to the
+        sas-camara client for this hop — not a public OAuth authority. A later operator IAM
+        can take over issuance without changing this contract.
       flows:
         clientCredentials:
           tokenUrl: '{apiRoot}/sas-subscriber-exposure/oauth2/token'
@@ -562,7 +581,8 @@ components:
           description: Present for LOCATION_REPORTING when known (serving PLMN).
           $ref: '#/components/schemas/PlmnId'
         locationInfo:
-          description: Present for LOCATION_REPORTING; age only, no cell identity.
+          description: Location evidence metadata for LOCATION_REPORTING — the age only; no
+            coordinates, ECGI/NCGI, TAC or cell identity.
           type: object
           required: [ageOfLocationInfo]
           properties:

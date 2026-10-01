@@ -1,11 +1,12 @@
 # SAS layered architecture — CAMARA gateway → subscriber exposure → operator adapter
 
 **Status: Accepted 2026-10-01** (owner review of the architecture and decisions D1–D8, R1–R5).
+**Contract approved 2026-10-01** (second review, R6–R10).
 
 The interface contract
 [`openapi/sas-subscriber-exposure-v1.yaml`](openapi/sas-subscriber-exposure-v1.yaml) is
-**draft 1, awaiting owner sign-off**. No code is refactored (M1+) before both this record and
-that contract are signed off.
+**v1.0.0, approved**. Its schema is unchanged from draft 1; the review added explanatory notes
+only. Migration may proceed from M1.
 
 When migration step M6 (§8) lands, this record replaces
 [`sas-two-binary-architecture.md`](sas-two-binary-architecture.md). Until then that document
@@ -47,6 +48,16 @@ UE ──TS.43──► entitlement server ──► HSS/UDM/AuC
 | R4 | **Data source stays internal.** `evidenceSource` lives on internal responses and in the CAMARA CDR only. There is no `X-Operator-Data-Source` header, and no CAMARA public response reveals an internal data source. |
 | R5 | **Terminology.** "Operator Token" keeps the CAMARA ICM terminology: `login_hint=operatortoken:` / JWT-bearer `sub=operatortoken:`, "a TS.43 token" (`docs/research/camara/camara-api-access-and-user-consent.md`). What a redemption returns is the **subscriber verification result**. No `subscriber_hash` claim is added. `authMethod` names only the mechanism actually implemented (`EAP-AKA`; `EAP-AKA'` is not offered until it exists). |
 
+### 0.3 Contract review (2026-10-01)
+
+| # | Outcome |
+|---|---|
+| R6 | **GPSI from UE ID retrieval.** Approved as a stated deviation: a production NEF may expose an AF-scoped external identifier; **this SAS profile exposes the GPSI for a closed operator sandbox / testing**. It is not standard `Nnef_UEId` behaviour. IMSI/SUPI is never exposed outside the operator domain, and the SUPI ↔ GPSI mapping exists only inside it (`sas-ecs` and the core). |
+| R7 | **Exposure token endpoint on `sas-ecs`.** Approved, for the `sas-camara → sas-ecs` hop only. External clients (bank, app, sandbox) still authenticate only at CAMARA OAuth on `sas-camara`. `sas-ecs` is not a public OAuth authority. Integrating an operator IAM later (`sas-camara → operator IAM → sas-ecs`) replaces only the token issuer and does not change `SubscriberService`. No IAM/operator federation in this phase. |
+| R8 | **Location evidence metadata.** `ageOfLocationInfo` + `plmnId` are evidence metadata (freshness, home/visited network), not a location: no latitude/longitude, ECGI/NCGI, TAC or cell identity crosses the boundary. The MAP/Diameter verifier in `sas-ecs` produces the evidence; the CAMARA policy engine decides freshness and relevance. |
+| R9 | **One phone-number normalizer.** A single `PhoneNumberNormalizer` in `sas-common` is the only place numbers are converted: input E.164 `+<digits>` → internal TS 23.003 digits → GPSI `msisdn-<digits>` or CAMARA canonical `+<digits>`. It replaces six divergent helpers found today: `RequestValidator.normalizeE164` (used by `TokenResource`), `EntitlementSbb.normaliseMsisdn` (adds `+` but keeps spaces), `PcrfSdResolverBackend.normalizeE164` (strips every non-digit), `SubscriberDbBinding.normalise` (cuts `@realm`, drops `+`), `MapSendImsiBinding.normaliseMsisdn` (drops `+` only), and the HLR simulator's own copy. |
+| R10 | **Redemption identity is the token `jti`.** Redeem idempotency is keyed on `(jti, X-Request-Id)`, never on `X-Request-Id` alone. A request id reused across different tokens by a client bug gets no replayed answer, and the token is still redeemed at most once. |
+
 ## 1. Architecture decision record
 
 **Context.**
@@ -71,8 +82,9 @@ UE ──TS.43──► entitlement server ──► HSS/UDM/AuC
 - One extra HTTP hop per stage; the budgets are in §7.
 - If the operator already runs an NEF/SCEF, a different `SubscriberService` client can
   target it. That client is a mapping layer, not a rewrite, because the DTOs follow 3GPP
-  fields. Known gap: a real NEF returns an AF-specific `externalId` from UE ID retrieval,
-  not a GPSI (contract `x-deviation`).
+  fields. Known gap (R6): a production NEF may return an AF-scoped `externalId` from UE ID
+  retrieval rather than a GPSI. Exposing the GPSI is this profile's choice for a closed
+  operator sandbox/testing (contract `x-deviation`).
 
 **Alternatives rejected.**
 
@@ -158,7 +170,7 @@ Base: `{apiRoot}/sas-subscriber-exposure/v1`.
 | Operation | Path | Modelled on | Main deviations (full list in the contract) |
 |---|---|---|---|
 | `RetrieveUeId` | `POST /ue-id/retrieve` | TS 29.522 `3gpp-ueid` `POST /retrieve` (`UeIdReq`/`UeIdInfo`) | Returns `gpsi` instead of the AF-specific `externalId`; `portNumber` and `observedAt` (extension) mandatory (CGNAT, point-in-time); `ueMacAddr` unsupported. Errors: `404 NO_BINDING`, `409 AMBIGUOUS_BINDING`. |
-| `CreateMonitoringEventSubscription` | `POST /monitoring-event/{scsAsId}/subscriptions` | TS 29.122 `3gpp-monitoring-event`, immediate-report form (`200` + `MonitoringEventReports`) | No `notificationDestination`, no subscription resource; `maximumNumberOfReports=1`, `immediateRep=true`. Only `UE_REACHABILITY` + `LOCATION_REPORTING`; `LAST_KNOWN_LOCATION` only. Location is `ageOfLocationInfo` + `plmnId` only (no cell id). `ueReachable` is an extension. |
+| `CreateMonitoringEventSubscription` | `POST /monitoring-event/{scsAsId}/subscriptions` | TS 29.122 `3gpp-monitoring-event`, immediate-report form (`200` + `MonitoringEventReports`) | No `notificationDestination`, no subscription resource; `maximumNumberOfReports=1`, `immediateRep=true`. Only `UE_REACHABILITY` + `LOCATION_REPORTING`; `LAST_KNOWN_LOCATION` only. `LOCATION_REPORTING` returns **location evidence metadata** only: `ageOfLocationInfo` + `plmnId`, with no coordinates, ECGI/NCGI, TAC or cell id (R8). `ueReachable` is an extension. |
 | `RetrieveSimChange` | `POST /sim-change/retrieve` | vendor extension, T8 style | Whole operation. `404 NO_EVIDENCE` is fail-closed; never "not swapped". |
 | `RedeemOperatorToken` | `POST /operator-token/redeem` | vendor extension, RFC 7662-like, single use | Whole operation. Returns the **subscriber verification result** `{msisdn, authMethod, authenticatedAt, simVerified, tokenId}`; every refusal is the same `401 INVALID_TOKEN`. |
 
@@ -166,12 +178,14 @@ Base: `{apiRoot}/sas-subscriber-exposure/v1`.
 - `msisdn` is TS 23.003 digits without "+" (T8 style, also used by the two extensions).
 - `gpsi` is `msisdn-<digits>` (TS 29.571), used only in the UE ID answer.
 - The gateway converts to and from E.164 `+…` for CAMARA.
+- Every conversion, on both binaries, goes through `PhoneNumberNormalizer` in
+  `sas-common` (R9). No service normalizes on its own.
 
 **Common headers:**
 
 | Header | Purpose |
 |---|---|
-| `X-Request-Id` | The CAMARA `reqId`. Dedup key with the operation for 60 s. A retried redeem returns the recorded 200 instead of a 401. |
+| `X-Request-Id` | The CAMARA `reqId`. Dedup key with the operation for 60 s. For redeem the key is `(token jti, X-Request-Id)` (R10): a retried redeem returns the recorded 200 instead of a 401, and a request id reused for a different token gets no replay. |
 | `X-Sas-Budget-Ms` | Remaining caller budget. ECS clamps stage budgets to it; `504 BUDGET_EXHAUSTED` when it cannot cover one stage. |
 
 **Errors:** TS 29.122-shaped `ProblemDetails` with a `cause` code. IMSI, token content and
@@ -198,6 +212,12 @@ reach only the device interface of Z2 (§2).
   - Follows the CAPIF pattern (TS 33.122) without implementing CAPIF.
 - **AF identity:** the `afId` / `scsAsId` in a request must equal the token's client
   (`403 AF_MISMATCH`).
+- **Boundary of the token endpoint (R7).**
+  - It serves the `sas-camara → sas-ecs` hop only. It is not a public OAuth authority.
+  - External clients (bank, app, sandbox) authenticate only at CAMARA OAuth on
+    `sas-camara`.
+  - A later operator IAM would replace the token issuer, `sas-camara → operator IAM →
+    sas-ecs`, without changing `SubscriberService` or the contract.
 - **Prod preflight (new PRO checks, M4)** refuses a boot with any of: a plain-HTTP exposure
   URL; a missing client certificate or key; an ECS exposure interface without client-cert
   pinning or without token enforcement; a lab-shaped exposure client.
@@ -230,8 +250,10 @@ reach only the device interface of Z2 (§2).
   decided a SIM-change date matters in a dispute), so it is not "debug only". It is
   recorded in the CAMARA CDR next to the `reqId`. A test asserts that no CAMARA response
   body or header carries it.
-- IMSI never crosses Z2 → Z1. MSISDN crosses Z2 → Z1 only to the gateway, never to the app.
-- Location crosses only as an age and a PLMN, never as a cell or tracking area.
+- IMSI/SUPI never crosses Z2 → Z1, and the SUPI ↔ GPSI mapping exists only in Z2 (R6).
+  MSISDN crosses Z2 → Z1 only to the gateway, never to the app.
+- Only location evidence metadata crosses (age + PLMN). No coordinates, ECGI/NCGI, TAC or
+  cell identity crosses (R8).
 
 ## 6. Sequence diagrams
 
@@ -332,9 +354,9 @@ Each step leaves a green build (`mvn test`, hardness, preflight self-test) and r
 
 | Step | Work | Acceptance |
 |---|---|---|
-| **M0** | Commit the MAP fix separately (done: `1974e80`). This record accepted. OpenAPI draft 1 written and validated. | **Owner signs off the contract** |
-| **M1** | Rename `sas-transport` → `sas-operator-adapter`: directory, artifactId, poms, gate module lists, scripts, docs. Mechanical; no behaviour change. | same test count; hardness all pass |
-| **M2** | ECS side, while the old gateway path still works: `sas-subscriber-api` + `sas-subscriber-exposure`, `SubscriberSbb`, the four operations + token endpoint. Move `resolver` + `s6averifier` + SIM-change evidence into the adapter/ECS, and `/session-tuple` to the ECS (D5). Token Service gains ledger + redeem and `aud` = ECS. | unit tests; contract tests (request/response validated against the OpenAPI); curl against ECS → HLR sim / Diameter testapp |
+| **M0** | Commit the MAP fix separately (done: `1974e80`). This record accepted. OpenAPI written and validated (draft 1 `99d1ef3`; approved as v1.0.0). | done |
+| **M1** | Rename `sas-transport` → `sas-operator-adapter`: directory, artifactId, poms, gate module lists, scripts, living docs. Mechanical; no behaviour change. Add `scripts/check-dependency-boundary.sh` (§9 test C) in its M1 form. | same test count; hardness all pass; boundary check: `sas-ecs` dist **contains** `sas-operator-adapter` |
+| **M2** | ECS side, while the old gateway path still works. First, `PhoneNumberNormalizer` in `sas-common` (R9) with its test matrix, replacing the six helpers. Then: `sas-subscriber-api` + `sas-subscriber-exposure`, `SubscriberSbb`, the four operations + token endpoint. Move `resolver` + `s6averifier` + SIM-change evidence into the adapter/ECS, and `/session-tuple` to the ECS (D5). Token Service gains ledger + redeem (`(jti, X-Request-Id)` idempotency, R10) and `aud` = ECS. | unit tests; contract tests (§9 test A); curl against ECS → HLR sim / Diameter testapp |
 | **M3** | Gateway side: RA `ras/exposure` (async HTTP client; `X-Request-Id` + `X-Sas-Budget-Ms`). `VerifySbb`, SIM Swap, `/authorize` network authentication and the CIBA/JWT-bearer anchors use `SubscriberService`. Delete `OperatorTokenAnchor` crypto, `HttpJwksKeySource`, `ras/resolver`, `ras/s6averifier`, `ras/optoken`, the ECS operator-token JWKS (D8). Flyway V4 drops the gateway ledger (D7). Remove the adapter dependency from `sas-host`. | `sas-camara` dist `lib/` has no sctp/ss7/diameter jar; all tests green |
 | **M4** | Security: mTLS + certificate-bound client credentials, the two separate authentication policies of §2, the new PRO checks of §5.2, D6 enforcement in prod. | preflight self-test with new mutations |
 | **M5** | Gates: H25 rewritten (§3 rules incl. the artifact check); H24 module list; H27 (the gateway trusts no operator token locally); new **H28** exposure-contract parity (OpenAPI operations ↔ ECS resources ↔ gateway client ↔ scopes); H22 path follows `/session-tuple` (D5). Mutation tests for H25/H28. | hardness + mutations |
@@ -362,6 +384,20 @@ Each step leaves a green build (`mvn test`, hardness, preflight self-test) and r
 9. **Prove the artifact.** Dists are rebuilt and restarted, and each claim is shown on the
    running processes (jar listing, PID, pcap), not only by unit tests.
 
+### 9.1 Named tests added by the contract review
+
+| Test | What it proves | Introduced | Hard gate from |
+|---|---|---|---|
+| **A — contract compatibility** | Every request/response of the ECS resources and the gateway client validates against `sas-subscriber-exposure-v1.yaml`. Negative cases are refused with the documented `cause`: missing `gpsi` in a UE ID answer (gateway treats as `FALLBACK`), invalid MSISDN format (`400 INVALID_ARGUMENT`), expired / replayed / wrong-audience operator token (`401 INVALID_TOKEN`), wrong or missing client certificate (refused before the resource), missing scope (`403 SCOPE_MISSING`), `afId` ≠ token client (`403 AF_MISMATCH`). | M2 | M5 (H28) |
+| **B — security boundary** | `sas-camara` → `/sas-subscriber-exposure/**` OK. Device → `/ts43/**` OK. Device → `/sas-subscriber-exposure/**` **refused**. | M4 | M4 |
+| **C — dependency boundary** | `sas-ecs` dist contains `sas-operator-adapter`. `sas-camara` dist and dependency tree contain **no** MAP, Diameter, SCTP or SS7 artifact (jSS7, corsac/diameter, `sctp`, `sas-operator-adapter`). | M1 | ECS half from M1; gateway half from **M3** |
+| **D — phone-number normalizer** | One matrix through `PhoneNumberNormalizer`: `+84xxxxxxxxx` → internal `84xxxxxxxxx` → GPSI `msisdn-84xxxxxxxxx` and CAMARA canonical `+84xxxxxxxxx`; same for `+251…`. Separators, a missing `+`, national/short forms and `@realm` suffixes each get one documented outcome. A source scan fails if any other normalizer remains. | M2 | M2 |
+
+The gateway half of test C cannot pass before M3. Until then `sas-camara` still carries
+the resolver and S6a RAs, which move in M2–M3. In M1 the script reports that half as known
+debt and does not fail. It becomes a hard failure in the commit that removes the
+dependency, so the boundary cannot quietly regress afterwards.
+
 ## 10. Still open (unchanged by this design)
 
 - The EAP-AKA wire codec is not RFC 4187. `simVerified` means nothing for a real handset
@@ -371,3 +407,4 @@ Each step leaves a green build (`mvn test`, hardness, preflight self-test) and r
 - Refresh tokens.
 - A shared store for OAuth codes and CIBA bindings.
 - OTP SMS delivery to the ECS (D4, later phase).
+- Operator IAM / federation for the exposure hop (R7, later phase).
