@@ -282,6 +282,11 @@ public class EntitlementTokenService {
         return r;
     }
 
+    /** Drop the issuance record once the exposure API has redeemed the token. */
+    void forgetIssued(String token) {
+        operatorTokens.remove(sha256(token));
+    }
+
     /** Three (JWS) or five (JWE) dot-separated parts: a compact JOSE object. */
     static boolean isCompactJose(String token) {
         int parts = token.split("\\.", -1).length;

@@ -26,6 +26,10 @@
       <artifactId>sas-operator-adapter</artifactId>
     </dependency>
     <dependency>
+      <groupId>et.restlink</groupId>
+      <artifactId>sas-subscriber-exposure</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>
     </dependency>

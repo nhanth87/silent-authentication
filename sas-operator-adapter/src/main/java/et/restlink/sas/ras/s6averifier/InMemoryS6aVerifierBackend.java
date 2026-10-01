@@ -7,6 +7,7 @@
 
 package et.restlink.sas.ras.s6averifier;
 
+import et.restlink.sas.model.LabLocation;
 import et.restlink.sas.model.AccessTech;
 import et.restlink.sas.model.FallbackReason;
 import et.restlink.sas.model.VerificationEvidence;
@@ -107,7 +108,7 @@ public final class InMemoryS6aVerifierBackend implements S6aVerifierBackend {
             boolean notSimSwapped = (nowMs - r.lastImsiChangeEpochMs()) >= SWAP_COOLDOWN_MS;
             boolean locationPlausible = expectedRegion.equalsIgnoreCase(r.mmeRegion());
             return VerificationEvidence.ok(reachable, notSimSwapped, locationPlausible,
-                    "S6A-ULR+Sh-UDR");
+                    "S6A-ULR+Sh-UDR").withLocation(LabLocation.of(locationPlausible));
         });
     }
 }

@@ -15,6 +15,8 @@ package et.restlink.sas.model;
  *   notSimSwapped    — MAP SAI (2G/3G) or read-only Sh UDR binding age (4G/5G).
  *   locationPlausible— VLR/MME region agrees with the resolver's IP geo window.
  *   protocol         — which signalling probe(s) produced the evidence (audit).
+ *   location         — optional location evidence metadata (age + serving PLMN), only
+ *                      when the probe returned it; never a cell, TA or coordinate.
  * </pre>
  *
  * <p>On any failure the {@link #failure()} reason is set and all booleans are
@@ -25,7 +27,21 @@ public record VerificationEvidence(
         boolean notSimSwapped,
         boolean locationPlausible,
         String protocol,
-        FallbackReason failure) {
+        FallbackReason failure,
+        LocationEvidence location) {
+
+    /** Evidence without location metadata — what every probe produced before M2. */
+    public VerificationEvidence(boolean reachable, boolean notSimSwapped,
+                                boolean locationPlausible, String protocol,
+                                FallbackReason failure) {
+        this(reachable, notSimSwapped, locationPlausible, protocol, failure, null);
+    }
+
+    /** Same evidence, carrying the location metadata the probe returned. */
+    public VerificationEvidence withLocation(LocationEvidence where) {
+        return new VerificationEvidence(reachable, notSimSwapped, locationPlausible, protocol,
+                failure, where);
+    }
 
     public static VerificationEvidence ok(boolean reachable,
                                           boolean notSimSwapped,

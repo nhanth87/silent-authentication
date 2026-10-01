@@ -7,6 +7,7 @@
 
 package et.restlink.sas.ras.mapverifier;
 
+import et.restlink.sas.model.LabLocation;
 import et.restlink.sas.model.AccessTech;
 import et.restlink.sas.model.FallbackReason;
 import et.restlink.sas.model.VerificationEvidence;
@@ -105,7 +106,7 @@ public final class InMemoryMapVerifierBackend implements MapVerifierBackend {
 
             // PSI (70) + SAI (56) — never ATI (71).
             return VerificationEvidence.ok(reachable, notSimSwapped, locationPlausible,
-                    "MAP-PSI+SAI");
+                    "MAP-PSI+SAI").withLocation(LabLocation.of(locationPlausible));
         });
     }
 }

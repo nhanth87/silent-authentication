@@ -38,16 +38,29 @@ public class EcsTokenKeys {
     private volatile boolean loaded;
     private volatile ECKey signingKey;
     private volatile ECKey recipientKey;
+    private volatile ECKey ownDecryptionKey;
 
     public Optional<ECKey> signingKey() {
         load();
         return Optional.ofNullable(signingKey);
     }
 
-    /** CAMARA's public encryption key, or empty (then only a lab bare-JWS is possible). */
+    /**
+     * The key tokens are encrypted to: this ECS's own public key when it redeems them
+     * (layered ADR D3), otherwise the CAMARA server's. Empty means only a lab bare JWS.
+     */
     public Optional<ECKey> recipientKey() {
         load();
+        if (config.redeemAtEcs()) {
+            return Optional.ofNullable(ownDecryptionKey).map(ECKey::toPublicJWK);
+        }
         return Optional.ofNullable(recipientKey);
+    }
+
+    /** This ECS's private decryption key, for redemption; empty when not configured. */
+    public Optional<ECKey> ownDecryptionKey() {
+        load();
+        return Optional.ofNullable(ownDecryptionKey);
     }
 
     /** Public JWKS JSON of the signing key, for {@code GET /jwks.json}. */
@@ -57,9 +70,15 @@ public class EcsTokenKeys {
 
     /** Test seam. */
     void use(ECKey signing, ECKey recipient) {
+        use(signing, recipient, null);
+    }
+
+    /** Test seam with this ECS's own decryption key. */
+    void use(ECKey signing, ECKey recipient, ECKey ownDecryption) {
         synchronized (this) {
             signingKey = signing;
             recipientKey = recipient;
+            ownDecryptionKey = ownDecryption;
             loaded = true;
         }
     }
@@ -96,8 +115,26 @@ public class EcsTokenKeys {
                     LOG.error("[ECS] sas.ecs.token.recipient-enc-jwk is not a P-256 JWK: {}", e.getMessage());
                 }
             }
+            ECKey own = null;
+            Optional<String> dec = config.decryptionJwk();
+            if (dec.isPresent()) {
+                try {
+                    own = Es256Keys.parsePrivate(dec.get(), KeyUse.ENCRYPTION);
+                } catch (IllegalArgumentException e) {
+                    LOG.error("[ECS] sas.ecs.token.decryption-jwk is not a private P-256 JWK: {}",
+                            e.getMessage());
+                }
+            } else if (config.redeemAtEcs() && config.allowEphemeralSigningKey()) {
+                own = Es256Keys.generate(KeyUse.ENCRYPTION);
+                LOG.warn("[ECS] LAB: ephemeral operator-token decryption key kid={} — tokens "
+                        + "die with this process; never use this in prod", own.getKeyID());
+            } else if (config.redeemAtEcs()) {
+                LOG.error("[ECS] redeem-at-ecs without sas.ecs.token.decryption-jwk — no token "
+                        + "can be issued or redeemed (fail-closed)");
+            }
             signingKey = sign;
             recipientKey = recipient;
+            ownDecryptionKey = own;
             loaded = true;
         }
     }

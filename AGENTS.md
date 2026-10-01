@@ -26,9 +26,11 @@ main/
 ├── proposal/                 ← formal DOCX chapters + build script
 ├── sas-common/               ← shared kernel: model, SasTimeouts, API-key auth
 ├── sas-token/                ← shared JOSE: ES256 JWS + operator token (JWS in JWE), Nimbus
+├── sas-subscriber-api/       ← exposure contract in Java: SubscriberService, DTOs, causes, validator
 ├── sas-operator-adapter/     ← operator adapter RAs: MAP (jSS7) + Diameter S6a/SWx + Gx/RADIUS/CGNAT resolver, auth-vector, binding
 ├── sas-api/                  ← CAMARA library (/verify, SIM Swap, OTP, OAuth AS, operator-token accept)
-├── sas-entitlement/          ← entitlement library (EAP-AKA, /ts43, /entitlement, token issuer)
+├── sas-entitlement/          ← entitlement library (EAP-AKA, /ts43, /entitlement, token issuer + redemption)
+├── sas-subscriber-exposure/  ← /sas-subscriber-exposure/v1 resource + event + coordinator (sas-ecs only)
 ├── sas-host/                 ← BINARY sas-camara :8085 (SasBootstrap, VerifySbb, CDR, admin)
 ├── sas-ecs-host/             ← BINARY sas-ecs :8095 (EcsBootstrap, EntitlementSbb) — TS.43 ECS
 ├── sas-diameter-testapp/     ← lab HSS/AAA/PCRF(Gx) Diameter simulator (corsac), :3868
@@ -49,7 +51,11 @@ Build boundaries that are easy to get wrong:
   (TS.43 entitlement server, EAP-AKA over MAP/Diameter). They share `sas-common`,
   `sas-token`, `sas-operator-adapter` and meet only through the operator token; gate **H25**
   fails the build tree if either side depends on or imports the other.
-- Root aggregator builds the 7 modules above (`sas-common` … `sas-ecs-host`).
+- Root aggregator builds the 9 modules above (`sas-common` … `sas-ecs-host`).
+- **Layered redesign in progress** (`docs/design/sas-layered-architecture.md`, accepted;
+  contract `docs/design/openapi/sas-subscriber-exposure-v1.yaml` v1.0.0): M0–M2 done —
+  sas-ecs serves the subscriber exposure API (lab only until M4); sas-camara still signals
+  the core itself until M3.
   The two test apps (`sas-diameter-testapp`, `sas-jss7-testapp`) and all `ue-sdk*`
   modules are **standalone builds** — `cd` in and build them individually.
 - `dist/`, `dist-ecs/`, `slides/`, `*/target/`, `sas-host/data/` are **gitignored local artifacts** —
@@ -58,7 +64,7 @@ Build boundaries that are easy to get wrong:
 ## 1. Commands
 
 ```bash
-# Full build + tests (JDK 25 via mise; 7 modules, 647 tests)
+# Full build + tests (JDK 25 via mise; 9 modules, 737 tests)
 mvn -o test                                  # from repo root
 mvn -o test -pl sas-host -am -Dtest=ClassName -Dsurefire.failIfNoSpecifiedTests=false
 
@@ -69,6 +75,7 @@ dist-ecs/run.sh                              # sas-ecs lab: plain HTTP :8095, in
 QUARKUS_PROFILE=prod dist/run.sh             # prod — env vars from application-prod.properties;
                                              # preflight refuses a lab-shaped boot
 scripts/split-smoke.sh                       # both binaries end to end + pcap (no root; user netns)
+scripts/exposure-smoke.sh                    # sas-ecs exposure API vs HLR sim (MAP SendIMSI+PSI) + pcap
 scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapter; sas-camara none (enforced from M3)
 
 # UE SDKs
@@ -103,7 +110,7 @@ Start sas-ecs for it with the MAP transports (own association, ss7-ecs.json):
 python3 harness/run_hardness.py              # 37/37 gates H1–H27, exit 0 = pass
 python3 harness/run_hardness.py --mutations  # H24 10/10 + H25 9/9 mutation self-tests
 python3 harness/preflight_prod.py --service camara|ecs|all   # prod verdict for THIS env
-python3 harness/preflight_prod.py --selftest # 41/41 scenarios (camara + ecs baselines + mutations)
+python3 harness/preflight_prod.py --selftest # 44/44 scenarios (camara + ecs baselines + mutations)
 
 # Artifacts
 python3 proposal/scripts/build_proposal_docx.py

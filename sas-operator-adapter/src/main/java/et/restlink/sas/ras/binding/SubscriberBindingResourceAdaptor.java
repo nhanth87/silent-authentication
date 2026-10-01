@@ -7,6 +7,7 @@
 
 package et.restlink.sas.ras.binding;
 
+import et.restlink.sas.id.PhoneNumberNormalizer;
 import com.microjainslee.api.RaBootstrapPort;
 
 import et.restlink.sas.fsm.SasTimeouts;
@@ -231,7 +232,7 @@ public final class SubscriberBindingResourceAdaptor {
         if (claimed == null || claimed.isBlank()) {
             return found;
         }
-        if (claimed.trim().equals(found.msisdn().trim())) {
+        if (PhoneNumberNormalizer.sameNumber(claimed, found.msisdn())) {
             return found;
         }
         LOG.warn("Binding mismatch: the claimed MSISDN is not the one bound to the "

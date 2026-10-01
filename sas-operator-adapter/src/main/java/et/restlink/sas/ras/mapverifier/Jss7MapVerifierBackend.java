@@ -7,6 +7,9 @@
 
 package et.restlink.sas.ras.mapverifier;
 
+import org.restcomm.protocols.ss7.map.api.service.mobility.subscriberInformation.LocationInformation;
+import org.restcomm.protocols.ss7.map.api.primitives.CellGlobalIdOrServiceAreaIdOrLAI;
+import et.restlink.sas.model.LocationEvidence;
 import et.restlink.sas.fsm.SasTimeouts;
 import et.restlink.sas.model.AccessTech;
 import et.restlink.sas.ras.authvector.AuthVector;
@@ -226,7 +229,7 @@ public final class Jss7MapVerifierBackend
                 }
                 boolean fresh = runSai(imsi, deadline);
                 return VerificationEvidence.ok(psi.reachable(), fresh,
-                        psi.locationPlausible(), "MAP:PSI+SAI");
+                        psi.locationPlausible(), "MAP:PSI+SAI").withLocation(psi.location());
             } catch (Exception e) {
                 LOG.warn("[map-verifier] verify failed msisdn={} — fail-closed", msisdn, e);
                 return VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "MAP");
@@ -467,9 +470,46 @@ public final class Jss7MapVerifierBackend
                 locationPlausible = info.getLocationInformation() != null;
             }
             dialog.release();
-            future.complete(VerificationEvidence.ok(reachable, false, locationPlausible, "MAP:PSI"));
+            future.complete(VerificationEvidence.ok(reachable, false, locationPlausible, "MAP:PSI")
+                    .withLocation(info == null ? null : locationEvidence(info.getLocationInformation())));
         } catch (Exception e) {
             future.complete(VerificationEvidence.fail(FallbackReason.VERIFY_ERROR, "MAP"));
+        }
+    }
+
+    /**
+     * Location evidence metadata from a PSI answer (layered ADR R8): the age of the last
+     * location update and the serving PLMN from the CGI/SAI or LAI. The cell identity and
+     * LAC are read past, never kept. MNC is formatted with two digits when below 100, so
+     * a three-digit MNC under 100 reads as two digits (jSS7 exposes it as an int).
+     */
+    static LocationEvidence locationEvidence(LocationInformation where) {
+        if (where == null) {
+            return null;
+        }
+        Integer age = where.getAgeOfLocationInformation();
+        String mcc = null;
+        String mnc = null;
+        CellGlobalIdOrServiceAreaIdOrLAI cell = where.getCellGlobalIdOrServiceAreaIdOrLAI();
+        try {
+            if (cell != null && cell.getCellGlobalIdOrServiceAreaIdFixedLength() != null) {
+                mcc = String.format("%03d", cell.getCellGlobalIdOrServiceAreaIdFixedLength().getMCC());
+                mnc = String.format("%02d", cell.getCellGlobalIdOrServiceAreaIdFixedLength().getMNC());
+            } else if (cell != null && cell.getLAIFixedLength() != null) {
+                mcc = String.format("%03d", cell.getLAIFixedLength().getMCC());
+                mnc = String.format("%02d", cell.getLAIFixedLength().getMNC());
+            }
+        } catch (MAPException | RuntimeException e) {
+            mcc = null;
+            mnc = null;
+        }
+        if (age == null && mcc == null) {
+            return null;
+        }
+        try {
+            return new LocationEvidence(age, mcc, mnc);
+        } catch (IllegalArgumentException e) {
+            return age == null ? null : new LocationEvidence(age, null, null);
         }
     }
 

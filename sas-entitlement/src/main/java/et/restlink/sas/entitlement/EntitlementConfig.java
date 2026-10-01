@@ -96,6 +96,30 @@ public class EntitlementConfig {
     @ConfigProperty(name = "sas.entitlement.legacy-exchange-enabled", defaultValue = "true")
     boolean legacyExchangeEnabled;
 
+    /**
+     * Layered ADR D3: this ECS is the only redeemer of its operator tokens. When on, a
+     * token's {@code aud} is this ECS ({@code sas.ecs.issuer}), it is encrypted to the
+     * ECS's own key ({@code sas.ecs.token.decryption-jwk}) and only
+     * {@code POST /sas-subscriber-exposure/v1/operator-token/redeem} can spend it. Off
+     * (the M2 default) keeps the former flow, where the CAMARA server decrypts and keeps
+     * the ledger; migration step M3 turns it on together with the gateway side.
+     */
+    @ConfigProperty(name = "sas.ecs.token.redeem-at-ecs", defaultValue = "false")
+    boolean redeemAtEcs;
+
+    /** Private P-256 JWK ({@code use=enc}) this ECS decrypts its own tokens with. */
+    @ConfigProperty(name = "sas.ecs.token.decryption-jwk")
+    java.util.Optional<String> decryptionJwk;
+
+    public boolean redeemAtEcs() {
+        return redeemAtEcs;
+    }
+
+    public java.util.Optional<String> decryptionJwk() {
+        return decryptionJwk == null ? java.util.Optional.empty()
+                : decryptionJwk.filter(v -> !v.isBlank());
+    }
+
     public boolean legacyExchangeEnabled() {
         return legacyExchangeEnabled;
     }
@@ -117,7 +141,11 @@ public class EntitlementConfig {
         return allowEphemeralSigningKey;
     }
 
+    /** {@code aud} of issued tokens: this ECS itself when it redeems them (D3). */
     public String tokenAudience() {
+        if (redeemAtEcs) {
+            return ecsIssuer();
+        }
         return tokenAudience == null ? "" : tokenAudience.orElse("").trim();
     }
 

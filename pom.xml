@@ -36,6 +36,7 @@
     <module>sas-operator-adapter</module>
     <module>sas-api</module>
     <module>sas-entitlement</module>
+    <module>sas-subscriber-exposure</module>
     <module>sas-host</module>
     <module>sas-ecs-host</module>
   </modules>
@@ -95,6 +96,11 @@
       <dependency>
         <groupId>et.restlink</groupId>
         <artifactId>sas-entitlement</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>et.restlink</groupId>
+        <artifactId>sas-subscriber-exposure</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

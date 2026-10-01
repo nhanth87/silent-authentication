@@ -563,7 +563,8 @@ gates:
     check: slee_boundary
     expect:
       runtime_modules: ["sas-common", "sas-token", "sas-subscriber-api", "sas-operator-adapter",
-                        "sas-api", "sas-entitlement", "sas-host", "sas-ecs-host"]
+                        "sas-api", "sas-entitlement", "sas-subscriber-exposure", "sas-host",
+                        "sas-ecs-host"]
       exempt_path_parts: ["/ras/"]
       import_rules:
         - label: "SLEE container touched outside the bootstrap seam"
@@ -597,7 +598,8 @@ gates:
             - sas-api/src/main/java/et/restlink/sas/oauth/AuthorizationRequestService.java
       poms: ["pom.xml", "sas-common/pom.xml", "sas-token/pom.xml", "sas-subscriber-api/pom.xml",
              "sas-operator-adapter/pom.xml",
-             "sas-api/pom.xml", "sas-entitlement/pom.xml", "sas-host/pom.xml",
+             "sas-api/pom.xml", "sas-entitlement/pom.xml", "sas-subscriber-exposure/pom.xml",
+             "sas-host/pom.xml",
              "sas-ecs-host/pom.xml"]
       pinned_group: "com.microjainslee"
       pin_property: '${microjainslee.version}'
@@ -617,10 +619,10 @@ gates:
     expect:
       pom_forbidden:
         - pom: sas-host/pom.xml
-          artifacts: ["sas-entitlement", "sas-ecs-host"]
+          artifacts: ["sas-entitlement", "sas-ecs-host", "sas-subscriber-exposure"]
           why: the CAMARA server must deploy without the entitlement server (operator ECS mode)
         - pom: sas-api/pom.xml
-          artifacts: ["sas-entitlement", "sas-ecs-host", "sas-host"]
+          artifacts: ["sas-entitlement", "sas-ecs-host", "sas-host", "sas-subscriber-exposure"]
           why: the CAMARA library knows operator tokens only through sas-token
         - pom: sas-ecs-host/pom.xml
           artifacts: ["sas-api", "sas-host"]
@@ -635,8 +637,11 @@ gates:
           artifacts: ["sas-api", "sas-entitlement", "sas-host", "sas-ecs-host", "sas-operator-adapter",
                       "sas-token", "sas-subscriber-exposure"]
           why: the exposure contract is shared by both sides of the hop and carries no transport or surface
+        - pom: sas-subscriber-exposure/pom.xml
+          artifacts: ["sas-api", "sas-host", "sas-ecs-host", "sas-operator-adapter", "sas-entitlement"]
+          why: the exposure surface submits events only; the SBB in sas-ecs owns the signalling
       import_forbidden:
-        - paths: ["sas-entitlement/src/main", "sas-ecs-host/src/main"]
+        - paths: ["sas-entitlement/src/main", "sas-ecs-host/src/main", "sas-subscriber-exposure/src/main"]
           prefixes: ["et.restlink.sas.oauth.", "et.restlink.sas.camara.",
                      "et.restlink.sas.simswap.", "et.restlink.sas.otpsms.",
                      "et.restlink.sas.sbbs.VerifySbb",
@@ -645,7 +650,9 @@ gates:
         - paths: ["sas-api/src/main", "sas-host/src/main"]
           prefixes: ["et.restlink.sas.entitlement.", "et.restlink.sas.events.Ts43",
                      "et.restlink.sas.model.Ts43", "et.restlink.sas.api.SasEntitlementEngine",
-                     "et.restlink.sas.api.Ts43Resource", "et.restlink.sas.sbbs.EntitlementSbb"]
+                     "et.restlink.sas.api.Ts43Resource", "et.restlink.sas.sbbs.EntitlementSbb",
+                     "et.restlink.sas.exposure.", "et.restlink.sas.events.SubscriberQuery",
+                     "et.restlink.sas.sbbs.SubscriberSbb"]
           why: entitlement-server code reached from the CAMARA server
         - paths: ["sas-common/src/main", "sas-token/src/main", "sas-subscriber-api/src/main",
                   "sas-operator-adapter/src/main"]

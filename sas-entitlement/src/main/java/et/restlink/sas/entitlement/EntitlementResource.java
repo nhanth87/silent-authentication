@@ -129,6 +129,11 @@ public class EntitlementResource {
             // The CAMARA server is the single consumer of operator tokens (its ledger).
             return error(404, "NOT_FOUND", "legacy exchange is disabled; redeem at the CAMARA server");
         }
+        if (config.redeemAtEcs()) {
+            // Layered ADR D3: one redemption point only — the exposure API's redeem.
+            return error(404, "NOT_FOUND",
+                    "legacy exchange is off while this ECS redeems through the exposure API");
+        }
         if (body == null || body.token() == null || body.token().isBlank()) {
             return error(400, "INVALID_REQUEST", "token is required");
         }

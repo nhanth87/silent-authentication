@@ -99,6 +99,7 @@ CRITICAL_KEYS = (
 
 # sas-ecs: every key whose lab default would be unsafe in production.
 CRITICAL_KEYS_ECS = (
+    "sas.exposure.enabled",
     "quarkus.http.insecure-requests",
     "quarkus.http.ssl.client-auth",
     "quarkus.http.ssl.certificate.key-store-file",
@@ -757,6 +758,20 @@ def ecs_checks(p: Profile) -> Report:
         if not f_ok:
             notes.append(f"subscriber export: {f_why}")
     r.add("PRO-34", "a real IMSI->MSISDN binding source is wired", not notes, "\n".join(notes))
+
+    # Layered ADR M2: the subscriber exposure surface exists, but its client
+    # authentication (mTLS + certificate-bound client credentials) only lands in M4 and
+    # the durable ledger for ECS-side redemption in M3. Until then both stay off in prod.
+    notes = []
+    if (p.get("sas.exposure.enabled") or "false").strip().lower() != "false":
+        notes.append("sas.exposure.enabled=true: /sas-subscriber-exposure has no client "
+                     "authentication before migration step M4 — anyone reaching the port "
+                     "could resolve IP->MSISDN")
+    if (p.get("sas.ecs.token.redeem-at-ecs") or "false").strip().lower() != "false":
+        notes.append("sas.ecs.token.redeem-at-ecs=true needs the durable ledger (M3) and the "
+                     "authenticated exposure surface (M4)")
+    r.add("PRO-35", "subscriber exposure stays off until it is authenticated", not notes,
+          "\n".join(notes) if notes else "exposure surface off; redemption stays with sas-camara")
     return r
 
 
@@ -1092,6 +1107,8 @@ MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
         ("ecs signing key dropped", {"sas.ecs.signing-jwk": None}, {"PRO-02", "PRO-22"}),
         ("legacy exchange left on", {"sas.entitlement.legacy-exchange-enabled": "true"},
          {"PRO-22"}),
+        ("exposure surface on before M4", {"sas.exposure.enabled": "true"}, {"PRO-35"}),
+        ("ecs redemption before M3/M4", {"sas.ecs.token.redeem-at-ecs": "true"}, {"PRO-35"}),
     ],
 }
 
