@@ -11,7 +11,7 @@
   <description>Silent Auth SAS multi-module. Two runnable micro-jainslee binaries:
     sas-host (sas-camara: CAMARA NV / SIM Swap / OTP-SMS + OAuth AS) and sas-ecs-host
     (sas-ecs: GSMA TS.43 entitlement server, EAP-AKA over MAP/Diameter). Shared
-    libraries: sas-common, sas-token (operator token profile), sas-transport (MAP/SWx
+    libraries: sas-common, sas-token (operator token profile), sas-operator-adapter (MAP/SWx
     RAs); CAMARA library sas-api; entitlement library sas-entitlement.</description>
 
   <licenses>
@@ -32,7 +32,7 @@
   <modules>
     <module>sas-common</module>
     <module>sas-token</module>
-    <module>sas-transport</module>
+    <module>sas-operator-adapter</module>
     <module>sas-api</module>
     <module>sas-entitlement</module>
     <module>sas-host</module>
@@ -73,7 +73,7 @@
       </dependency>
       <dependency>
         <groupId>et.restlink</groupId>
-        <artifactId>sas-transport</artifactId>
+        <artifactId>sas-operator-adapter</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

@@ -23,7 +23,7 @@
     </dependency>
     <dependency>
       <groupId>et.restlink</groupId>
-      <artifactId>sas-transport</artifactId>
+      <artifactId>sas-operator-adapter</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>

@@ -16,7 +16,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 ECS = "sas-ecs-host/src/main/java/et/restlink/sas"
 CAM = "sas-host/src/main/java/et/restlink/sas"
-TR = "sas-transport/src/main/java/et/restlink/sas"
+TR = "sas-operator-adapter/src/main/java/et/restlink/sas"
 PRELUDE = (
     'import sys, yaml\n'
     'sys.path.insert(0, "harness")\n'

@@ -1214,7 +1214,7 @@ curl -X POST -d '{"attached":true}' http://127.0.0.1:8087/state
 ### 0f.5 Automated tests for this track
 
 ```bash
-mvn -o test -pl sas-ecs-host,sas-transport -am \
+mvn -o test -pl sas-ecs-host,sas-operator-adapter -am \
     -Dtest='EntitlementSessionsTest,LabSimAkaCardTest,SubscriberBindingResourceAdaptorTest' \
     -Dsurefire.failIfNoSpecifiedTests=false
 ```
@@ -1612,7 +1612,7 @@ python3 harness/preflight_prod.py --selftest      # 42/42 misconfiguration scena
 
 scripts/split-smoke.sh                   # two binaries: operator token, CIBA, NV auth code, isolation — pcap
 scripts/ecs-map-smoke.sh                 # sas-ecs ↔ HLR over MAP + fail-closed matrix — pcap
-mvn -o test -pl sas-ecs-host,sas-transport -am \
+mvn -o test -pl sas-ecs-host,sas-operator-adapter -am \
     -Dtest='EntitlementSessionsTest,LabSimAkaCardTest,SubscriberBindingResourceAdaptorTest' \
     -Dsurefire.failIfNoSpecifiedTests=false
 ```
@@ -1655,7 +1655,7 @@ conformance — the EAP-AKA codec is still a P1 blocker
 | `/ts43/challenge` answers `no authentication vector available` while the log shows `[auth-vector] SAI sent` | the simulator did not answer, or the MAP service is not `activate()`d; an unknown IMSI / vectors=0 / detached give the same answer | `curl -s :8087/messages`; the `ecs-map-smoke.sh` pcap |
 | Unknown IMSI: `no authentication vector available` only after ~2 s although the pcap shows `returnError` immediately | the SAI `returnError` does not complete the request early — it waits for the 2 s SAI budget (still fail-closed) | small open item: map `returnError` to an immediate failure |
 | `[binding] SendIMSI send failed … No AS found for routing message … si=3` | the SS7 config routes SSN 6 only; `sendImsi` rides **SSN 3 (OAM)** | add the route + `ssn: 3` service (present in `ss7-ecs.json`) |
-| `Ss7ConfigException: Cannot load SCTP backend NETTY_KERNEL` | `org.mobicents.protocols.sctp:sctp-impl` missing from the runtime classpath | it ships through `sas-transport`; rebuild the dist |
+| `Ss7ConfigException: Cannot load SCTP backend NETTY_KERNEL` | `org.mobicents.protocols.sctp:sctp-impl` missing from the runtime classpath | it ships through `sas-operator-adapter`; rebuild the dist |
 | `Ss7ConfigException: F-Stack sidecar socket missing: data/sctp-fstack.sock` | the config still defaults to DPDK/F-Stack | add `"backend": "netty_kernel"` to the `sctp` block |
 | `MAPException: Cannot create MAPDialog… is not activated` | this jSS7 fork does **not** activate services after `start()` | `MAPServiceMobility/Oam.activate()` after start (already done) |
 | `NullPointerException … mapApplicationContext is null` in `addSendImsiRequest` | AC `version3` requested for `imsiRetrievalContext`, which **only has version 2** | use `MAPApplicationContextVersion.version2` |

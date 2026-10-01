@@ -1207,7 +1207,7 @@ curl -X POST -d '{"attached":true}' http://127.0.0.1:8087/state
 ### 0f.5 Test tự động cho track này
 
 ```bash
-mvn -o test -pl sas-ecs-host,sas-transport -am \
+mvn -o test -pl sas-ecs-host,sas-operator-adapter -am \
     -Dtest='EntitlementSessionsTest,LabSimAkaCardTest,SubscriberBindingResourceAdaptorTest' \
     -Dsurefire.failIfNoSpecifiedTests=false
 ```
@@ -1600,7 +1600,7 @@ python3 harness/preflight_prod.py --selftest      # 42/42 kịch bản cấu hì
 
 scripts/split-smoke.sh                   # hai binary: operator token, CIBA, NV auth code, cách ly — pcap
 scripts/ecs-map-smoke.sh                 # sas-ecs ↔ HLR qua MAP + ma trận fail-closed — pcap
-mvn -o test -pl sas-ecs-host,sas-transport -am \
+mvn -o test -pl sas-ecs-host,sas-operator-adapter -am \
     -Dtest='EntitlementSessionsTest,LabSimAkaCardTest,SubscriberBindingResourceAdaptorTest' \
     -Dsurefire.failIfNoSpecifiedTests=false
 ```
@@ -1642,7 +1642,7 @@ EAP-AKA vẫn là blocker P1 (`docs/design/sas-two-binary-architecture.md` §9).
 | `/ts43/challenge` trả `no authentication vector available` mà log có `[auth-vector] SAI sent` | simulator chưa trả, hoặc service MAP chưa `activate()`; IMSI lạ / vectors=0 / detached cũng ra kết quả này | `curl -s :8087/messages`; pcap `ecs-map-smoke.sh` |
 | IMSI lạ: `no authentication vector available` chỉ về sau ~2 s dù pcap thấy `returnError` ngay | `returnError` của SAI chưa kết thúc sớm yêu cầu — chờ hết budget SAI 2 s (vẫn fail-closed đúng) | open item nhỏ: map `returnError` thành lỗi ngay |
 | `[binding] SendIMSI send failed … No AS found for routing message … si=3` | config SS7 chỉ route SSN 6; `sendImsi` đi trên **SSN 3 (OAM)** | thêm route + service `ssn: 3` (đã có trong `ss7-ecs.json`) |
-| `Ss7ConfigException: Cannot load SCTP backend NETTY_KERNEL` | thiếu `org.mobicents.protocols.sctp:sctp-impl` trên runtime classpath | có sẵn qua `sas-transport`; rebuild dist |
+| `Ss7ConfigException: Cannot load SCTP backend NETTY_KERNEL` | thiếu `org.mobicents.protocols.sctp:sctp-impl` trên runtime classpath | có sẵn qua `sas-operator-adapter`; rebuild dist |
 | `Ss7ConfigException: F-Stack sidecar socket missing: data/sctp-fstack.sock` | config còn mặc định DPDK/F-Stack | thêm `"backend": "netty_kernel"` vào block `sctp` |
 | `MAPException: Cannot create MAPDialog… is not activated` | fork jSS7 này **không** tự activate service sau `start()` | `MAPServiceMobility/Oam.activate()` sau khi start (đã có) |
 | `NullPointerException … mapApplicationContext is null` trong `addSendImsiRequest` | hỏi AC `version3` cho `imsiRetrievalContext`, context này **chỉ có version 2** | dùng `MAPApplicationContextVersion.version2` |

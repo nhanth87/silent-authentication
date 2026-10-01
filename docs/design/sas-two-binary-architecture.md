@@ -41,7 +41,7 @@ vectors) and different blast radius.
 flowchart BT
   common[sas-common<br/>model · timeouts · API-key auth]
   token[sas-token<br/>ES256 JWS · operator token JWE]
-  transport[sas-transport<br/>MAP + SWx RAs under /ras/]
+  transport[sas-operator-adapter<br/>MAP + SWx RAs under /ras/]
   api[sas-api<br/>CAMARA + OAuth AS]
   ent[sas-entitlement<br/>EAP-AKA · /ts43 · token issuer]
   camara[[sas-host = sas-camara :8085]]
@@ -64,7 +64,7 @@ flowchart BT
 |---|---|---|
 | `sas-common` | library | verification model, `SasTimeouts`, API-key auth, security config |
 | `sas-token` | library (pure) | `Es256Keys`, `Es256Jws`, `OperatorToken` (issue/verify) — Nimbus JOSE+JWT 10.9.1 |
-| `sas-transport` | library | `ras/mapverifier`, `ras/swxverifier`, `ras/authvector`, `ras/binding`, `SasTransportConfig`, `DiameterConfig` |
+| `sas-operator-adapter` | library | `ras/mapverifier`, `ras/swxverifier`, `ras/authvector`, `ras/binding`, `SasTransportConfig`, `DiameterConfig` |
 | `sas-api` | library | CAMARA NV / SIM Swap / OTP-SMS, OAuth AS (`/authorize`, `/token`, `/bc-authorize`, discovery, JWKS), operator-token acceptance |
 | `sas-entitlement` | library | EAP-AKA/AKA' code, `/ts43`, `/entitlement/*`, operator-token issuer, ECS `/jwks.json` |
 | `sas-host` | **binary `sas-camara`** | `SasBootstrap`, `VerifySbb`, resolver + S6a RAs, admin UI, PostgreSQL/H2, JWKS fetcher RA, durable jti ledger |

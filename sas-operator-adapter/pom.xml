@@ -8,8 +8,8 @@
     <artifactId>sas-core</artifactId>
     <version>0.1.0-SNAPSHOT</version>
   </parent>
-  <artifactId>sas-transport</artifactId>
-  <name>sas-core :: sas-transport</name>
+  <artifactId>sas-operator-adapter</artifactId>
+  <name>sas-core :: sas-operator-adapter</name>
   <description>Signalling resource adaptors shared by both SAS binaries: MAP over
     M3UA/SCTP (jSS7 — PSI/SAI verify, SAI auth vectors, SendIMSI binding) and Diameter
     SWx (corsac — MAR/MAA, SAR/SAA), plus the auth-vector and subscriber-binding RAs.

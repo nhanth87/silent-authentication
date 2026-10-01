@@ -56,7 +56,7 @@ POST /verify { phoneNumber }            (CAMARA NV v2.1.0)
 > production USSD 7.3 builds use Mobicents SLEE master-era JARs.
 
 Multi-module build: root aggregator `sas-core` → shared `sas-common`, `sas-token`,
-`sas-transport`; CAMARA library `sas-api`; this runnable app `sas-host` (**sas-camara**).
+`sas-operator-adapter`; CAMARA library `sas-api`; this runnable app `sas-host` (**sas-camara**).
 The entitlement side (`sas-entitlement` + `sas-ecs-host`) is a separate binary — gate
 H25 forbids this module from depending on it.
 

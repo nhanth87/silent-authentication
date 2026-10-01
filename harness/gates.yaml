@@ -562,7 +562,7 @@ gates:
       a stale entry fails the gate as hard as new debt
     check: slee_boundary
     expect:
-      runtime_modules: ["sas-common", "sas-token", "sas-transport", "sas-api",
+      runtime_modules: ["sas-common", "sas-token", "sas-operator-adapter", "sas-api",
                         "sas-entitlement", "sas-host", "sas-ecs-host"]
       exempt_path_parts: ["/ras/"]
       import_rules:
@@ -595,7 +595,7 @@ gates:
           only_in:
             - sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
             - sas-api/src/main/java/et/restlink/sas/oauth/AuthorizationRequestService.java
-      poms: ["pom.xml", "sas-common/pom.xml", "sas-token/pom.xml", "sas-transport/pom.xml",
+      poms: ["pom.xml", "sas-common/pom.xml", "sas-token/pom.xml", "sas-operator-adapter/pom.xml",
              "sas-api/pom.xml", "sas-entitlement/pom.xml", "sas-host/pom.xml",
              "sas-ecs-host/pom.xml"]
       pinned_group: "com.microjainslee"
@@ -628,7 +628,7 @@ gates:
           artifacts: ["sas-api", "sas-host", "sas-ecs-host"]
           why: the entitlement library depends on sas-common and sas-token only
         - pom: sas-token/pom.xml
-          artifacts: ["sas-api", "sas-entitlement", "sas-host", "sas-ecs-host", "sas-transport"]
+          artifacts: ["sas-api", "sas-entitlement", "sas-host", "sas-ecs-host", "sas-operator-adapter"]
           why: the shared token profile is a leaf library
       import_forbidden:
         - paths: ["sas-entitlement/src/main", "sas-ecs-host/src/main"]
@@ -642,19 +642,19 @@ gates:
                      "et.restlink.sas.model.Ts43", "et.restlink.sas.api.SasEntitlementEngine",
                      "et.restlink.sas.api.Ts43Resource", "et.restlink.sas.sbbs.EntitlementSbb"]
           why: entitlement-server code reached from the CAMARA server
-        - paths: ["sas-common/src/main", "sas-token/src/main", "sas-transport/src/main"]
+        - paths: ["sas-common/src/main", "sas-token/src/main", "sas-operator-adapter/src/main"]
           prefixes: ["et.restlink.sas.oauth.", "et.restlink.sas.camara.",
                      "et.restlink.sas.entitlement.", "et.restlink.sas.api.",
                      "et.restlink.sas.simswap.", "et.restlink.sas.otpsms."]
           why: a shared library imports one binary's surface
       pattern_forbidden:
-        - paths: ["sas-transport/src/main/java/et/restlink/sas/ras/authvector",
-                  "sas-transport/src/main/java/et/restlink/sas/ras/binding",
+        - paths: ["sas-operator-adapter/src/main/java/et/restlink/sas/ras/authvector",
+                  "sas-operator-adapter/src/main/java/et/restlink/sas/ras/binding",
                   "sas-ecs-host/src/main", "sas-entitlement/src/main"]
           pattern: '^import\s+[\w.]*\.(AnyTimeInterrogation\w*|SendRoutingInfoForSM\w*|AuthenticationInformationRequest|AuthenticationInformationAnswer);'
           why: ATI (FS.11 Cat 1), SRI-SM (Home Routing correlation IDs) and S6a AIR are banned on the entitlement path
         - paths: ["sas-ecs-host/src/main", "sas-entitlement/src/main",
-                  "sas-transport/src/main/java/et/restlink/sas/ras/authvector"]
+                  "sas-operator-adapter/src/main/java/et/restlink/sas/ras/authvector"]
           pattern: 'LOG\.\w+\([^;]*\.(ck|ik|xres|kAut|kEncr|msk|emsk|autn|rand)\(\)'
           why: AKA key material passed to a log call
       required:

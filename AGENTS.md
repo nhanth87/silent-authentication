@@ -26,7 +26,7 @@ main/
 ├── proposal/                 ← formal DOCX chapters + build script
 ├── sas-common/               ← shared kernel: model, SasTimeouts, API-key auth
 ├── sas-token/                ← shared JOSE: ES256 JWS + operator token (JWS in JWE), Nimbus
-├── sas-transport/            ← shared RAs: MAP (jSS7, SCTP) + Diameter SWx, auth-vector, binding
+├── sas-operator-adapter/     ← operator adapter RAs: MAP (jSS7, SCTP) + Diameter SWx, auth-vector, binding
 ├── sas-api/                  ← CAMARA library (/verify, SIM Swap, OTP, OAuth AS, operator-token accept)
 ├── sas-entitlement/          ← entitlement library (EAP-AKA, /ts43, /entitlement, token issuer)
 ├── sas-host/                 ← BINARY sas-camara :8085 (SasBootstrap, resolver/S6a RAs, CDR, admin)
@@ -47,7 +47,7 @@ Build boundaries that are easy to get wrong:
 - **Two binaries** (plan of record: `docs/design/sas-two-binary-architecture.md`):
   `sas-host` = **sas-camara** (CAMARA APIs + OAuth AS) and `sas-ecs-host` = **sas-ecs**
   (TS.43 entitlement server, EAP-AKA over MAP/Diameter). They share `sas-common`,
-  `sas-token`, `sas-transport` and meet only through the operator token; gate **H25**
+  `sas-token`, `sas-operator-adapter` and meet only through the operator token; gate **H25**
   fails the build tree if either side depends on or imports the other.
 - Root aggregator builds the 7 modules above (`sas-common` … `sas-ecs-host`).
   The two test apps (`sas-diameter-testapp`, `sas-jss7-testapp`) and all `ue-sdk*`
@@ -69,6 +69,7 @@ dist-ecs/run.sh                              # sas-ecs lab: plain HTTP :8095, in
 QUARKUS_PROFILE=prod dist/run.sh             # prod — env vars from application-prod.properties;
                                              # preflight refuses a lab-shaped boot
 scripts/split-smoke.sh                       # both binaries end to end + pcap (no root; user netns)
+scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapter; sas-camara none (enforced from M3)
 
 # UE SDKs
 (cd ue-sdk && mvn -o test) && (cd ue-sdk-android && mvn -o test)
