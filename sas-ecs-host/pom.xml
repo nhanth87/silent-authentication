@@ -29,6 +29,20 @@
       <groupId>et.restlink</groupId>
       <artifactId>sas-subscriber-exposure</artifactId>
     </dependency>
+    <!-- Durable single-use operator-token ledger (layered ADR D7): H2 in the lab,
+         PostgreSQL in prod, schema under Flyway. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jdbc-h2</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jdbc-postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-flyway</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>

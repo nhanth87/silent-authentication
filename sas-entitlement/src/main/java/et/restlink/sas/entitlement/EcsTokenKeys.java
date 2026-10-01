@@ -101,8 +101,8 @@ public class EcsTokenKeys {
                 }
             } else if (config.allowEphemeralSigningKey()) {
                 sign = Es256Keys.generate(KeyUse.SIGNATURE);
-                LOG.warn("[ECS] LAB: ephemeral operator-token signing key kid={} — CAMARA must "
-                        + "fetch it from /jwks.json; never use this in prod", sign.getKeyID());
+                LOG.warn("[ECS] LAB: ephemeral operator-token signing key kid={} — tokens die with "
+                        + "this process; never use this in prod", sign.getKeyID());
             } else {
                 LOG.error("[ECS] no sas.ecs.signing-jwk — operator tokens cannot be issued");
             }

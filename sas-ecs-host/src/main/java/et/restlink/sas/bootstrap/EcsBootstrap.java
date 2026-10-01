@@ -16,6 +16,7 @@ import et.restlink.sas.entitlement.OperatorTokenRedemption;
 import et.restlink.sas.events.SubscriberQueryEvent;
 import et.restlink.sas.exposure.ExposureConfig;
 import et.restlink.sas.exposure.ExposureCoordinator;
+import et.restlink.sas.exposure.ResolverAccess;
 import et.restlink.sas.ras.mapverifier.InMemoryMapVerifierBackend;
 import et.restlink.sas.ras.mapverifier.MapVerifierBackend;
 import et.restlink.sas.ras.mapverifier.MapVerifierRaEndpoint;
@@ -94,7 +95,7 @@ import java.util.concurrent.CompletableFuture;
  * share is the operator-token trust (sas-token), published at {@code /jwks.json}.</p>
  */
 @ApplicationScoped
-public class EcsBootstrap implements SasEntitlementEngine, SubscriberService {
+public class EcsBootstrap implements SasEntitlementEngine, SubscriberService, ResolverAccess {
 
     private static final Logger LOG = LogManager.getLogger(EcsBootstrap.class);
 
@@ -145,6 +146,7 @@ public class EcsBootstrap implements SasEntitlementEngine, SubscriberService {
     private volatile InMemoryMapVerifierBackend inMemoryMapBackend;
     private volatile InMemoryS6aVerifierBackend inMemoryS6aBackend;
     private volatile String resolverSource = "LAB_RESOLVER";
+    private volatile ResolverBackend resolverBackendRef;
     private volatile boolean started;
 
     void onStart(@Observes StartupEvent ev) {
@@ -287,6 +289,7 @@ public class EcsBootstrap implements SasEntitlementEngine, SubscriberService {
         }
         ResolverResourceAdaptor ra = new ResolverResourceAdaptor();
         ra.setBackend(backend);
+        resolverBackendRef = backend;
         resolverEndpoint = new ResolverRaEndpoint(ra);
         container.registerRa(resolverEndpoint, resolverEndpoint);
     }
@@ -373,6 +376,12 @@ public class EcsBootstrap implements SasEntitlementEngine, SubscriberService {
 
     private static boolean blank(String v) {
         return v == null || v.isBlank();
+    }
+
+    /** The wired resolver, for the device-declared session tuple (D5); null when exposure is off. */
+    @Override
+    public ResolverBackend resolverBackend() {
+        return resolverBackendRef;
     }
 
     // ---- SubscriberService: the bridge from the exposure REST surface into the SLEE ----

@@ -280,7 +280,7 @@ gates:
           label: strict OTP validate body
           patterns:
             - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*false\s*\)'
-        - path: sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
+        - path: sas-subscriber-exposure/src/main/java/et/restlink/sas/exposure/SessionTupleResource.java
           label: lenient non-CAMARA session tuple extension
           patterns:
             - '@JsonIgnoreProperties\s*\(\s*ignoreUnknown\s*=\s*true\s*\)\s*public\s+record\s+TupleRequest'
@@ -475,7 +475,7 @@ gates:
       non_cellular: ["WIFI"]
       sources:
         - sas-common/src/main/java/et/restlink/sas/model/AccessTech.java
-        - sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
+        - sas-subscriber-exposure/src/main/java/et/restlink/sas/exposure/SessionTupleResource.java
         - ue-sdk/src/main/java/et/restlink/uesdk/AccessTech.java
         - ue-sdk-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
         - ue-sdk-ios/Sources/UESDK/AccessTech.swift
@@ -594,7 +594,7 @@ gates:
           exempt: []
           pattern: '\.(resolverBackend|mapVerifierBackend|s6aVerifierBackend|swxVerifierBackend)\s*\('
           only_in:
-            - sas-api/src/main/java/et/restlink/sas/api/SessionTupleResource.java
+            - sas-subscriber-exposure/src/main/java/et/restlink/sas/exposure/SessionTupleResource.java
             - sas-api/src/main/java/et/restlink/sas/oauth/AuthorizationRequestService.java
       poms: ["pom.xml", "sas-common/pom.xml", "sas-token/pom.xml", "sas-subscriber-api/pom.xml",
              "sas-operator-adapter/pom.xml",
@@ -683,15 +683,17 @@ gates:
     spec: ["GSMA TS.43", "TS 33.402", "RFC 7516", "RFC 7518"]
     clause: sas-ecs prod profile
     rule: >-
-      a provisioned sas-ecs passes; fabricated auth vectors, the committed lab encryption
-      key, a private key in the recipient slot or no IMSI->MSISDN source block deploy
+      a provisioned sas-ecs passes; fabricated auth vectors, a lab or public decryption
+      key, a per-instance ledger, redemption handed back to CAMARA, no IMSI->MSISDN source
+      or an unauthenticated exposure surface block deploy (layered ADR D3/D7)
     check: preflight
     expect:
       service: ecs
       baseline: true
-      scenarios: ["lab auth vector source", "lab recipient key",
-                  "private key configured as recipient", "no binding source",
-                  "ephemeral ECS signing key"]
+      scenarios: ["lab auth vector source", "lab decryption key",
+                  "public key configured for decryption", "ledger on an H2 file",
+                  "redemption handed back to a CAMARA server", "no binding source",
+                  "ephemeral ECS signing key", "exposure surface on before M4"]
 
   - id: H27
     title: the CAMARA authorization server signs ES256 and trusts only encrypted operator tokens

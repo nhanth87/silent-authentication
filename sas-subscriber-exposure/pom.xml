@@ -12,7 +12,8 @@
   <name>sas-core :: sas-subscriber-exposure</name>
   <description>Entitlement-server side of the subscriber exposure API
     (/sas-subscriber-exposure/v1, docs/design/sas-layered-architecture.md §4): the REST
-    resource, the SLEE event it submits and the answer coordinator. Deployed in sas-ecs
+    resource, the SLEE event it submits and the answer coordinator, plus the device-side
+    /session-tuple (layered ADR D5). Deployed in sas-ecs
     only; the subscriber services themselves run as an SBB over the operator adapter RAs.</description>
 
   <dependencies>
@@ -32,6 +33,10 @@
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>

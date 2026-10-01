@@ -100,11 +100,11 @@ public class EntitlementConfig {
      * Layered ADR D3: this ECS is the only redeemer of its operator tokens. When on, a
      * token's {@code aud} is this ECS ({@code sas.ecs.issuer}), it is encrypted to the
      * ECS's own key ({@code sas.ecs.token.decryption-jwk}) and only
-     * {@code POST /sas-subscriber-exposure/v1/operator-token/redeem} can spend it. Off
-     * (the M2 default) keeps the former flow, where the CAMARA server decrypts and keeps
-     * the ledger; migration step M3 turns it on together with the gateway side.
+     * {@code POST /sas-subscriber-exposure/v1/operator-token/redeem} can spend it. On by
+     * default since migration step M3; off is the former flow (tokens encrypted to a
+     * CAMARA server that decrypts them itself), kept only for the old unit tests.
      */
-    @ConfigProperty(name = "sas.ecs.token.redeem-at-ecs", defaultValue = "false")
+    @ConfigProperty(name = "sas.ecs.token.redeem-at-ecs", defaultValue = "true")
     boolean redeemAtEcs;
 
     /** Private P-256 JWK ({@code use=enc}) this ECS decrypts its own tokens with. */

@@ -113,9 +113,11 @@ CRITICAL_KEYS_ECS = (
     "sas.ecs.issuer",
     "sas.ecs.signing-jwk",
     "sas.ecs.allow-ephemeral-signing-key",
-    "sas.ecs.token.audience",
-    "sas.ecs.token.recipient-enc-jwk",
+    "sas.ecs.token.redeem-at-ecs",
+    "sas.ecs.token.decryption-jwk",
     "sas.ecs.token.allow-unencrypted",
+    "quarkus.datasource.db-kind",
+    "quarkus.datasource.jdbc.url",
     "sas.entitlement.legacy-exchange-enabled",
     "sas.security.enforce-api-keys",
     "sas.security.api-key",
@@ -718,28 +720,30 @@ def ecs_checks(p: Profile) -> Report:
         notes.append(f"token TTL {ttl}s breaks the CAMARA single-use <=300s ceiling")
     if p.get("sas.entitlement.require-signed") != "true":
         notes.append("sas.entitlement.require-signed must stay true")
-    for key in ("sas.ecs.issuer", "sas.ecs.token.audience"):
-        if not p.get(key).startswith("https://"):
-            notes.append(f"{key}={p.get(key)!r} must be an https identifier")
+    if not p.get("sas.ecs.issuer").startswith("https://"):
+        notes.append(f"sas.ecs.issuer={p.get('sas.ecs.issuer')!r} must be an https identifier")
     if p.get("sas.ecs.allow-ephemeral-signing-key") == "true":
         notes.append("ephemeral ECS signing key — lab only")
     if p.get("sas.ecs.token.allow-unencrypted") == "true":
         notes.append("unencrypted operator tokens would expose the MSISDN to the device/app")
     if p.get("sas.entitlement.legacy-exchange-enabled", "true") != "false":
-        notes.append("legacy /entitlement/exchange is a second consumer next to the CAMARA "
-                     "ledger — one token could be redeemed twice; disable it in prod")
+        notes.append("legacy /entitlement/exchange is a second redemption point next to "
+                     "/operator-token/redeem — one token could be spent twice; disable it")
     ok, why = jwk_secret(p, "sas.ecs.signing-jwk", "sig")
     if not ok:
         notes.append(why)
-    rk = "sas.ecs.token.recipient-enc-jwk"
-    if not p.env_sourced(rk):
-        notes.append(f"{rk} must come from the environment")
-    else:
-        ok, why = jwk_value_ok(p.get(rk), rk, "enc", private=False)
-        if not ok:
-            notes.append(why)
-    r.add("PRO-22", "operator tokens signed (ES256) and encrypted to CAMARA within TTL",
-          not notes, "\n".join(notes))
+    # Layered ADR D3/D7: the ECS is the token's audience and only redeemer — its own
+    # decryption key, and a ledger every instance shares that survives a restart.
+    if (p.get("sas.ecs.token.redeem-at-ecs") or "true").strip().lower() != "true":
+        notes.append("sas.ecs.token.redeem-at-ecs must be true: the ECS is the only redeemer (D3)")
+    ok, why = jwk_secret(p, "sas.ecs.token.decryption-jwk", "enc")
+    if not ok:
+        notes.append(why)
+    if (p.get("quarkus.datasource.db-kind") or "").strip().lower() != "postgresql":
+        notes.append("the single-use ledger must be on PostgreSQL (D7); an H2 file is per "
+                     "instance and lets a token be spent once per ECS")
+    r.add("PRO-22", "operator tokens signed (ES256), encrypted to and redeemed by this ECS "
+          "once (durable ledger), within TTL", not notes, "\n".join(notes))
 
     ok, why = secret(p, "sas.entitlement.issue-attestation-secret")
     r.add("PRO-23", "/entitlement/issue requires AAA attestation",
@@ -767,11 +771,8 @@ def ecs_checks(p: Profile) -> Report:
         notes.append("sas.exposure.enabled=true: /sas-subscriber-exposure has no client "
                      "authentication before migration step M4 — anyone reaching the port "
                      "could resolve IP->MSISDN")
-    if (p.get("sas.ecs.token.redeem-at-ecs") or "false").strip().lower() != "false":
-        notes.append("sas.ecs.token.redeem-at-ecs=true needs the durable ledger (M3) and the "
-                     "authenticated exposure surface (M4)")
     r.add("PRO-35", "subscriber exposure stays off until it is authenticated", not notes,
-          "\n".join(notes) if notes else "exposure surface off; redemption stays with sas-camara")
+          "\n".join(notes) if notes else "exposure surface off until M4")
     return r
 
 
@@ -1040,8 +1041,10 @@ def _good_ecs_deployment(tmp: Path) -> dict[str, str]:
         "ECS_ATTESTATION_SECRET": "aaa-attestation-shared-secret-32chr",
         "ECS_ISSUER": "https://ecs.et-network.net",
         "ECS_SIGNING_JWK": _jwk("ecs-sig-2026-10", "sig", True),
-        "ECS_TOKEN_AUDIENCE": "https://camara.et-network.net",
-        "ECS_TOKEN_RECIPIENT_ENC_JWK": _jwk("camara-enc-2026-10", "enc", False),
+        "ECS_TOKEN_DECRYPTION_JWK": _jwk("ecs-enc-2026-10", "enc", True),
+        "ECS_DB_JDBC_URL": "jdbc:postgresql://db.et-network.net:5432/ecs",
+        "ECS_DB_USER": "sas_ecs",
+        "ECS_DB_PASSWORD": "ecs-db-password-rotated-32-chars",
         "ECS_API_KEYS": "ecs-aaa-api-key-rotated-32-characters",
         "ECS_LOG_DIR": "/var/log/sas-ecs",
     }
@@ -1094,10 +1097,13 @@ MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
         ("unencrypted operator tokens", {"sas.ecs.token.allow-unencrypted": "true"}, {"PRO-22"}),
         ("unsigned entitlement tokens", {"sas.entitlement.token-format": "hmac"}, {"PRO-22"}),
         ("attestation off", {"sas.entitlement.issue-attestation-required": "false"}, {"PRO-23"}),
-        ("lab recipient key",
-         {"ECS_TOKEN_RECIPIENT_ENC_JWK": _jwk("lab-camara-enc-x", "enc", False)}, {"PRO-22"}),
-        ("private key configured as recipient",
-         {"ECS_TOKEN_RECIPIENT_ENC_JWK": _jwk("camara-enc-2026-10", "enc", True)}, {"PRO-22"}),
+        ("lab decryption key",
+         {"ECS_TOKEN_DECRYPTION_JWK": _jwk("lab-ecs-enc-x", "enc", True)}, {"PRO-22"}),
+        ("public key configured for decryption",
+         {"ECS_TOKEN_DECRYPTION_JWK": _jwk("ecs-enc-2026-10", "enc", False)}, {"PRO-22"}),
+        ("ledger on an H2 file", {"quarkus.datasource.db-kind": "h2"}, {"PRO-22"}),
+        ("redemption handed back to a CAMARA server", {"sas.ecs.token.redeem-at-ecs": "false"},
+         {"PRO-22"}),
         ("ephemeral ECS signing key", {"sas.ecs.allow-ephemeral-signing-key": "true"},
          {"PRO-22"}),
         ("no binding source", {"ECS_BINDING_SOURCE_ORDER": "db"}, {"PRO-34"}),
@@ -1108,7 +1114,6 @@ MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
         ("legacy exchange left on", {"sas.entitlement.legacy-exchange-enabled": "true"},
          {"PRO-22"}),
         ("exposure surface on before M4", {"sas.exposure.enabled": "true"}, {"PRO-35"}),
-        ("ecs redemption before M3/M4", {"sas.ecs.token.redeem-at-ecs": "true"}, {"PRO-35"}),
     ],
 }
 

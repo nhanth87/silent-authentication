@@ -18,6 +18,7 @@ dist-ecs/
 *.mv.db
 *.trace.db
 sas-host/data/
+sas-ecs-host/data/
 
 # gradle / xcode noise for the SDK samples
 .gradle/

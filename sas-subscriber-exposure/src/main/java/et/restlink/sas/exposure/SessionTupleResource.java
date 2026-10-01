@@ -5,7 +5,7 @@
  * Copyright (c) 2026 Tran Nhan (nhanth87). All rights reserved.
  */
 
-package et.restlink.sas.api;
+package et.restlink.sas.exposure;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
@@ -28,7 +28,9 @@ import org.apache.logging.log4j.Logger;
 import java.util.Map;
 
 /**
- * UE session-tuple collector (P2 missing item #2).
+ * UE session-tuple collector (P2 missing item #2). Lives on the entitlement server's
+ * device surface (layered ADR D5): it feeds the resolver, and the resolver belongs to
+ * the operator trust zone.
  *
  * <p>Thin server-side hook for the UE SDK. The SDK on the device collects the
  * cellular bearer 5-tuple ({@code srcIp}, {@code srcPort}, {@code ts}) and
@@ -77,7 +79,7 @@ public class SessionTupleResource {
     private static final Logger LOG = LogManager.getLogger(SessionTupleResource.class);
 
     @Inject
-    SasVerifyEngine bootstrap;
+    ResolverAccess bootstrap;
 
     @Inject
     ApiKeyAuthenticator apiKeys;
@@ -132,6 +134,11 @@ public class SessionTupleResource {
 
         // Pilot: seed the in-memory resolver so the next /verify can match.
         ResolverBackend backend = bootstrap.resolverBackend();
+        if (backend == null) {
+            return Response.status(503)
+                    .entity(Map.of("code", "UNAVAILABLE", "message", "no resolver wired on this server"))
+                    .build();
+        }
         if (backend instanceof InMemoryResolverBackend inMemory) {
             inMemory.seed(body.srcIp(), srcPort, msisdn, imsi, 30_000L);
             LOG.info("[SAS] session-tuple registered {}:{} → {} accessTech={}",
