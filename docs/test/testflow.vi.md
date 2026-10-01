@@ -71,6 +71,16 @@ Các mục §0a–§9 bên dưới viết trước M3 ở những chỗ khởi �
 scripts/check-dependency-boundary.sh dist dist-ecs                # cả hai dòng phải OK
 ```
 
+Đóng gói lại đè lên dist đã có sẽ **giữ nguyên** `configs/*` (thuộc về operator) và ghi bản
+mặc định mới bên cạnh dưới dạng `*.new`. Dist cấu hình trước 2026-10-01 vẫn mang cấu hình
+gateway trước M3 (`ss7-sas.json`, danh sách issuer operator-token). Với dist lab, hãy bắt đầu
+từ cấu hình mặc định hiện tại:
+
+```bash
+for d in dist dist-ecs; do mkdir -p $d/configs/backup && mv $d/configs/*.properties* $d/configs/*.json* $d/configs/backup/ 2>/dev/null; done
+./scripts/package-dist.sh all                                     # cài cấu hình mới
+```
+
 ### 00.2 Khởi động bốn tiến trình (bốn terminal)
 
 ```bash
@@ -144,17 +154,42 @@ curl -s -X POST $CAM/camara/sim-swap/v2/check -H "Authorization: Bearer $AT" \
   -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" -d '{"maxAge":240}'
 # core live → 404 (không có evidence SIM-change)        evidence lab (00.5) → 200 {"swapped":false}
 
-# S7 — NV Authorization Code + PKCE, xác thực mạng bằng UE ID tại ECS
-#      (lệnh giống §0a A8; lời gọi /authorize mang X-Sas-Src-Ip/Port 10.20.30.40:55555)
-# core live → {"devicePhoneNumberVerified":false}  (log gateway: SIM_SWAP_SUSPECT)
+# S7 — NV Authorization Code + PKCE; xác thực mạng = UE ID retrieval tại ECS
+VERIFIER=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
+CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=\n')
+LOC=$(curl -s -o /dev/null -w '%{redirect_url}' -G $CAM/authorize \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  --data-urlencode response_type=code --data-urlencode client_id=bank-lab \
+  --data-urlencode redirect_uri=https://bank.example/cb \
+  --data-urlencode "scope=openid dpv:FraudPreventionAndDetection number-verification:verify" \
+  --data-urlencode state=s --data-urlencode nonce=n \
+  --data-urlencode "code_challenge=$CHALLENGE" --data-urlencode code_challenge_method=S256)
+CODE=$(sed -E 's/.*[?&]code=([^&]+).*/\1/' <<<"$LOC")
+NVAT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=authorization_code \
+  --data-urlencode "code=$CODE" --data-urlencode redirect_uri=https://bank.example/cb \
+  --data-urlencode "code_verifier=$VERIFIER" --data-urlencode client_id=bank-lab | jq -r .access_token)
+curl -s -X POST $CAM/camara/number-verification/v2/verify -H "Authorization: Bearer $NVAT" \
+  -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' -d '{"phoneNumber":"+251911111111"}'
+# core live → {"devicePhoneNumberVerified":false}  (log gateway trong dist/logs: SIM_SWAP_SUSPECT)
 # evidence lab (00.5) → {"devicePhoneNumberVerified":true}; câu trả lời không bao giờ nêu nguồn evidence
 
 # S8 — ranh giới runtime: gateway không có socket SCTP, sas-ecs có
-scripts/check-no-sctp.sh <pid-sas-camara> sas-camara     # OK … owns no SCTP endpoint
-scripts/check-no-sctp.sh <pid-sas-ecs> sas-ecs           # FAIL … owns SCTP socket inode(s) — đúng kỳ vọng
+scripts/check-no-sctp.sh "$(pgrep -f '^[^ ]*java .*/dist/quarkus-run\.jar')" sas-camara       # OK … owns no SCTP endpoint
+scripts/check-no-sctp.sh "$(pgrep -f '^[^ ]*java .*/dist-ecs/quarkus-run\.jar')" sas-ecs      # FAIL … owns SCTP socket inode(s) — đúng kỳ vọng
 ```
 
-### 00.5 Biến thể evidence lab
+### 00.5 Biến thể evidence lab, và profile prod trên máy mình
+
+Subscriber exposure API **bật sẵn ở profile lab** (cả hai dist ở trên đều chạy lab).
+**Profile prod cố ý tắt nó**: chặng exposure chưa có xác thực client cho tới bước M4, nên ai
+chạm tới :8095 cũng tra được IP→MSISDN hoặc tiêu token (preflight PRO-35). Muốn thử profile
+prod trên máy local, chỉ bật cho đúng lần chạy đó — không sửa trong file:
+
+```bash
+(cd dist-ecs && QUARKUS_PROFILE=prod SAS_EXPOSURE_ENABLED=true ECS_…=… ./run.sh)   # kèm các biến ECS_* của application-prod.properties
+```
+
 
 Khởi động lại T3 **không** có `SAS_TRANSPORT_MAP=jss7`. Khi đó monitoring MAP trả lời từ
 backend HLR lab, SIM change lấy từ tuổi binding đã seed, `evidenceSource` là `LAB_HLR`.

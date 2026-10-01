@@ -72,6 +72,16 @@ those steps are marked **pre-M3**.
 scripts/check-dependency-boundary.sh dist dist-ecs                # both lines must be OK
 ```
 
+Re-packaging over an existing dist **keeps** its `configs/*` (operator-owned) and writes the
+new defaults next to them as `*.new`. A dist configured before 2026-10-01 still carries the
+pre-M3 gateway config (`ss7-sas.json`, operator-token issuers). For a lab dist, start from
+the current defaults:
+
+```bash
+for d in dist dist-ecs; do mkdir -p $d/configs/backup && mv $d/configs/*.properties* $d/configs/*.json* $d/configs/backup/ 2>/dev/null; done
+./scripts/package-dist.sh all                                     # installs fresh configs
+```
+
 ### 00.2 Start four processes (four terminals)
 
 ```bash
@@ -145,17 +155,43 @@ curl -s -X POST $CAM/camara/sim-swap/v2/check -H "Authorization: Bearer $AT" \
   -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" -d '{"maxAge":240}'
 # live core → 404 (no SIM-change evidence)        lab evidence (00.5) → 200 {"swapped":false}
 
-# S7 — NV Authorization Code + PKCE, network authentication by UE ID at the ECS
-#      (same commands as §0a A8; the /authorize call carries X-Sas-Src-Ip/Port 10.20.30.40:55555)
-# live core → {"devicePhoneNumberVerified":false}  (gateway log: SIM_SWAP_SUSPECT)
+# S7 — NV Authorization Code + PKCE; network authentication = UE ID retrieval at the ECS
+VERIFIER=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
+CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=\n')
+LOC=$(curl -s -o /dev/null -w '%{redirect_url}' -G $CAM/authorize \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' \
+  --data-urlencode response_type=code --data-urlencode client_id=bank-lab \
+  --data-urlencode redirect_uri=https://bank.example/cb \
+  --data-urlencode "scope=openid dpv:FraudPreventionAndDetection number-verification:verify" \
+  --data-urlencode state=s --data-urlencode nonce=n \
+  --data-urlencode "code_challenge=$CHALLENGE" --data-urlencode code_challenge_method=S256)
+CODE=$(sed -E 's/.*[?&]code=([^&]+).*/\1/' <<<"$LOC")
+NVAT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=authorization_code \
+  --data-urlencode "code=$CODE" --data-urlencode redirect_uri=https://bank.example/cb \
+  --data-urlencode "code_verifier=$VERIFIER" --data-urlencode client_id=bank-lab | jq -r .access_token)
+curl -s -X POST $CAM/camara/number-verification/v2/verify -H "Authorization: Bearer $NVAT" \
+  -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" \
+  -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' -d '{"phoneNumber":"+251911111111"}'
+# live core → {"devicePhoneNumberVerified":false}  (gateway log dist/logs: SIM_SWAP_SUSPECT)
 # lab evidence (00.5) → {"devicePhoneNumberVerified":true}; the answer never names an evidence source
 
 # S8 — runtime boundary: the gateway owns no SCTP socket, sas-ecs does
-scripts/check-no-sctp.sh <sas-camara-pid> sas-camara     # OK … owns no SCTP endpoint
-scripts/check-no-sctp.sh <sas-ecs-pid> sas-ecs           # FAIL … owns SCTP socket inode(s) — expected
+scripts/check-no-sctp.sh "$(pgrep -f '^[^ ]*java .*/dist/quarkus-run\.jar')" sas-camara       # OK … owns no SCTP endpoint
+scripts/check-no-sctp.sh "$(pgrep -f '^[^ ]*java .*/dist-ecs/quarkus-run\.jar')" sas-ecs      # FAIL … owns SCTP socket inode(s) — expected
 ```
 
-### 00.5 Lab-evidence variant
+### 00.5 Lab-evidence variant, and the prod profile on your own machine
+
+The subscriber exposure API is **on in the lab profile** (both dists above run lab). The
+**prod profile keeps it off** on purpose: the exposure hop has no client authentication
+until migration step M4, so anyone reaching :8095 could resolve IP→MSISDN or spend tokens
+(preflight PRO-35). To try the prod profile locally, switch it on for that run only —
+never in the file:
+
+```bash
+(cd dist-ecs && QUARKUS_PROFILE=prod SAS_EXPOSURE_ENABLED=true ECS_…=… ./run.sh)   # plus the ECS_* env of application-prod.properties
+```
+
 
 Restart T3 without `SAS_TRANSPORT_MAP=jss7` (MAP monitoring then answers from the lab HLR
 backend, SIM change from its seeded binding age, `evidenceSource` `LAB_HLR`). EAP-AKA still
