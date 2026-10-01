@@ -95,9 +95,13 @@ expect "(b1) same reqId again -> the recorded answer (idempotent, no new dialog)
 expect "(b2) reqId with no challenge -> no outstanding challenge" \
   "$(respond "ts43-00000000-0000-0000-0000-000000000000" "$R" +251911111111)" \
   "no outstanding challenge"
+T0=$(date +%s%3N)
 expect "(c) unknown IMSI -> no vector" \
   "$(curl -sS "$ECS_URL/ts43/challenge?imsi=655010000009999&msisdn=%2B251911111111")" \
   "no authentication vector available"
+MS=$(( $(date +%s%3N) - T0 ))
+# returnError must end the request at once, not after the 2 s MAP budget
+expect "(c') SAI returnError answered in ${MS} ms (< 1000)" "$(( MS < 1000 ))" "1"
 CJ=$(curl -sS "$ECS_URL/ts43/challenge?imsi=655010000000001&msisdn=%2B251900000000")
 R=$(card 655010000000001 "$(field "$CJ" challenge)")
 expect "(d) number the HLR does not know -> not confirmed, no token" \

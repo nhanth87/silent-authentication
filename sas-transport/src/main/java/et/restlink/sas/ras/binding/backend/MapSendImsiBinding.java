@@ -225,6 +225,21 @@ public final class MapSendImsiBinding
             out.complete(SubscriberBinding.unresolved(provedImsi, name() + "-error"));
             return out;
         }
+        long dialogId = dialog.getLocalDialogId();
+        var sent = dialog;
+        // A budget expiry is the one ending no listener sees: drop the entries and abort
+        // the dialog here so neither the maps nor TCAP keep it.
+        out.whenComplete((binding, error) -> {
+            if (error instanceof java.util.concurrent.TimeoutException
+                    && pending.remove(dialogId, out)) {
+                claims.remove(dialogId);
+                try {
+                    sent.abort(null);
+                } catch (Exception e) {
+                    LOG.debug("[binding] abort after budget expiry failed", e);
+                }
+            }
+        });
         out.orTimeout(SasTimeouts.MAP_MS, TimeUnit.MILLISECONDS)
                 .exceptionally(error -> {
                     LOG.warn("[binding] SendIMSI did not complete — unresolved", error);

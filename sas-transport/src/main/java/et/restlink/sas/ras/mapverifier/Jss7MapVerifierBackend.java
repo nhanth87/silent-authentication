@@ -332,7 +332,17 @@ public final class Jss7MapVerifierBackend
         MAPDialogMobility dialog = null;
         try {
             dialog = openDialog(MAPApplicationContextName.infoRetrievalContext);
-            vectorPending.put(dialog.getLocalDialogId(), out);
+            Long dialogId = dialog.getLocalDialogId();
+            vectorPending.put(dialogId, out);
+            MAPDialogMobility sent = dialog;
+            // Every ending (answer, returnError, abort, budget) clears the entry; only a
+            // budget expiry still owns a live dialog, so only that path aborts it.
+            out.whenComplete((vector, error) -> {
+                vectorPending.remove(dialogId, out);
+                if (error instanceof TimeoutException) {
+                    abortDialog(sent);
+                }
+            });
             IMSI imsiParam = mapProvider.getMAPParameterFactory().createIMSI(imsi);
             if (auts != null) {
                 // RFC 4187 §4.4: resync carries RAND||AUTS in the re-synchronisation info.
@@ -356,9 +366,10 @@ public final class Jss7MapVerifierBackend
             return out;
         }
         out.orTimeout(SasTimeouts.MAP_MS, TimeUnit.MILLISECONDS)
-                .exceptionally(error -> {
-                    LOG.warn("[auth-vector] SAI did not complete — no vector", error);
-                    return null;
+                .whenComplete((vector, error) -> {
+                    if (error != null) {
+                        LOG.warn("[auth-vector] SAI did not complete — no vector: {}", error.toString());
+                    }
                 });
         return out;
     }
@@ -466,7 +477,7 @@ public final class Jss7MapVerifierBackend
     public void onSendAuthenticationInfoResponse(SendAuthenticationInfoResponse resp) {
         MAPDialog dialog = resp.getMAPDialog();
         Long dialogId = dialog.getLocalDialogId();
-        CompletableFuture<AuthVector> vectorFuture = vectorPending.get(dialogId);
+        CompletableFuture<AuthVector> vectorFuture = vectorPending.remove(dialogId);
         CompletableFuture<Boolean> future = saiPending.get(dialogId);
         if (vectorFuture == null && future == null) {
             return;
@@ -488,7 +499,12 @@ public final class Jss7MapVerifierBackend
                 future.complete(fresh);
             }
         } catch (Exception e) {
-            future.complete(Boolean.FALSE);
+            if (vectorFuture != null) {
+                vectorFuture.completeExceptionally(e);
+            }
+            if (future != null) {
+                future.complete(Boolean.FALSE);
+            }
         }
     }
 
@@ -532,6 +548,13 @@ public final class Jss7MapVerifierBackend
         CompletableFuture<Boolean> sai = saiPending.remove(dialogId);
         if (sai != null) {
             sai.complete(Boolean.FALSE);
+        }
+        // Entitlement path: a returnError / reject / abort is a final "no vector" now,
+        // not after the 2 s budget.
+        CompletableFuture<AuthVector> vector = vectorPending.remove(dialogId);
+        if (vector != null) {
+            vector.completeExceptionally(new IllegalStateException(
+                    "MAP dialog ended without a vector (" + why + ")"));
         }
     }
 
