@@ -1,0 +1,690 @@
+# Silent Auth SAS — Restlink (Ethiopia).
+# Subscriber exposure API between sas-camara (CAMARA API gateway) and sas-ecs.
+#
+# Copyright (c) 2026 Tran Nhan (nhanth87). All rights reserved.
+#
+# Design record: docs/design/sas-layered-architecture.md (§4, §5, §7).
+# Field names follow the 3GPP OpenAPI definitions named in each operation; no 3GPP text is
+# reproduced here. Every place this profile departs from 3GPP is listed under `x-deviation`.
+openapi: 3.1.0
+
+info:
+  title: SAS subscriber exposure API
+  version: 1.0.0-draft.1
+  summary: 3GPP-inspired subscriber exposure between the CAMARA gateway and the entitlement server.
+  description: |
+    Internal API of the Restlink Silent Auth Service. **Caller: sas-camara only.**
+    Served by sas-ecs inside the operator trust zone; devices never reach it.
+
+    This is a REST API *inspired by* 3GPP network exposure semantics
+    (TS 29.522 UEId, TS 29.122 MonitoringEvent). It is **not** a conformant NEF/SCEF
+    implementation and sas-ecs is not an NEF. Two operations (`sim-change`,
+    `operator-token`) are vendor extensions with no 3GPP counterpart.
+
+    Common rules:
+    * **Fail closed.** Missing evidence is an error response, never a negative-but-successful
+      answer. A caller that receives anything other than 200 must not approve.
+    * **Idempotency.** `X-Request-Id` + operation is the dedup key for 60 s. A repeat with the
+      same key and body returns the recorded answer and opens no new MAP/Diameter dialog.
+      This also holds for `operator-token/redeem`: a retried redeem after a lost response
+      returns the recorded 200 instead of burning the token into a 401.
+    * **Budget.** `X-Sas-Budget-Ms` is what the caller can still wait. sas-ecs clamps every
+      network stage to it, aborts dialogs it can no longer use, and answers 504
+      `BUDGET_EXHAUSTED` without signalling when the budget cannot cover one stage.
+    * **Privacy.** IMSI never appears in any response. MSISDN leaves sas-ecs only towards
+      sas-camara, which never returns it to the mobile app.
+    * **Audit.** `evidenceSource` is internal. sas-camara writes it to its CDR and never
+      returns it on a CAMARA response.
+  x-reference-specs:
+    - 3GPP TS 29.522 V18.4.0 (OpenAPI 3gpp-ueid 1.1.0-alpha.2)
+    - 3GPP TS 29.122 V18.5.0 (OpenAPI 3gpp-monitoring-event 1.3.0-alpha.5, CommonData)
+    - 3GPP TS 29.571 (CommonData — Gpsi, IpAddr)
+    - 3GPP TS 23.003 clause 3.3 (MSISDN)
+    - RFC 8705 (OAuth 2.0 mutual-TLS client authentication and certificate-bound tokens)
+    - RFC 9457 (problem details)
+
+servers:
+  - url: '{apiRoot}/sas-subscriber-exposure/v1'
+    variables:
+      apiRoot:
+        default: https://sas-ecs.operator.internal:8095
+        description: sas-ecs base URL; HTTPS only outside the lab profile.
+
+security:
+  - mtls: []
+    oAuth2ClientCredentials: []
+
+tags:
+  - name: UE identity
+  - name: Monitoring
+  - name: SIM change (extension)
+  - name: Operator token (extension)
+
+paths:
+
+  /ue-id/retrieve:
+    post:
+      tags: [UE identity]
+      summary: Resolve the subscriber behind a bearer IP:port at a point in time.
+      description: |
+        Modelled on 3GPP UE ID retrieval (`3gpp-ueid` `POST /retrieve`, TS 29.522).
+        Used by Number Verification network authentication. sas-ecs answers from the
+        operator binding sources (PCRF Gx/Sd, RADIUS accounting, CGNAT log) and never
+        from a device declaration.
+      operationId: RetrieveUeId
+      x-required-scope: exposure:ue-id
+      x-sas-stage-budget-ms: 300
+      x-deviation:
+        - field: UeIdInfo.externalId
+          3gpp: mandatory AF-specific external identifier
+          here: replaced by `gpsi` (msisdn-<digits>)
+          why: CAMARA NV compares a phone number. The caller is the operator-side gateway, so
+            no pseudonym is needed on this hop; the phone number still never reaches the app.
+            A future mapping onto a real NEF has to obtain the GPSI from the operator.
+        - field: UeIdReq.portNumber
+          3gpp: optional
+          here: mandatory
+          why: CGNAT invariant (IP + port + timestamp).
+        - field: UeIdReq.observedAt
+          3gpp: not defined
+          here: mandatory extension
+          why: the binding read is point-in-time, never "latest".
+        - field: UeIdReq.ueMacAddr
+          3gpp: alternative to ueIpAddr
+          here: not supported (400)
+          why: no fixed-access / MAC-based exposure in scope.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XSasBudgetMs'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UeIdReq'
+            example:
+              afId: sas-camara
+              ueIpAddr: {ipv4Addr: 10.20.30.40}
+              portNumber: 55555
+              observedAt: '2026-10-01T06:00:00.000Z'
+      responses:
+        '200':
+          description: Exactly one subscriber holds the binding at `observedAt`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UeIdInfo'
+              example:
+                gpsi: msisdn-251911111111
+                bindingObservedAt: '2026-10-01T05:59:58.120Z'
+                evidenceSource: GX
+        '400': {$ref: '#/components/responses/400'}
+        '401': {$ref: '#/components/responses/401'}
+        '403': {$ref: '#/components/responses/403'}
+        '404':
+          description: '`NO_BINDING` — no subscriber holds this IP:port at that time.'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '409':
+          description: '`AMBIGUOUS_BINDING` — more than one subscriber matches (CGNAT); refused.'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '429': {$ref: '#/components/responses/429'}
+        '500': {$ref: '#/components/responses/500'}
+        '502': {$ref: '#/components/responses/502'}
+        '503': {$ref: '#/components/responses/503'}
+        '504': {$ref: '#/components/responses/504'}
+
+  /monitoring-event/{scsAsId}/subscriptions:
+    post:
+      tags: [Monitoring]
+      summary: One-time, immediate subscriber monitoring report.
+      description: |
+        Modelled on 3GPP T8 Monitoring Event (`3gpp-monitoring-event`
+        `POST /{scsAsId}/subscriptions`, TS 29.122) in its "immediate report" form: the
+        answer is always `200` carrying the report(s). No subscription resource is ever
+        created, so there is nothing to read, update or delete afterwards.
+        Supported types: `UE_REACHABILITY`, `LOCATION_REPORTING` (one MAP PSI dialog, or
+        S6a/Sh on the LTE path, serves both).
+      operationId: CreateMonitoringEventSubscription
+      x-required-scope: exposure:monitoring
+      x-sas-stage-budget-ms: 2000
+      x-deviation:
+        - field: notificationDestination
+          3gpp: mandatory
+          here: not used
+          why: synchronous one-time profile; no callbacks, no subscription state.
+        - field: maximumNumberOfReports / immediateRep
+          3gpp: either maximumNumberOfReports or monitorExpireTime; immediateRep optional
+          here: maximumNumberOfReports must be 1 and immediateRep must be true
+          why: same synchronous profile.
+        - field: 201 Created / GET / PUT / PATCH / DELETE
+          3gpp: subscription resource lifecycle
+          here: not offered; 200 with the report is the only success
+          why: no resource is created.
+        - field: monitoringType / addnMonTypes
+          3gpp: full MonitoringType enumeration
+          here: only UE_REACHABILITY and LOCATION_REPORTING (others → 400)
+          why: what the MAP/Diameter verifier can attest today.
+        - field: locationType
+          3gpp: CURRENT_LOCATION, LAST_KNOWN_LOCATION, …
+          here: LAST_KNOWN_LOCATION only
+          why: PSI is sent without a current-location request (no paging).
+        - field: MonitoringEventReport.locationInfo
+          3gpp: cell / TA / RA / geographic detail
+          here: only ageOfLocationInfo; plmnId at report level
+          why: data minimisation — no cell identity crosses to the gateway.
+        - field: MonitoringEventReport.ueReachable, MonitoringEventReports.evidenceSource
+          3gpp: not defined
+          here: extensions
+          why: an immediate one-time report needs an explicit yes/no; audit source.
+        - field: externalId
+          3gpp: externalId or msisdn identifies the UE
+          here: msisdn only
+          why: no external-identifier provisioning in scope.
+      parameters:
+        - name: scsAsId
+          in: path
+          required: true
+          description: Identifier of the calling AF — the sas-camara instance id; must match
+            the client the access token was issued to.
+          schema: {type: string, minLength: 1, maxLength: 64}
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XSasBudgetMs'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MonitoringEventSubscription'
+            example:
+              msisdn: '251911111111'
+              monitoringType: UE_REACHABILITY
+              addnMonTypes: [LOCATION_REPORTING]
+              locationType: LAST_KNOWN_LOCATION
+              maximumNumberOfReports: 1
+              immediateRep: true
+      responses:
+        '200':
+          description: Immediate report, one entry per requested type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitoringEventReports'
+              example:
+                monitoringEventReports:
+                  - monitoringType: UE_REACHABILITY
+                    msisdn: '251911111111'
+                    ueReachable: true
+                    eventTime: '2026-10-01T06:00:00.410Z'
+                  - monitoringType: LOCATION_REPORTING
+                    msisdn: '251911111111'
+                    plmnId: {mcc: '636', mnc: '01'}
+                    locationInfo: {ageOfLocationInfo: 4}
+                    eventTime: '2026-10-01T06:00:00.410Z'
+                evidenceSource: MAP_PSI
+        '400': {$ref: '#/components/responses/400'}
+        '401': {$ref: '#/components/responses/401'}
+        '403': {$ref: '#/components/responses/403'}
+        '404':
+          description: '`SUBSCRIBER_NOT_FOUND` — the own HLR/HSS does not know the subscriber.'
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '429': {$ref: '#/components/responses/429'}
+        '500': {$ref: '#/components/responses/500'}
+        '502': {$ref: '#/components/responses/502'}
+        '503': {$ref: '#/components/responses/503'}
+        '504': {$ref: '#/components/responses/504'}
+
+  /sim-change/retrieve:
+    post:
+      tags: [SIM change (extension)]
+      summary: Latest SIM change known to the operator for a subscriber.
+      description: |
+        Vendor extension. 3GPP defines no SIM-change exposure; T8
+        `CHANGE_OF_IMSI_IMEI_ASSOCIATION` reports a *device* (IMEI) change and could back
+        CAMARA Device Swap later. Written in T8 style (`msisdn`, `eventTime`,
+        problem details).
+
+        sas-ecs walks the configured source order (`map-smi`, `db`, `sh-udr`, `swx-sar`,
+        later `udm`); the caller never chooses the source. Backs CAMARA SIM Swap
+        `check` / `retrieve-date` and the NV factor `notSimSwapped`.
+      operationId: RetrieveSimChange
+      x-required-scope: exposure:sim-change
+      x-sas-stage-budget-ms: 2000
+      x-deviation:
+        - field: whole operation
+          3gpp: not defined
+          here: extension
+          why: CAMARA SIM Swap needs it; no 3GPP API exists.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XSasBudgetMs'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimChangeReq'
+            example: {afId: sas-camara, msisdn: '251911111111'}
+      responses:
+        '200':
+          description: A source holds evidence of the latest SIM change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimChangeInfo'
+              example:
+                msisdn: '251911111111'
+                latestSimChange: '2026-09-01T10:00:00Z'
+                eventTime: '2026-10-01T06:00:00.390Z'
+                evidenceSource: HLR_SIM_DB
+        '400': {$ref: '#/components/responses/400'}
+        '401': {$ref: '#/components/responses/401'}
+        '403': {$ref: '#/components/responses/403'}
+        '404':
+          description: |
+            `NO_EVIDENCE` — no source could say when the SIM last changed. Fail-closed: the
+            caller must never turn this into "not swapped".
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '429': {$ref: '#/components/responses/429'}
+        '500': {$ref: '#/components/responses/500'}
+        '502': {$ref: '#/components/responses/502'}
+        '503': {$ref: '#/components/responses/503'}
+        '504': {$ref: '#/components/responses/504'}
+
+  /operator-token/redeem:
+    post:
+      tags: [Operator token (extension)]
+      summary: Redeem a TS.43 operator token, exactly once.
+      description: |
+        Vendor extension. CAMARA ICM accepts a TS.43 token as
+        `login_hint=operatortoken:<token>` (CIBA) or `sub=operatortoken:<token>`
+        (JWT bearer) and leaves "how the API Provider validates the token with the
+        Entitlement Server" out of scope; this operation is that validation.
+
+        sas-ecs issued the token (after EAP-AKA on `/ts43`) and is its only redeemer: it
+        decrypts and verifies it, checks issuer, audience (itself), type and lifetime, and
+        records the `jti` in its single-use ledger. sas-camara forwards the token unchanged
+        and holds no key for it.
+
+        Every refusal is the same `401 INVALID_TOKEN` (malformed, bad signature, wrong
+        audience, expired, already redeemed), so the answer is no oracle.
+      operationId: RedeemOperatorToken
+      x-required-scope: exposure:operator-token
+      x-sas-stage-budget-ms: 200
+      x-deviation:
+        - field: whole operation
+          3gpp: not defined (GSMA TS.43 covers issuance to the device only)
+          here: extension, RFC 7662-like but single use
+          why: D3 — redemption at the entitlement server.
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XSasBudgetMs'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorTokenRedeemReq'
+            example:
+              afId: sas-camara
+              operatorToken: eyJlcGsiOnsia3R5IjoiRUMi…
+              clientId: bank-a-backend
+      responses:
+        '200':
+          description: The token was valid and is now consumed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriberVerificationResult'
+              example:
+                msisdn: '251911111111'
+                authMethod: EAP-AKA
+                authenticatedAt: '2026-10-01T05:59:41Z'
+                simVerified: true
+                tokenId: 3f0c2b0e-8d1a-4b52-9a49-0f7e4a1c2d11
+        '400': {$ref: '#/components/responses/400'}
+        '401':
+          description: |
+            `INVALID_TOKEN` for the operator token, or a failed client authentication
+            (`cause` tells them apart; the token reason is never disclosed).
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '403': {$ref: '#/components/responses/403'}
+        '429': {$ref: '#/components/responses/429'}
+        '500': {$ref: '#/components/responses/500'}
+        '503': {$ref: '#/components/responses/503'}
+        '504': {$ref: '#/components/responses/504'}
+
+components:
+
+  securitySchemes:
+    mtls:
+      type: mutualTLS
+      description: |
+        TLS client certificate issued to sas-camara and pinned by sas-ecs. Required on every
+        `/sas-subscriber-exposure/**` request. The device surface (`/ts43/**`,
+        `/session-tuple`) runs a separate authentication policy and cannot reach this API.
+    oAuth2ClientCredentials:
+      type: oauth2
+      description: |
+        Access token from the sas-ecs exposure token endpoint: grant `client_credentials`,
+        client authentication `tls_client_auth` (RFC 8705 §2.1), ES256 `at+jwt`,
+        `aud` = this API, certificate-bound (`cnf.x5t#S256`, RFC 8705 §3), lifetime ≤ 300 s.
+        Pattern after CAPIF (TS 33.122); CAPIF itself is not implemented.
+      flows:
+        clientCredentials:
+          tokenUrl: '{apiRoot}/sas-subscriber-exposure/oauth2/token'
+          scopes:
+            exposure:ue-id: RetrieveUeId
+            exposure:monitoring: CreateMonitoringEventSubscription (immediate report)
+            exposure:sim-change: RetrieveSimChange
+            exposure:operator-token: RedeemOperatorToken
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: true
+      description: The CAMARA request id (`reqId`). Dedup key together with the operation.
+      schema: {type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9._:-]+$'}
+    XSasBudgetMs:
+      name: X-Sas-Budget-Ms
+      in: header
+      required: true
+      description: Milliseconds the caller can still wait. sas-ecs never signals past it.
+      schema: {type: integer, minimum: 1, maximum: 3000}
+
+  responses:
+    '400':
+      description: '`INVALID_ARGUMENT` / `UNSUPPORTED_MONITORING_TYPE` / `UNSUPPORTED_ADDRESS_TYPE`.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    '401':
+      description: '`CLIENT_UNAUTHENTICATED` — missing/invalid access token or certificate binding.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    '403':
+      description: '`SCOPE_MISSING` or `AF_MISMATCH` (`afId`/`scsAsId` is not the token client).'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    '429':
+      description: '`TOO_MANY_REQUESTS` — per-client rate limit.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    '500':
+      description: '`INTERNAL_ERROR`.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    '502':
+      description: '`NETWORK_ERROR` — the core answered with an error, reject or abort.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    '503':
+      description: '`TRANSPORT_UNAVAILABLE` — no association/peer up for the needed source.'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+    '504':
+      description: '`NETWORK_TIMEOUT` (dialog aborted) or `BUDGET_EXHAUSTED` (nothing sent).'
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ProblemDetails'}
+
+  schemas:
+
+    Msisdn:
+      description: MSISDN per 3GPP TS 23.003 clause 3.3 — digits only, no leading "+".
+      type: string
+      pattern: '^[0-9]{5,15}$'
+
+    Gpsi:
+      description: GPSI per 3GPP TS 29.571; this API only ever returns the MSISDN form.
+      type: string
+      pattern: '^msisdn-[0-9]{5,15}$'
+
+    AfId:
+      description: Identifier of the calling AF (the sas-camara instance); must equal the token client.
+      type: string
+      minLength: 1
+      maxLength: 64
+
+    IpAddr:
+      description: As TS 29.571 IpAddr, without the IPv6-prefix alternative.
+      type: object
+      oneOf:
+        - required: [ipv4Addr]
+        - required: [ipv6Addr]
+      properties:
+        ipv4Addr: {type: string, format: ipv4}
+        ipv6Addr: {type: string, format: ipv6}
+      additionalProperties: false
+
+    PlmnId:
+      type: object
+      required: [mcc, mnc]
+      properties:
+        mcc: {type: string, pattern: '^[0-9]{3}$'}
+        mnc: {type: string, pattern: '^[0-9]{2,3}$'}
+      additionalProperties: false
+
+    EvidenceSource:
+      description: |
+        Internal audit value — which source produced the answer. Open set; values in use:
+        GX, RADIUS, CGNAT_LOG, MAP_PSI, MAP_SAI, MAP_SEND_IMSI, HLR_SIM_DB, S6A_ULR,
+        SH_UDR, SWX_SAR. Never returned on a CAMARA response.
+      type: string
+      pattern: '^[A-Z0-9_]{2,32}$'
+
+    UeIdReq:
+      type: object
+      required: [afId, ueIpAddr, portNumber, observedAt]
+      properties:
+        afId: {$ref: '#/components/schemas/AfId'}
+        ueIpAddr: {$ref: '#/components/schemas/IpAddr'}
+        portNumber:
+          description: Source port as seen after CGNAT.
+          type: integer
+          minimum: 1
+          maximum: 65535
+        observedAt:
+          description: When the gateway saw the connection (extension).
+          type: string
+          format: date-time
+        dnn:
+          description: Optional APN/DNN hint (TS 29.571 Dnn); narrows the binding lookup.
+          type: string
+      additionalProperties: false
+
+    UeIdInfo:
+      type: object
+      required: [gpsi, bindingObservedAt, evidenceSource]
+      properties:
+        gpsi: {$ref: '#/components/schemas/Gpsi'}
+        bindingObservedAt:
+          description: When the operator source recorded the binding.
+          type: string
+          format: date-time
+        evidenceSource: {$ref: '#/components/schemas/EvidenceSource'}
+      additionalProperties: false
+
+    MonitoringType:
+      type: string
+      enum: [UE_REACHABILITY, LOCATION_REPORTING]
+
+    MonitoringEventSubscription:
+      type: object
+      required: [msisdn, monitoringType, maximumNumberOfReports, immediateRep]
+      properties:
+        msisdn: {$ref: '#/components/schemas/Msisdn'}
+        monitoringType: {$ref: '#/components/schemas/MonitoringType'}
+        addnMonTypes:
+          type: array
+          items: {$ref: '#/components/schemas/MonitoringType'}
+          maxItems: 1
+          uniqueItems: true
+        locationType:
+          type: string
+          enum: [LAST_KNOWN_LOCATION]
+          default: LAST_KNOWN_LOCATION
+        maximumNumberOfReports:
+          type: integer
+          const: 1
+        immediateRep:
+          type: boolean
+          const: true
+      additionalProperties: false
+
+    MonitoringEventReport:
+      type: object
+      required: [monitoringType, msisdn, eventTime]
+      properties:
+        monitoringType: {$ref: '#/components/schemas/MonitoringType'}
+        msisdn: {$ref: '#/components/schemas/Msisdn'}
+        eventTime: {type: string, format: date-time}
+        ueReachable:
+          description: Extension; present for UE_REACHABILITY.
+          type: boolean
+        plmnId:
+          description: Present for LOCATION_REPORTING when known (serving PLMN).
+          $ref: '#/components/schemas/PlmnId'
+        locationInfo:
+          description: Present for LOCATION_REPORTING; age only, no cell identity.
+          type: object
+          required: [ageOfLocationInfo]
+          properties:
+            ageOfLocationInfo:
+              description: Minutes since the location was last updated (TS 29.122 DurationMin).
+              type: integer
+              minimum: 0
+          additionalProperties: false
+      additionalProperties: false
+
+    MonitoringEventReports:
+      type: object
+      required: [monitoringEventReports, evidenceSource]
+      properties:
+        monitoringEventReports:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items: {$ref: '#/components/schemas/MonitoringEventReport'}
+        evidenceSource: {$ref: '#/components/schemas/EvidenceSource'}
+      additionalProperties: false
+
+    SimChangeReq:
+      type: object
+      required: [afId, msisdn]
+      properties:
+        afId: {$ref: '#/components/schemas/AfId'}
+        msisdn: {$ref: '#/components/schemas/Msisdn'}
+      additionalProperties: false
+
+    SimChangeInfo:
+      type: object
+      required: [msisdn, latestSimChange, eventTime, evidenceSource]
+      properties:
+        msisdn: {$ref: '#/components/schemas/Msisdn'}
+        latestSimChange:
+          description: When the SIM currently serving the MSISDN was bound to it.
+          type: string
+          format: date-time
+        eventTime:
+          description: When sas-ecs obtained the evidence.
+          type: string
+          format: date-time
+        evidenceSource: {$ref: '#/components/schemas/EvidenceSource'}
+      additionalProperties: false
+
+    OperatorTokenRedeemReq:
+      type: object
+      required: [afId, operatorToken, clientId]
+      properties:
+        afId: {$ref: '#/components/schemas/AfId'}
+        operatorToken:
+          description: The token as received, without the `operatortoken:` prefix.
+          type: string
+          minLength: 16
+          maxLength: 8192
+        clientId:
+          description: CAMARA OAuth client on whose behalf the gateway redeems (audit).
+          type: string
+          minLength: 1
+          maxLength: 128
+      additionalProperties: false
+
+    SubscriberVerificationResult:
+      description: What a successful redemption proves; called the subscriber verification result.
+      type: object
+      required: [msisdn, authMethod, authenticatedAt, simVerified, tokenId]
+      properties:
+        msisdn: {$ref: '#/components/schemas/Msisdn'}
+        authMethod:
+          description: The mechanism that actually ran. EAP-AKA' is not offered until implemented.
+          type: string
+          enum: [EAP-AKA]
+        authenticatedAt:
+          description: Token `iat` — when EAP-AKA completed.
+          type: string
+          format: date-time
+        simVerified:
+          type: boolean
+          const: true
+        tokenId:
+          description: Token `jti`, for CDR correlation only.
+          type: string
+      additionalProperties: false
+
+    ProblemDetails:
+      description: Shape of TS 29.122 ProblemDetails (RFC 9457 compatible); `cause` carries the codes above.
+      type: object
+      required: [status, cause]
+      properties:
+        type: {type: string, format: uri}
+        title: {type: string}
+        status: {type: integer}
+        detail:
+          description: Never contains an IMSI, a token, or the reason a token was refused.
+          type: string
+        instance: {type: string}
+        cause:
+          type: string
+          enum:
+            - INVALID_ARGUMENT
+            - UNSUPPORTED_MONITORING_TYPE
+            - UNSUPPORTED_ADDRESS_TYPE
+            - CLIENT_UNAUTHENTICATED
+            - SCOPE_MISSING
+            - AF_MISMATCH
+            - NO_BINDING
+            - AMBIGUOUS_BINDING
+            - SUBSCRIBER_NOT_FOUND
+            - NO_EVIDENCE
+            - INVALID_TOKEN
+            - TOO_MANY_REQUESTS
+            - INTERNAL_ERROR
+            - NETWORK_ERROR
+            - TRANSPORT_UNAVAILABLE
+            - NETWORK_TIMEOUT
+            - BUDGET_EXHAUSTED
+        invalidParams:
+          type: array
+          items:
+            type: object
+            required: [param]
+            properties:
+              param: {type: string}
+              reason: {type: string}
