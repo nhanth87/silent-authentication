@@ -121,9 +121,14 @@ curl -s -X POST $E/monitoring-event/sas-camara/subscriptions "${H[@]}" \
 # → 200 … "ueReachable":true … "plmnId":{"mcc":"636","mnc":"01"},"locationInfo":{"ageOfLocationInfo":1} … "evidenceSource":"MAP_PSI"
 #   unknown number 251900000000 → 404 SUBSCRIBER_NOT_FOUND
 
-# S3 — SIM change on live transports
+# S3 — SIM change on live transports (re-verified 2026-10-01)
 curl -s -X POST $E/sim-change/retrieve "${H[@]}" -d '{"afId":"sas-camara","msisdn":"251911111111"}'
-# → 404 {"cause":"NO_EVIDENCE",…}   (fail-closed: never "not swapped")
+# → 404 {"title":"NO_EVIDENCE","status":404,"detail":"no source could say when the SIM last changed","cause":"NO_EVIDENCE"}
+#   (fail-closed: never "not swapped"; an unknown number answers the identical 404 —
+#   the API does not oracle whether the subscriber exists)
+# lab evidence (00.5):
+# → 200 {"msisdn":"251911111111","latestSimChange":"2026-09-21T…Z","eventTime":"…","evidenceSource":"LAB_HLR"}
+#   (seeded binding age, ~10 days old)
 
 # Contract refusals: unknown field → 400 INVALID_ARGUMENT; "msisdn":"+2519…" → 400;
 # X-Sas-Budget-Ms: 50 on monitoring → 504 BUDGET_EXHAUSTED (nothing signalled)
@@ -153,7 +158,11 @@ AT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=urn:openid:params:gr
 # S6 — SIM Swap check with the CIBA token
 curl -s -X POST $CAM/camara/sim-swap/v2/check -H "Authorization: Bearer $AT" \
   -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" -d '{"maxAge":240}'
-# live core → 404 (no SIM-change evidence)        lab evidence (00.5) → 200 {"swapped":false}
+# live core → 404 {"status":404,"code":"IDENTIFIER_NOT_FOUND",
+#   "message":"no SIM-change evidence for the requested identifier"}
+# lab evidence (00.5) → 200 {"swapped":false}   (re-verified 2026-10-01, both 2-legged
+#   `Bearer lab` and CIBA-token calls; `maxAge=2400` → 200 {"swapped":true};
+#   `/retrieve-date` → 200 {"latestSimChange":"2026-09-21T…Z"})
 
 # S7 — NV Authorization Code + PKCE; network authentication = UE ID retrieval at the ECS
 VERIFIER=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
@@ -172,8 +181,13 @@ NVAT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=authorization_code
 curl -s -X POST $CAM/camara/number-verification/v2/verify -H "Authorization: Bearer $NVAT" \
   -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" \
   -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' -d '{"phoneNumber":"+251911111111"}'
-# live core → {"devicePhoneNumberVerified":false}  (gateway log dist/logs: SIM_SWAP_SUSPECT)
-# lab evidence (00.5) → {"devicePhoneNumberVerified":true}; the answer never names an evidence source
+# live core (re-verified 2026-10-01) → {"devicePhoneNumberVerified":false,"decision":"FALLBACK",
+#   "assurance":{"score":70,"level":"FALLBACK","threshold":70,"riskClass":"LOGIN",
+#   "factors":{"ipBindingFresh":1.0,"reachable":1.0,"notSimSwapped":0.0,"locationPlausible":1.0}},
+#   "fallbackReason":"SIM_SWAP_SUSPECT"}   (gateway log dist/logs says the same)
+# lab evidence (00.5) → {"devicePhoneNumberVerified":true,"decision":"APPROVE",
+#   "assurance":{"score":100,"level":"HIGH",…,"notSimSwapped":1.0,…}};
+#   the answer never names an evidence source
 
 # S8 — runtime boundary: the gateway owns no SCTP socket, sas-ecs does
 scripts/check-no-sctp.sh "$(pgrep -f '^[^ ]*java .*/dist/quarkus-run\.jar')" sas-camara       # OK … owns no SCTP endpoint
@@ -216,7 +230,8 @@ runs over the live HLR simulator. S6 then answers `200 {"swapped":false}` and S7
 | CIBA with operator token | auth_req_id; replay 403 | same |
 | SIM Swap check | 404 | 200 `swapped:false` |
 | NV Auth Code → /verify | `false` (`SIM_SWAP_SUSPECT`) | `true` |
-| Wi-Fi /verify without token | `FALLBACK WIFI_NOT_READY` | same |
+| Wi-Fi /verify with a valid token but no operator binding | `FALLBACK WIFI_NOT_READY` (score 0, every factor 0.0) | same |
+| Wi-Fi /verify with a garbage bearer (validation on) | `401 UNAUTHENTICATED` — rejected at auth, before the Wi-Fi rule | same |
 | Gateway SCTP sockets | none | none |
 
 ## 0. Environment
@@ -1848,3 +1863,4 @@ conformance — the EAP-AKA codec is still a P1 blocker
 | The HLR simulator receives nothing when started from the repo root | jSS7 writes `*.xml` state files into the CWD | run it from its own directory, or clean `*-sccp_*.xml` (git-ignored) |
 | Log `[cdr-db] persist failed ... Unique index` | the same `x-correlator` reused in the CDR DB (`correlation_id` UNIQUE) | use a fresh `x-correlator` per call, or reset the lab DB |
 | Ports 8085/8095 still taken after a script | a lab JVM is still running (e.g. started by hand for §0a) | `ss -ltnp | grep -E ':(8085|8095) '` and kill that PID; do not `pkill -f` with a pattern that also appears in your own shell's command line |
+| Restarted sas-ecs, but answers still look like the OLD instance (live results after dropping MAP) | `kill` hit the `run.sh` wrapper while the java child survived, and the new instance died on `Database may be already in use: …/dist-ecs/data/ecs-db.mv.db` — the port stays owned by the old JVM | kill the real java PID (`pgrep -f 'dist-ecs.*quarkus-run'`), then prove the restart by the `=== sas-ecs ready …` log line, never by the port alone |

@@ -120,9 +120,14 @@ curl -s -X POST $E/monitoring-event/sas-camara/subscriptions "${H[@]}" \
 # → 200 … "ueReachable":true … "plmnId":{"mcc":"636","mnc":"01"},"locationInfo":{"ageOfLocationInfo":1} … "evidenceSource":"MAP_PSI"
 #   số lạ 251900000000 → 404 SUBSCRIBER_NOT_FOUND
 
-# S3 — SIM change trên transport live
+# S3 — SIM change trên transport live (chạy lại 2026-10-01)
 curl -s -X POST $E/sim-change/retrieve "${H[@]}" -d '{"afId":"sas-camara","msisdn":"251911111111"}'
-# → 404 {"cause":"NO_EVIDENCE",…}   (fail-closed: không bao giờ trả "chưa đổi SIM")
+# → 404 {"title":"NO_EVIDENCE","status":404,"detail":"no source could say when the SIM last changed","cause":"NO_EVIDENCE"}
+#   (fail-closed: không bao giờ trả "chưa đổi SIM"; số lạ cũng 404 y hệt —
+#   API không để lộ thuê bao có tồn tại hay không)
+# evidence lab (00.5):
+# → 200 {"msisdn":"251911111111","latestSimChange":"2026-09-21T…Z","eventTime":"…","evidenceSource":"LAB_HLR"}
+#   (tuổi binding đã seed, ~10 ngày trước)
 
 # Contract từ chối: trường lạ → 400 INVALID_ARGUMENT; "msisdn":"+2519…" → 400;
 # X-Sas-Budget-Ms: 50 cho monitoring → 504 BUDGET_EXHAUSTED (không gửi gì ra core)
@@ -152,7 +157,11 @@ AT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=urn:openid:params:gr
 # S6 — SIM Swap check bằng token CIBA
 curl -s -X POST $CAM/camara/sim-swap/v2/check -H "Authorization: Bearer $AT" \
   -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" -d '{"maxAge":240}'
-# core live → 404 (không có evidence SIM-change)        evidence lab (00.5) → 200 {"swapped":false}
+# core live → 404 {"status":404,"code":"IDENTIFIER_NOT_FOUND",
+#   "message":"no SIM-change evidence for the requested identifier"}
+# evidence lab (00.5) → 200 {"swapped":false}   (chạy lại 2026-10-01, cả gọi 2-legged
+#   `Bearer lab` lẫn token CIBA; `maxAge=2400` → 200 {"swapped":true};
+#   `/retrieve-date` → 200 {"latestSimChange":"2026-09-21T…Z"})
 
 # S7 — NV Authorization Code + PKCE; xác thực mạng = UE ID retrieval tại ECS
 VERIFIER=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
@@ -171,8 +180,13 @@ NVAT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=authorization_code
 curl -s -X POST $CAM/camara/number-verification/v2/verify -H "Authorization: Bearer $NVAT" \
   -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" \
   -H 'X-Sas-Src-Ip: 10.20.30.40' -H 'X-Sas-Src-Port: 55555' -d '{"phoneNumber":"+251911111111"}'
-# core live → {"devicePhoneNumberVerified":false}  (log gateway trong dist/logs: SIM_SWAP_SUSPECT)
-# evidence lab (00.5) → {"devicePhoneNumberVerified":true}; câu trả lời không bao giờ nêu nguồn evidence
+# core live (chạy lại 2026-10-01) → {"devicePhoneNumberVerified":false,"decision":"FALLBACK",
+#   "assurance":{"score":70,"level":"FALLBACK","threshold":70,"riskClass":"LOGIN",
+#   "factors":{"ipBindingFresh":1.0,"reachable":1.0,"notSimSwapped":0.0,"locationPlausible":1.0}},
+#   "fallbackReason":"SIM_SWAP_SUSPECT"}   (log gateway trong dist/logs nói y hệt)
+# evidence lab (00.5) → {"devicePhoneNumberVerified":true,"decision":"APPROVE",
+#   "assurance":{"score":100,"level":"HIGH",…,"notSimSwapped":1.0,…}};
+#   câu trả lời không bao giờ nêu nguồn evidence
 
 # S8 — ranh giới runtime: gateway không có socket SCTP, sas-ecs có
 scripts/check-no-sctp.sh "$(pgrep -f '^[^ ]*java .*/dist/quarkus-run\.jar')" sas-camara       # OK … owns no SCTP endpoint
@@ -214,7 +228,8 @@ EAP-AKA vẫn chạy qua HLR simulator live. S6 lúc này trả `200 {"swapped":
 | CIBA với operator token | auth_req_id; gửi lại 403 | như trên |
 | SIM Swap check | 404 | 200 `swapped:false` |
 | NV Auth Code → /verify | `false` (`SIM_SWAP_SUSPECT`) | `true` |
-| /verify Wi-Fi không có token | `FALLBACK WIFI_NOT_READY` | như trên |
+| /verify Wi-Fi bằng token hợp lệ nhưng không có operator binding | `FALLBACK WIFI_NOT_READY` (score 0, mọi factor 0.0) | như trên |
+| /verify Wi-Fi bằng bearer rác (bật validation) | `401 UNAUTHENTICATED` — bị chặn ở cửa auth, chưa tới luật Wi-Fi | như trên |
 | Socket SCTP của gateway | không có | không có |
 
 ## 0. Yêu cầu môi trường
@@ -1834,3 +1849,4 @@ EAP-AKA vẫn là blocker P1 (`docs/design/sas-two-binary-architecture.md` §9).
 | HLR simulator không nhận gì khi chạy từ repo root | jSS7 ghi file state `*.xml` vào CWD | chạy từ thư mục riêng, hoặc dọn `*-sccp_*.xml` (đã gitignore) |
 | Log `[cdr-db] persist failed ... Unique index` | dùng lại `x-correlator` trong DB CDR (`correlation_id` UNIQUE) | đổi `x-correlator` mới cho mỗi lần gọi, hoặc reset DB lab |
 | Sau khi chạy script, cổng 8085/8095 vẫn bị chiếm | JVM lab còn chạy (vd khởi động tay ở §0a) | `ss -ltnp | grep -E ':(8085|8095) '` rồi kill đúng PID; đừng `pkill -f` theo mẫu có trong chính dòng lệnh của shell |
+| Restart sas-ecs rồi mà kết quả vẫn như instance CŨ (bỏ MAP mà vẫn fail live) | `kill` trúng wrapper `run.sh`, java con còn sống, instance mới chết vì `Database may be already in use: …/dist-ecs/data/ecs-db.mv.db` — cổng vẫn thuộc về JVM cũ | kill đúng PID java (`pgrep -f 'dist-ecs.*quarkus-run'`), rồi chứng minh restart bằng dòng log `=== sas-ecs ready …`, đừng tin cổng một mình |
