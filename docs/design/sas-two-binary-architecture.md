@@ -1,9 +1,9 @@
 # SAS as two binaries — CAMARA server (`sas-camara`) + TS.43 entitlement server (`sas-ecs`)
 
-> **To be superseded** by [`sas-layered-architecture.md`](sas-layered-architecture.md)
-> (accepted 2026-10-01). That redesign splits by layer instead of by track: the gateway stops
-> signalling the core, and the operator token is redeemed at the ECS. This document stays
-> accurate for the code until migration step M6 there lands.
+> **SUPERSEDED** (2026-10-01) by [`sas-layered-architecture.md`](sas-layered-architecture.md),
+> implemented through migration step M6: the binaries are split by layer, the gateway signals
+> nothing, operator tokens are redeemed at sas-ecs. Kept for history only — the module map,
+> trust model and configuration below no longer describe the code.
 
 Status: **implemented and lab-verified 2026-10-01** (build, 647 unit tests, 37/37 hardness
 gates, 19/19 gate mutations, 41/41 preflight scenarios, two-binary smoke with pcap).

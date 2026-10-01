@@ -1,200 +1,85 @@
-# Silent Auth SAS — `sas-camara`: CAMARA APIs + OAuth Authorization Server
+# Silent Auth SAS — `sas-camara`: the CAMARA API gateway
 
-> Since 2026-10-01 this module is **one of two binaries**. The TS.43 entitlement server
-> (`/ts43`, EAP-AKA, `/entitlement/*`) moved to [`sas-ecs-host`](../sas-ecs-host/README.md);
-> this binary accepts its operator tokens (JWS in JWE, verified via the issuer's JWKS,
-> single use via the `sas_operator_token_jti` ledger). Architecture:
-> [`docs/design/sas-two-binary-architecture.md`](../docs/design/sas-two-binary-architecture.md).
+`sas-host` builds **sas-camara**, the internet/partner-facing binary of the Restlink SAS
+(layered ADR: [`docs/design/sas-layered-architecture.md`](../docs/design/sas-layered-architecture.md)).
+It serves the CAMARA APIs and the OAuth Authorization Server, scores the evidence and
+decides — and it **never signals the core network**: no MAP, Diameter or SCTP code or jar
+is in this binary (gate H25 + `scripts/check-dependency-boundary.sh`). Every subscriber
+fact comes from the entitlement server ([`sas-ecs-host`](../sas-ecs-host/README.md))
+through the subscriber exposure API, over the single resource adaptor `exposure-ra`.
 
-The **P0** of the Silent Authentication implementation: a Quarkus + micro-jainslee
-application that implements the CAMARA NumberVerification `POST /verify` surface over
-the Restlink Silent Auth Service (SAS) — Resolver → Verifier → Policy, **fail-closed**.
-
-Cloned from the two templates named in `AGENTS.md` §10:
-
-- RAs — cloned from `vendor-ras/ra-diameter` (wrapper + delegate 3-port contract).
-- Bootstrap — cloned from `worktrees/voice-service/sip-freeswitch/elisa`
-  (`ElisaBootstrap`: `@ApplicationScoped`, `@Observes StartupEvent`, `MicroSleeContainer`).
-
-## Why this is the P0
-
-The only remaining open item that turns the research/design into code is the
-**CAMARA NV Java adapter** over SAS `/verify`. This module is that adapter:
+Quarkus + micro-jainslee, **Java 25**, fast-jar. One SLEE seam: `SasBootstrap` (gate H24).
 
 ```
-POST /verify { phoneNumber }            (CAMARA NV v2.1.0)
-  → VerifyResource (Quarkus REST)
-    → VerifyRequestEvent → VerifySbb    (SLEE event router)
-      RESOLVING → Resolver RA    (ip:port:ts → MSISDN/IMSI, 300 ms)
-      VERIFYING → MAP Verifier RA (PSI + SAI, never ATI, 2 s, abort on timeout)  — 2G/3G
-      VERIFYING → S6a Verifier RA (ULR/ULA, own HSS, 2 s; SIM-swap = read-only Sh UDR) — LTE/NR
-      SCORING  → VerificationFsm (weighted assurance, fail-closed)
-  ← { devicePhoneNumberVerified: boolean }
+POST /camara/number-verification/v2/verify  (or /authorize → /token → /verify)
+  → VerifyResource → VerifyRequestEvent → VerifySbb            (SLEE event router)
+      RESOLVING  exposure-ra → POST /ue-id/retrieve {IP, port, ts}        400 ms
+                 (Wi-Fi: the number of a redeemed operator token instead)
+      VERIFYING  exposure-ra → monitoring-event ∥ sim-change/retrieve      2.2 s
+      SCORING    ExposureAdapters → VerificationFsm (weights, thresholds, home-PLMN policy)
+  ← { devicePhoneNumberVerified: boolean }          — fail-closed on any problem/timeout
 ```
 
 ## Package layout
 
 | Package | Role |
-|---------|------|
-| `et.restlink.sas.api` | CAMARA REST surface (`/verify`, `/retrieve-phone-number`) + DTOs |
-| `et.restlink.sas.simswap` | CAMARA SimSwap v2.1.0 surface (`/sim-swap/v2/check`, `/retrieve-date`) + host evidence adapter (`HostSimSwapEvidence` → `SasBootstrap.lastSimChange`) |
-| `et.restlink.sas.otpsms` | CAMARA OneTimePasswordSMS v1.1.1 surface (`/one-time-password-sms/v1/send-code`, `/validate-code`) + `LabLogSmsDelivery` (lab sender: logs the composed SMS, sends nothing — prod keeps the surface off, preflight `PRO-29`) |
-| `et.restlink.sas.cdr` | CDR ledger: `/verify` flow rows + CAMARA SimSwap/OTP API rows, DB flusher, durable `SAS_CDR` CSV reader, admin history merge |
-| `et.restlink.sas.bootstrap` | `SasBootstrap` (ElisaBootstrap clone) |
-| `et.restlink.sas.events` | `VerifyRequestEvent` (`@EventType`) |
-| `et.restlink.sas.sbbs` | `VerifySbb` (the entitlement-service SBB) |
-| `et.restlink.sas.fsm` | `VerificationFsm`, `AssurancePolicy`, `SasTimeouts` |
-| `et.restlink.sas.ras.resolver` | Resolver RA (wrapper + delegate + backend) |
-| `et.restlink.sas.ras.mapverifier` | MAP Verifier RA (wrapper + delegate + dialog + backend) |
-| `et.restlink.sas.ras.s6averifier` | Diameter S6a Verifier RA (wrapper + delegate + session + backend) |
-| `et.restlink.sas.model` | Value records (`VerifyResult`, `ResolverResult`, …) |
-| `et.restlink.sas.coordinator` | Async SLEE ↔ sync HTTP bridge + idempotency |
+|---|---|
+| `bootstrap` | `SasBootstrap` — starts the container, wires `exposure-ra` and `VerifySbb`, bridges REST → SLEE; exposes `subscribers()` for the non-SBB callers (OAuth anchor, SIM Swap) |
+| `sbbs` | `VerifySbb` — RESOLVING → VERIFYING → SCORING over exposure calls; one flow CDR per request (internal evidence sources go to the CDR only) |
+| `ras/exposure` | `ExposureClient` (JDK HTTP client, implements `SubscriberService`; every non-200 / timeout / off-contract answer is a problem), `ExposureRaEndpoint`, `SubscriberCallCommand` |
+| `fsm` | `VerificationFsm` — pure decision engine |
+| `coordinator` | async SLEE ↔ sync HTTP bridge + idempotency per `reqId` |
+| `simswap` | `HostSimSwapEvidence` — CAMARA SIM Swap evidence via `/sim-change/retrieve` (no evidence → 404, never `swapped:false`) |
+| `otpsms` | `LabLogSmsDelivery` — lab OTP sender (logs, sends nothing; prod keeps OTP off, PRO-29) |
+| `cdr`, `persist`, `persistence` | CDR ledger (flow + API rows), entities, Flyway `db/migration` V1–V4 (V4 drops the former operator-token ledger) |
+| `admin`, `web`, `tenant`, `security`, `config` | admin UI (`app/html/admin`), tenants and app keys, admin runtime config |
+
+The CAMARA surface itself (NV, SIM Swap, OTP SMS, OAuth AS) lives in the `sas-api`
+library; this module assembles it.
 
 ## Build & run
 
-> **Java 25 only** (root AGENTS.md). Use `mise` → `zulu-25`. R&D only — never production;
-> production USSD 7.3 builds use Mobicents SLEE master-era JARs.
-
-Multi-module build: root aggregator `sas-core` → shared `sas-common`, `sas-token`,
-`sas-operator-adapter`; CAMARA library `sas-api`; this runnable app `sas-host` (**sas-camara**).
-The entitlement side (`sas-entitlement` + `sas-ecs-host`) is a separate binary — gate
-H25 forbids this module from depending on it.
-
 ```bash
-cd worktrees/silent-authentication/main
-mvn -q clean test                 # all 3 modules (463 tests)
-mvn -q package -DskipTests        # build everything
-java -jar sas-host/target/quarkus-app/quarkus-run.jar
-
-# per-module work
-cd sas-host && mvn quarkus:dev    # dev mode on http://localhost:8085
+mvn -o test                                   # from the repo root (9 modules)
+./scripts/package-dist.sh camara              # → dist/ (fast-jar, configs/, app/html, run.sh)
+(cd dist && ./run.sh)                         # lab :8085 — needs sas-ecs on :8095
+scripts/split-smoke.sh                        # both binaries end to end + pcap
+python3 harness/preflight_prod.py --service camara
 ```
 
-### Demo happy path
+Configuration that matters here:
 
-```bash
-curl -X POST http://localhost:8085/verify \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer demo' \
-  -H 'x-correlator: 0001' \
-  -d '{"phoneNumber": "+251911111111"}'
-# → {"devicePhoneNumberVerified": true}
-```
+| Property | Lab | Meaning |
+|---|---|---|
+| `sas.exposure.client.base-url` | `http://127.0.0.1:8095/sas-subscriber-exposure/v1` | where the entitlement server is (prod: HTTPS, PRO-36) |
+| `sas.exposure.client.af-id` | `sas-camara` | this gateway's AF id on the exposure hop |
+| `sas.policy.home-plmn`, `sas.policy.location-max-age-minutes` | `63601`, `1440` | location policy on the evidence metadata |
+| `sas.operator-token.direct-bearer-enabled` | `true` (lab only) | the SAS extension `Bearer operatortoken:` on `/verify`; prod off (PRO-32) |
 
-Pilot seeds (see `SasBootstrap`): binding `10.20.30.40:55555 → +251911111111`,
-subscriber attached / no SIM swap / region `AA`. The device network tuple is read
-from `X-Sas-Src-Ip` / `X-Sas-Src-Port` / `X-Sas-Access-Tech` headers (production
-mints it from the CIBA/network-auth token).
-
-### Fail-closed demos
-
-- `{"phoneNumber": "+251922222222"}` → `{"devicePhoneNumberVerified": false}` (MSISDN_MISMATCH)
-- `X-Sas-Amr: sms-otp` → 403 `NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`
-- `X-Sas-Access-Tech: LTE` → `true` (S6a ULR/ULA + Sh UDR) when the resolver tuple matches the seed
-- `X-Sas-Access-Tech: WIFI` → `false` (`WIFI_NOT_READY`, fail closed — TS.43/EAP-AKA is P1)
-
-## Harness mapping
-
-The pure decision engine (`VerificationFsm`) + budgets (`SasTimeouts`) encode the same
-contracts asserted by `harness/gates.yaml` (H1–H14). H15–H21 additionally gate the
-**deployment artifact** (`application-prod.properties` + environment); H22–H24 add
-device-parity, license-parity and micro-jainslee boundary checks. Run from the tree root:
-
-```bash
-python3 harness/run_hardness.py          # 37/37 pass (contract + deployment + split gates)
-python3 harness/preflight_prod.py        # prod-profile verdict for THIS environment
-python3 harness/preflight_prod.py --selftest   # prove the deployment gate bites
-```
-
-Java-side unit tests (pure JUnit 5, no Quarkus boot): `mvn test`.
-
-## Production profile (`QUARKUS_PROFILE=prod`)
-
-`src/main/resources/application-prod.properties` is the deployment-safe overlay. It
-carries **no lab defaults**: every credential and operator-specific value is
-`${ENV_VAR}` with **no `:default`**, so a missing secret fails the config read at boot
-instead of silently reverting to `change-me` / `demo` / loopback.
-
-```bash
-# from the tree root (the script resolves its own paths — run it anywhere)
-export QUARKUS_PROFILE=prod
-python3 harness/preflight_prod.py || exit 1                # gate BEFORE the JVM
-java -jar sas-host/target/quarkus-app/quarkus-run.jar      # HTTPS :8443 only, mTLS
-```
-
-Highlights: `insecure-requests=disabled`, `ssl.client-auth=required`,
-`token-validation-enabled=true`, `enforce-api-keys=true`, `transport.map=jss7`,
-`s6a/swx=corsac`, PostgreSQL + Flyway (`database.generation=none`),
-`entitlement.require-signed=true`, `cdr.db.enabled=true`.
-
-The preflight (`PRO-01`…`PRO-29`) reports what is missing/unsafe without printing any
-secret value — names, lengths and fingerprints only. Exit code = number of failed checks.
-
-**Not covered by the profile:** HSTS (Quarkus core has no such property — terminate it at
-the edge proxy), live mTLS/SS7/Diameter handshakes, key rotation. See
-[TODO.md](TODO.md) and [`../docs/result_p1_reaudit.md`](../docs/result_p1_reaudit.md).
-
-## Deferred / still stand-in in lab mode
-
-- `X-Sas-Access-Tech: WIFI` in **lab** mode returns `WIFI_NOT_READY` (in-memory SWx);
-  the real TS.43 / EAP-AKA SWx verifier RA is wired behind `sas.transport.swx=corsac`.
-- Token validation + single-use ≤300 s enforcement is **on only in `prod`**
-  (base profile keeps `token-validation-enabled=false` for demos).
-- Resolver source (PGW RADIUS / PCRF Sd / CGNAT log) is an operator input:
-  `sas.transport.resolver=${SAS_TRANSPORT_RESOLVER}` ∈ `radius|cgnat|sd`.
-- S6a in lab mode is an in-memory HSS stand-in; `corsac-diameter` S6a is opt-in.
-
-## P2 — real signalling transport (wired, opt-in)
-
-The verifier backends are pluggable behind `SasTransportConfig`. Default is the
-in-memory pilot backend; flip a property to switch to the real transport.
-
-| Property | Values | Backend |
-|----------|--------|---------|
-| `sas.transport.map` | `memory` (default) / `jss7` | `InMemoryMapVerifierBackend` / `Jss7MapVerifierBackend` |
-| `sas.transport.s6a` | `memory` (default) / `corsac` | in-memory HSS / corsac-diameter S6a |
-| `sas.transport.swx` | `memory` (default) / `corsac` | in-memory AAA / corsac-diameter SWx |
-
-### jSS7 MAP verifier (`sas.transport.map=jss7`)
-
-`Jss7MapVerifierBackend` builds a real jSS7 (coral-valley) stack from a single-file
-JSON config (`Ss7StackBuilder.build(Path)`), registers a `MAPServiceMobilityListener`
-+ `MAPDialogListener`, and drives **one TCAP dialog per stage**:
-
-- **PSI** (`provideSubscriberInfo`, FS.11 Cat 2.1) → reachable + location plausibility.
-- **SAI** (`sendAuthenticationInfo`, FS.11 Cat 3.2) → SIM-swap freshness (auth-vector set).
-- **Never ATI** — inbound `anyTimeInterrogation` is logged + dropped (FS.11 Cat 1).
-
-Fail-closed: any timeout / reject / abort / error-component completes the pending
-future with a `FallbackReason`; the dialog is aborted so nothing leaks.
-
-Enable it (sample config ships at `src/main/resources/ss7-sas.json`):
-
-```properties
-sas.transport.map=jss7
-sas.transport.jss7.config=src/main/resources/ss7-sas.json
-sas.transport.jss7.hlr-gt=<home HLR global title>
-sas.transport.jss7.local-gt=<SAS local global title>
-```
-
-If `sas.transport.jss7.config` is blank the bootstrap logs a warning and falls back
-to the in-memory backend (fail-closed — a misconfiguration never silently opens a
-signalling path).
+There is no `sas.transport.*` key in this binary any more (prod preflight PRO-17 refuses
+one). Environment variables and `-D` override the dist's `configs/application.properties`.
 
 ## OAuth AS and operator tokens (CAMARA ICM)
 
 | Surface | Notes |
 |---|---|
-| `GET /authorize` | Authorization Code + mandatory PKCE S256 — NV network authentication from the connection source (edge headers only with `sas.oauth.authorize.trust-src-header=true`) |
+| `GET /authorize` | Authorization Code + mandatory PKCE S256; network authentication = UE ID retrieval at sas-ecs for the connection source (edge headers only with `sas.oauth.authorize.trust-src-header=true`) |
 | `POST /token` | `authorization_code`, CIBA, `client_credentials`, JWT bearer (`sub=tel:` / `operatortoken:`) |
 | `POST /bc-authorize` | CIBA; `login_hint=operatortoken:<token>` or the cellular tuple |
-| `GET /jwks.json` | ES256 signing key (`use=sig`) + operator-token encryption key (`use=enc`) |
+| `GET /jwks.json` | ES256 signing keys only (`use=sig`) |
 
-Access tokens are ES256 `at+jwt` with `aud`; ID tokens carry a pairwise `sub`. Operator
-tokens from a trusted entitlement server (`sas.operator-token.issuers-json`) are decrypted
-with `sas.operator-token.decryption-jwk`, verified against the issuer's JWKS (fetched by
-`ras/optoken/HttpJwksKeySource`), and consumed once in the database ledger. End-to-end
-check of both binaries: `scripts/split-smoke.sh`.
+Access tokens are ES256 `at+jwt` with `aud`; ID tokens carry a pairwise `sub`. An operator
+token is forwarded **unread** to sas-ecs `POST /operator-token/redeem`, which decrypts,
+verifies and spends it exactly once; this binary holds no token key and no ledger.
+
+## Production profile (`QUARKUS_PROFILE=prod`)
+
+`src/main/resources/application-prod.properties` carries no lab defaults: every
+credential and operator-specific value is `${ENV_VAR}`, so a missing secret fails the
+boot. HTTPS only, mTLS towards the bank, token validation and API keys on, PostgreSQL +
+Flyway. The preflight (`--service camara`) reports what is missing or unsafe without
+printing secrets. The exposure hop has no client authentication until migration step M4,
+so the pair is not production-deployable before then (see the ADR).
 
 ## License
 

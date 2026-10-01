@@ -41,6 +41,148 @@ UE (lab card) ── /ts43 ─► sas-ecs :8095 ─┘
                             └──► operator token (ES256 JWS in ECDH-ES/A256GCM JWE) ──► app ──► bank ──► sas-camara
 ```
 
+## 00. Layered architecture (M3+) — start here (verified 2026-10-01 on packaged dists)
+
+Since migration step M3 the **CAMARA gateway (sas-camara) signals no core network**. Every
+subscriber fact comes from the entitlement server (sas-ecs) over the **subscriber exposure
+API** (`/sas-subscriber-exposure/v1`, contract
+[`../design/openapi/sas-subscriber-exposure-v1.yaml`](../design/openapi/sas-subscriber-exposure-v1.yaml)).
+Consequences for testing:
+
+- All transport switches (`sas.transport.*`, `SAS_TRANSPORT_*`, jSS7/Diameter peers,
+  resolver) are set on **sas-ecs**. On sas-camara they no longer exist (preflight PRO-17
+  refuses them in prod).
+- Operator tokens are encrypted to and redeemed by sas-ecs (`/operator-token/redeem`). The
+  gateway holds no key or ledger. `/jwks.json` on sas-ecs is gone (404).
+- `/session-tuple` lives on sas-ecs.
+- Wi-Fi `/verify` needs a redeemed operator token; otherwise `FALLBACK WIFI_NOT_READY`.
+- On live transports there is no SIM-change source yet. SIM Swap answers 404, and NV
+  ends in `SIM_SWAP_SUSPECT` (fail-closed). With lab evidence on sas-ecs the same flows approve.
+
+Sections §0a–§9 below predate M3 where they start sas-camara with `-Dsas.transport.*`;
+those steps are marked **pre-M3**.
+
+### 00.1 Build and package
+
+```bash
+/usr/bin/mvn -B -o clean package -Dquarkus.profile=lab           # 9 modules, 733 tests
+(cd sas-jss7-testapp && /usr/bin/mvn -o package -DskipTests)      # HLR simulator
+(cd sas-diameter-testapp && /usr/bin/mvn -o package)              # HSS / AAA / PCRF simulator
+./scripts/package-dist.sh all                                     # dist/ (camara) + dist-ecs/ (ecs)
+scripts/check-dependency-boundary.sh dist dist-ecs                # both lines must be OK
+```
+
+### 00.2 Start four processes (four terminals)
+
+```bash
+# T1 — HLR simulator: MAP over SCTP :2906 (peer sas-ecs :2907), control :8087
+java --add-modules jdk.sctp -jar sas-jss7-testapp/target/sas-jss7-testapp.jar \
+     --listen-port 2906 --peer-port 2907 --http-port 8087
+
+# T2 — HSS simulator: Diameter S6a over SCTP :3868, control :8086
+java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar
+
+# T3 — sas-ecs (:8095) on the LIVE core: MAP SAI/SendIMSI/PSI + S6a peer
+(cd dist-ecs && SAS_TRANSPORT_AUTHVECTOR=map SAS_TRANSPORT_MAP=jss7 SAS_TRANSPORT_S6A=corsac \
+   SAS_BINDING_SOURCE_ORDER=map-smi SAS_TRANSPORT_JSS7_CONFIG=$PWD/configs/ss7-ecs.json ./run.sh)
+
+# T4 — sas-camara (:8085), OAuth validation on, one lab client
+CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code","urn:openid:params:grant-type:ciba"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","sim-swap:check"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
+(cd dist && SAS_JAVA_OPTS="-Dsas.security.token-validation-enabled=true -Dsas.security.accept-hs256=false -Dsas.oauth.clients-json=$CLIENTS" ./run.sh)
+```
+
+Environment variables and `-D` override the dist's `configs/application.properties`
+(`config_ordinal=250`). Before 2026-10-01 they were silently ignored by `run.sh`.
+
+### 00.3 Steps — exposure API directly on sas-ecs
+
+```bash
+E=http://127.0.0.1:8095/sas-subscriber-exposure/v1
+H=(-H 'Content-Type: application/json' -H "X-Request-Id: req-$(date +%s%N)" -H 'X-Sas-Budget-Ms: 2500')
+
+# S1 — UE ID: lab tuple 10.20.30.40:55555 → GPSI
+curl -s -X POST $E/ue-id/retrieve "${H[@]}" \
+  -d '{"afId":"sas-camara","ueIpAddr":{"ipv4Addr":"10.20.30.40"},"portNumber":55555,"observedAt":"2026-10-01T06:00:00Z"}'
+# → 200 {"gpsi":"msisdn-251911111111","bindingObservedAt":"…","evidenceSource":"LAB_RESOLVER"}
+
+# S2 — monitoring over the live MAP core (SendIMSI, then PSI)
+curl -s -X POST $E/monitoring-event/sas-camara/subscriptions "${H[@]}" \
+  -d '{"msisdn":"251911111111","monitoringType":"UE_REACHABILITY","addnMonTypes":["LOCATION_REPORTING"],"maximumNumberOfReports":1,"immediateRep":true}'
+# → 200 … "ueReachable":true … "plmnId":{"mcc":"636","mnc":"01"},"locationInfo":{"ageOfLocationInfo":1} … "evidenceSource":"MAP_PSI"
+#   unknown number 251900000000 → 404 SUBSCRIBER_NOT_FOUND
+
+# S3 — SIM change on live transports
+curl -s -X POST $E/sim-change/retrieve "${H[@]}" -d '{"afId":"sas-camara","msisdn":"251911111111"}'
+# → 404 {"cause":"NO_EVIDENCE",…}   (fail-closed: never "not swapped")
+
+# Contract refusals: unknown field → 400 INVALID_ARGUMENT; "msisdn":"+2519…" → 400;
+# X-Sas-Budget-Ms: 50 on monitoring → 504 BUDGET_EXHAUSTED (nothing signalled)
+```
+
+### 00.4 Steps — CAMARA flows through the gateway
+
+```bash
+ECS=http://127.0.0.1:8095; CAM=http://127.0.0.1:8085
+
+# S4 — operator token: real EAP-AKA over MAP SAI + SendIMSI, lab SIM card
+CJ=$(curl -s "$ECS/ts43/challenge?imsi=655010000000001&msisdn=%2B251911111111")
+R=$(java -cp sas-entitlement/target/classes et.restlink.sas.entitlement.lab.LabSimCardMain \
+      655010000000001 "$(jq -r .challenge <<<"$CJ")")
+TOK=$(curl -s -X POST $ECS/ts43/respond -H 'Content-Type: application/json' \
+  -d "{\"reqId\":\"$(jq -r .reqId <<<"$CJ")\",\"imsi\":\"655010000000001\",\"msisdn\":\"+251911111111\",\"response\":\"$R\"}" | jq -r .token)
+awk -F. '{print NF}' <<<"$TOK"                  # → 5 (JWE)
+
+# S5 — CIBA with login_hint=operatortoken: the gateway forwards it to /operator-token/redeem
+AUTH=$(curl -s -X POST $CAM/bc-authorize --data-urlencode "login_hint=operatortoken:$TOK" \
+  --data-urlencode "scope=dpv:FraudPreventionAndDetection sim-swap:check" \
+  --data-urlencode client_id=bank-lab | jq -r .auth_req_id)
+AT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=urn:openid:params:grant-type:ciba \
+  --data-urlencode "auth_req_id=$AUTH" --data-urlencode client_id=bank-lab | jq -r .access_token)
+# replay the same token at /bc-authorize → 403 (spent in the ECS ledger)
+
+# S6 — SIM Swap check with the CIBA token
+curl -s -X POST $CAM/camara/sim-swap/v2/check -H "Authorization: Bearer $AT" \
+  -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" -d '{"maxAge":240}'
+# live core → 404 (no SIM-change evidence)        lab evidence (00.5) → 200 {"swapped":false}
+
+# S7 — NV Authorization Code + PKCE, network authentication by UE ID at the ECS
+#      (same commands as §0a A8; the /authorize call carries X-Sas-Src-Ip/Port 10.20.30.40:55555)
+# live core → {"devicePhoneNumberVerified":false}  (gateway log: SIM_SWAP_SUSPECT)
+# lab evidence (00.5) → {"devicePhoneNumberVerified":true}; the answer never names an evidence source
+
+# S8 — runtime boundary: the gateway owns no SCTP socket, sas-ecs does
+scripts/check-no-sctp.sh <sas-camara-pid> sas-camara     # OK … owns no SCTP endpoint
+scripts/check-no-sctp.sh <sas-ecs-pid> sas-ecs           # FAIL … owns SCTP socket inode(s) — expected
+```
+
+### 00.5 Lab-evidence variant
+
+Restart T3 without `SAS_TRANSPORT_MAP=jss7` (MAP monitoring then answers from the lab HLR
+backend, SIM change from its seeded binding age, `evidenceSource` `LAB_HLR`). EAP-AKA still
+runs over the live HLR simulator. S6 then answers `200 {"swapped":false}` and S7 `true`.
+
+### 00.6 Automated runs
+
+| Script | What it proves | Verified result |
+|---|---|---|
+| `scripts/layered-e2e.sh dist dist-ecs` | 00.2–00.5 end to end on the packaged dists, live and lab phases, pcap | all OK, rc=0 |
+| `scripts/split-smoke.sh` | both binaries from `target/`: CAMARA flows, ECS JWKS gone, no SCTP from the gateway | all OK |
+| `scripts/exposure-smoke.sh` | the four exposure operations vs the HLR simulator, contract refusals, no IMSI in answers | 14/14 |
+| `scripts/ecs-map-smoke.sh` | TS.43 over MAP + fail-closed matrix; sas-ecs owns the MAP association, gateway none | demo OK + 8/8 |
+
+### 00.7 Expectations at a glance
+
+| Flow | Live core (00.2) | Lab evidence (00.5) |
+|---|---|---|
+| UE ID 10.20.30.40:55555 | 200 GPSI | 200 GPSI |
+| Monitoring 251911111111 | 200 reachable, PLMN 636-01, `MAP_PSI` | 200, `LAB_HLR` |
+| SIM change | 404 `NO_EVIDENCE` | 200, 10 days ago |
+| CIBA with operator token | auth_req_id; replay 403 | same |
+| SIM Swap check | 404 | 200 `swapped:false` |
+| NV Auth Code → /verify | `false` (`SIM_SWAP_SUSPECT`) | `true` |
+| Wi-Fi /verify without token | `FALLBACK WIFI_NOT_READY` | same |
+| Gateway SCTP sockets | none | none |
+
 ## 0. Environment
 
 - JDK zulu-25: `$HOME/.local/share/mise/installs/java/zulu-25`
@@ -56,6 +198,8 @@ UE (lab card) ── /ts43 ─► sas-ecs :8095 ─┘
   (they run inside a private user + network namespace).
 
 ## 0a. Two binaries — quick start (verified 2026-10-01)
+
+> **Pre-M3 (two-binary by track).** The gateway-side operator-token config (`sas.operator-token.issuers-json`, decryption key, ledger) shown here no longer exists — tokens are redeemed at sas-ecs (§00). The flows still pass with today's lab defaults: `scripts/split-smoke.sh`.
 
 Runs without the Diameter simulators: both binaries use memory transports in the lab
 profile. Covers the operator token sas-ecs → sas-camara (Wi-Fi `/verify`, CIBA + SIM
@@ -225,6 +369,8 @@ tshark -r $P -Y 'http.response' -T fields -e tcp.srcport -e http.response.code
 `/bc-authorize` (later ones are served from cache); no `101` response.
 
 ## 0b. Manual demo runbook — Diameter (S6a/SWx/Gx) + CAMARA (verified 2026-09-03 · TS.43 leg updated for two binaries 2026-10-01)
+
+> **Pre-M3.** This runbook starts sas-camara with `-Dsas.transport.*` (S6a/SWx/Gx); since M3 those transports are configured on **sas-ecs** and reached through the exposure API (§00). The S6a/Gx signalling scenarios have not been re-run on the layered binaries.
 
 One command per step. Pre-built artifacts: `dist/` (sas-camara), `dist-ecs/` (sas-ecs —
 only needed for Step 12) + `sas-diameter-testapp/target/sas-diameter-testapp.jar`. `dist/configs/application.properties`
@@ -1223,6 +1369,8 @@ mvn -o test -pl sas-ecs-host,sas-operator-adapter -am \
 (same codec) — not RFC 4187 conformance (the P1 blocker above).
 
 ## 1. Build
+
+> **Pre-M3** for §1–§4: transports belong to sas-ecs now (§00.2). The CAMARA-only steps (SIM Swap/OTP surfaces, CIBA) still apply to sas-camara.
 
 ```bash
 (cd sas-diameter-testapp && /usr/bin/mvn -B clean package)      # test-app jar ~26 MB

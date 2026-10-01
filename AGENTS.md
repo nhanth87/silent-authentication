@@ -56,9 +56,9 @@ Build boundaries that are easy to get wrong:
   `scripts/check-dependency-boundary.sh` fail the build if the boundary is crossed.
 - Root aggregator builds the 9 modules above (`sas-common` … `sas-ecs-host`).
 - **Layered migration** (contract `docs/design/openapi/sas-subscriber-exposure-v1.yaml`
-  v1.0.0): M0–M3 done. Until M4 the exposure hop has no client authentication, so the
-  sas-ecs prod profile keeps the exposure surface off (PRO-35) — the pair is not
-  production-deployable before M4.
+  v1.0.0): M0–M3, M5, M6 done; **M4 (mTLS + client credentials on the exposure hop) was
+  skipped by owner decision 2026-10-01** and is still open. Until it lands the sas-ecs prod
+  profile keeps the exposure surface off (PRO-35) — the pair is not production-deployable.
   The two test apps (`sas-diameter-testapp`, `sas-jss7-testapp`) and all `ue-sdk*`
   modules are **standalone builds** — `cd` in and build them individually.
 - `dist/`, `dist-ecs/`, `slides/`, `*/target/`, `sas-host/data/` are **gitignored local artifacts** —
@@ -79,6 +79,7 @@ QUARKUS_PROFILE=prod dist/run.sh             # prod — env vars from applicatio
                                              # preflight refuses a lab-shaped boot
 scripts/split-smoke.sh                       # both binaries end to end + pcap (no root; user netns)
 scripts/exposure-smoke.sh                    # sas-ecs exposure API vs HLR sim (MAP SendIMSI+PSI) + pcap
+scripts/layered-e2e.sh dist dist-ecs         # PACKAGED dists + HLR sim + Diameter testapp, live & lab phases
 scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapter; sas-camara no MAP/Diameter/SCTP jar
 scripts/check-no-sctp.sh <pid> [label]       # runtime: a process owns no SCTP socket (used by the smokes)
 
@@ -111,8 +112,8 @@ Start sas-ecs for it with the MAP transports (own association, ss7-ecs.json):
 
 ```bash
 # Gates — run after any contract/design/deployment change (order matters: harness first)
-python3 harness/run_hardness.py              # 37/37 gates H1–H27, exit 0 = pass
-python3 harness/run_hardness.py --mutations  # H24 10/10 + H25 9/9 mutation self-tests
+python3 harness/run_hardness.py              # 38/38 gates H1–H28, exit 0 = pass
+python3 harness/run_hardness.py --mutations  # H24 10/10 + H25 11/11 + H28 8/8 mutation self-tests
 python3 harness/preflight_prod.py --service camara|ecs|all   # prod verdict for THIS env
 python3 harness/preflight_prod.py --selftest # 45/45 scenarios (camara + ecs baselines + mutations)
 
@@ -159,6 +160,9 @@ IP:port:ts  ──[Resolver]──►  MSISDN/IMSI  ──[Verifier]──►  a
 
 - **No interconnect ATI** — FS.11 Category 1; SAS queries **own** HLR/HSS only.
 - **Fail-closed** — missing evidence / timeout never approves, always **FALLBACK**.
+- **Layer split** — the CAMARA gateway (sas-camara) never signals the core and holds no
+  identity state; every subscriber fact comes from sas-ecs via `SubscriberService` /
+  the exposure API. Transport config belongs on sas-ecs only.
 - **Idempotency** — `reqId` dedups; **one** MAP/Diameter dialog per stage.
 - **Dialog leak** — bounded TC timer; timeout ⇒ `abort()`.
 - **Race** — binding read is point-in-time (`ts`), not “latest”.
@@ -251,16 +255,20 @@ GSMA index: `docs/research/gsma-fs-index.md`.
 
 ## 7. Hardness gate (installed)
 
-Gates in `harness/gates.yaml` (H1–H27), each anchored to a 3GPP clause / CAMARA contract.
+Gates in `harness/gates.yaml` (H1–H28), each anchored to a 3GPP clause / CAMARA contract.
 H1–H14 assert the documented design contract; **H15–H21** assert the deployment artifact
 via `preflight_prod.verify(scenario, service)` (static `PRO-xx` checks over each binary's
 `application.properties` + `application-prod.properties` + `${ENV}`; H19 runs against
 sas-ecs); **H22** device bearer-declaration parity (checker `access_tech_parity`); **H23**
 dual-license parity (checker `license_parity`); **H24** micro-jainslee boundary (checker
-`slee_boundary`, mutation-checked via `harness/mut_slee_boundary.py`); **H25** two-binary
-split + entitlement signalling bans (checker `entitlement_split`, mutation-checked via
-`harness/mut_entitlement_split.py`); **H26** sas-ecs prod profile; **H27** sas-camara
-OAuth AS (ES256) + operator-token trust. Runner: `harness/run_hardness.py`.
+`slee_boundary`, mutation-checked via `harness/mut_slee_boundary.py`); **H25** layered
+split: no cross-binary code, the gateway's whole internal dependency closure (and built
+`lib/`) free of adapter/MAP/Diameter/SCTP, entitlement signalling bans (checker
+`entitlement_split`, `harness/mut_entitlement_split.py`); **H26** sas-ecs prod profile
+(own decryption key, PostgreSQL ledger, exposure off until authenticated); **H27**
+sas-camara OAuth AS (ES256) + CAMARA-form operator tokens only; **H28** exposure contract
+parity — OpenAPI ↔ `ExposureApi`/`ExposureCause` ↔ ECS resource ↔ gateway client ↔
+`SubscriberService` (checker `exposure_contract`, `harness/mut_exposure_contract.py`). Runner: `harness/run_hardness.py`.
 Spec text SoT: `docs/research/`.
 
 ### Device SDK / transport contract
@@ -339,7 +347,7 @@ Open items (do not silently invent answers):
       binding age the Verifier scores as `notSimSwapped`; MAP → Sh UDR → SWx).
       Fail-closed: no evidence ⇒ `404 IDENTIFIER_NOT_FOUND`, never `swapped:false`.
       Status + decisions: `docs/research/camara_sim_swap/simswap-flow-analysis.md` §E;
-      verified steps: §4 ⑥ + §0b Step 16–19 + C7 of `docs/test/testflow.vi.md` / `testflow.en.md`.
+      verified steps: §00 (layered, current) and the pre-M3 §4 ⑥ + §0b Step 16–19 + C7 of `docs/test/testflow.vi.md` / `testflow.en.md`.
 - [x] CAMARA **OneTimePasswordSMS v1.1.1** (OTP SMS fallback) — `POST
       /one-time-password-sms/v1/send-code` + `/validate-code`
       (`sas-api/src/main/java/et/restlink/sas/otpsms/` + sas-host lab sender

@@ -1,5 +1,11 @@
 # Demo Script — UE SDK → CAMARA `/verify` → Entitlement (TS.43) → S6a (cellular) + SWx (lab) (Tiếng Việt)
 
+> **Kiến trúc tách theo tầng (từ M3).** sas-camara không còn chạy transport signalling nào:
+> các cấu hình S6a/SWx/Gx và resolver bên dưới giờ thuộc **sas-ecs**, và operator token được
+> redeem tại sas-ecs. Các bước đã verify cho binary hiện tại nằm ở
+> [`testflow.vi.md` §00](testflow.vi.md); những mục bên dưới khởi động sas-camara với
+> `-Dsas.transport.*` là trước M3 và chưa được chạy lại.
+
 > 🇬🇧 English version: [`demo-script-ue-camara-entitlement-diameter.en.md`](demo-script-ue-camara-entitlement-diameter.en.md)
 
 > Kịch bản demo đầu cuối cho Restlink Silent Auth (Ethiopia): từ **UE SDK** thu

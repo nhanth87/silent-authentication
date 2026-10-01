@@ -40,6 +40,148 @@ UE (lab card) ── /ts43 ─► sas-ecs :8095 ─┘
                             └──► operator token (ES256 JWS trong JWE ECDH-ES/A256GCM) ──► app ──► bank ──► sas-camara
 ```
 
+## 00. Kiến trúc tách theo tầng (từ M3) — bắt đầu ở đây (verify 2026-10-01 trên dist đóng gói)
+
+Từ bước M3, **CAMARA gateway (sas-camara) không còn chạm core network**. Mọi thông tin về
+thuê bao đến từ entitlement server (sas-ecs) qua **subscriber exposure API**
+(`/sas-subscriber-exposure/v1`, contract
+[`../design/openapi/sas-subscriber-exposure-v1.yaml`](../design/openapi/sas-subscriber-exposure-v1.yaml)).
+Hệ quả khi test:
+
+- Mọi công tắc transport (`sas.transport.*`, `SAS_TRANSPORT_*`, peer jSS7/Diameter,
+  resolver) được đặt trên **sas-ecs**. Trên sas-camara chúng không còn tồn tại (preflight
+  PRO-17 từ chối ở prod).
+- Operator token được mã hóa cho và redeem bởi sas-ecs (`/operator-token/redeem`). Gateway
+  không giữ khóa hay ledger nào. `/jwks.json` trên sas-ecs đã bỏ (404).
+- `/session-tuple` nằm trên sas-ecs.
+- `/verify` qua Wi-Fi cần operator token đã redeem; nếu không có → `FALLBACK WIFI_NOT_READY`.
+- Trên transport live hiện chưa có nguồn SIM-change. SIM Swap trả 404, NV kết thúc ở
+  `SIM_SWAP_SUSPECT` (fail-closed). Với evidence lab trên sas-ecs, cùng các luồng đó approve.
+
+Các mục §0a–§9 bên dưới viết trước M3 ở những chỗ khởi động sas-camara với
+`-Dsas.transport.*`; các bước đó được đánh dấu **trước M3**.
+
+### 00.1 Build và đóng gói
+
+```bash
+/usr/bin/mvn -B -o clean package -Dquarkus.profile=lab           # 9 module, 733 test
+(cd sas-jss7-testapp && /usr/bin/mvn -o package -DskipTests)      # HLR simulator
+(cd sas-diameter-testapp && /usr/bin/mvn -o package)              # HSS / AAA / PCRF simulator
+./scripts/package-dist.sh all                                     # dist/ (camara) + dist-ecs/ (ecs)
+scripts/check-dependency-boundary.sh dist dist-ecs                # cả hai dòng phải OK
+```
+
+### 00.2 Khởi động bốn tiến trình (bốn terminal)
+
+```bash
+# T1 — HLR simulator: MAP qua SCTP :2906 (peer sas-ecs :2907), control :8087
+java --add-modules jdk.sctp -jar sas-jss7-testapp/target/sas-jss7-testapp.jar \
+     --listen-port 2906 --peer-port 2907 --http-port 8087
+
+# T2 — HSS simulator: Diameter S6a qua SCTP :3868, control :8086
+java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar
+
+# T3 — sas-ecs (:8095) trên core LIVE: MAP SAI/SendIMSI/PSI + peer S6a
+(cd dist-ecs && SAS_TRANSPORT_AUTHVECTOR=map SAS_TRANSPORT_MAP=jss7 SAS_TRANSPORT_S6A=corsac \
+   SAS_BINDING_SOURCE_ORDER=map-smi SAS_TRANSPORT_JSS7_CONFIG=$PWD/configs/ss7-ecs.json ./run.sh)
+
+# T4 — sas-camara (:8085), bật kiểm tra OAuth, một client lab
+CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code","urn:openid:params:grant-type:ciba"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","sim-swap:check"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
+(cd dist && SAS_JAVA_OPTS="-Dsas.security.token-validation-enabled=true -Dsas.security.accept-hs256=false -Dsas.oauth.clients-json=$CLIENTS" ./run.sh)
+```
+
+Biến môi trường và `-D` ghi đè được `configs/application.properties` của dist
+(`config_ordinal=250`). Trước 2026-10-01, `run.sh` âm thầm bỏ qua chúng.
+
+### 00.3 Các bước — gọi thẳng exposure API trên sas-ecs
+
+```bash
+E=http://127.0.0.1:8095/sas-subscriber-exposure/v1
+H=(-H 'Content-Type: application/json' -H "X-Request-Id: req-$(date +%s%N)" -H 'X-Sas-Budget-Ms: 2500')
+
+# S1 — UE ID: tuple lab 10.20.30.40:55555 → GPSI
+curl -s -X POST $E/ue-id/retrieve "${H[@]}" \
+  -d '{"afId":"sas-camara","ueIpAddr":{"ipv4Addr":"10.20.30.40"},"portNumber":55555,"observedAt":"2026-10-01T06:00:00Z"}'
+# → 200 {"gpsi":"msisdn-251911111111","bindingObservedAt":"…","evidenceSource":"LAB_RESOLVER"}
+
+# S2 — monitoring qua core MAP live (SendIMSI, rồi PSI)
+curl -s -X POST $E/monitoring-event/sas-camara/subscriptions "${H[@]}" \
+  -d '{"msisdn":"251911111111","monitoringType":"UE_REACHABILITY","addnMonTypes":["LOCATION_REPORTING"],"maximumNumberOfReports":1,"immediateRep":true}'
+# → 200 … "ueReachable":true … "plmnId":{"mcc":"636","mnc":"01"},"locationInfo":{"ageOfLocationInfo":1} … "evidenceSource":"MAP_PSI"
+#   số lạ 251900000000 → 404 SUBSCRIBER_NOT_FOUND
+
+# S3 — SIM change trên transport live
+curl -s -X POST $E/sim-change/retrieve "${H[@]}" -d '{"afId":"sas-camara","msisdn":"251911111111"}'
+# → 404 {"cause":"NO_EVIDENCE",…}   (fail-closed: không bao giờ trả "chưa đổi SIM")
+
+# Contract từ chối: trường lạ → 400 INVALID_ARGUMENT; "msisdn":"+2519…" → 400;
+# X-Sas-Budget-Ms: 50 cho monitoring → 504 BUDGET_EXHAUSTED (không gửi gì ra core)
+```
+
+### 00.4 Các bước — luồng CAMARA qua gateway
+
+```bash
+ECS=http://127.0.0.1:8095; CAM=http://127.0.0.1:8085
+
+# S4 — operator token: EAP-AKA thật qua MAP SAI + SendIMSI, thẻ SIM lab
+CJ=$(curl -s "$ECS/ts43/challenge?imsi=655010000000001&msisdn=%2B251911111111")
+R=$(java -cp sas-entitlement/target/classes et.restlink.sas.entitlement.lab.LabSimCardMain \
+      655010000000001 "$(jq -r .challenge <<<"$CJ")")
+TOK=$(curl -s -X POST $ECS/ts43/respond -H 'Content-Type: application/json' \
+  -d "{\"reqId\":\"$(jq -r .reqId <<<"$CJ")\",\"imsi\":\"655010000000001\",\"msisdn\":\"+251911111111\",\"response\":\"$R\"}" | jq -r .token)
+awk -F. '{print NF}' <<<"$TOK"                  # → 5 (JWE)
+
+# S5 — CIBA với login_hint=operatortoken: gateway chuyển nguyên token sang /operator-token/redeem
+AUTH=$(curl -s -X POST $CAM/bc-authorize --data-urlencode "login_hint=operatortoken:$TOK" \
+  --data-urlencode "scope=dpv:FraudPreventionAndDetection sim-swap:check" \
+  --data-urlencode client_id=bank-lab | jq -r .auth_req_id)
+AT=$(curl -s -X POST $CAM/token --data-urlencode grant_type=urn:openid:params:grant-type:ciba \
+  --data-urlencode "auth_req_id=$AUTH" --data-urlencode client_id=bank-lab | jq -r .access_token)
+# gửi lại đúng token đó ở /bc-authorize → 403 (đã tiêu trong ledger của ECS)
+
+# S6 — SIM Swap check bằng token CIBA
+curl -s -X POST $CAM/camara/sim-swap/v2/check -H "Authorization: Bearer $AT" \
+  -H 'Content-Type: application/json' -H "x-correlator: $(cat /proc/sys/kernel/random/uuid)" -d '{"maxAge":240}'
+# core live → 404 (không có evidence SIM-change)        evidence lab (00.5) → 200 {"swapped":false}
+
+# S7 — NV Authorization Code + PKCE, xác thực mạng bằng UE ID tại ECS
+#      (lệnh giống §0a A8; lời gọi /authorize mang X-Sas-Src-Ip/Port 10.20.30.40:55555)
+# core live → {"devicePhoneNumberVerified":false}  (log gateway: SIM_SWAP_SUSPECT)
+# evidence lab (00.5) → {"devicePhoneNumberVerified":true}; câu trả lời không bao giờ nêu nguồn evidence
+
+# S8 — ranh giới runtime: gateway không có socket SCTP, sas-ecs có
+scripts/check-no-sctp.sh <pid-sas-camara> sas-camara     # OK … owns no SCTP endpoint
+scripts/check-no-sctp.sh <pid-sas-ecs> sas-ecs           # FAIL … owns SCTP socket inode(s) — đúng kỳ vọng
+```
+
+### 00.5 Biến thể evidence lab
+
+Khởi động lại T3 **không** có `SAS_TRANSPORT_MAP=jss7`. Khi đó monitoring MAP trả lời từ
+backend HLR lab, SIM change lấy từ tuổi binding đã seed, `evidenceSource` là `LAB_HLR`.
+EAP-AKA vẫn chạy qua HLR simulator live. S6 lúc này trả `200 {"swapped":false}` và S7 trả `true`.
+
+### 00.6 Chạy tự động
+
+| Script | Chứng minh điều gì | Kết quả đã verify |
+|---|---|---|
+| `scripts/layered-e2e.sh dist dist-ecs` | 00.2–00.5 đầu-cuối trên dist đóng gói, pha live và lab, có pcap | tất cả OK, rc=0 |
+| `scripts/split-smoke.sh` | hai binary từ `target/`: luồng CAMARA, JWKS của ECS đã bỏ, gateway không có SCTP | tất cả OK |
+| `scripts/exposure-smoke.sh` | bốn operation exposure đối với HLR simulator, contract từ chối đúng, không có IMSI trong câu trả lời | 14/14 |
+| `scripts/ecs-map-smoke.sh` | TS.43 qua MAP + ma trận fail-closed; sas-ecs giữ liên kết MAP, gateway không có | demo OK + 8/8 |
+
+### 00.7 Bảng kỳ vọng
+
+| Luồng | Core live (00.2) | Evidence lab (00.5) |
+|---|---|---|
+| UE ID 10.20.30.40:55555 | 200 GPSI | 200 GPSI |
+| Monitoring 251911111111 | 200 reachable, PLMN 636-01, `MAP_PSI` | 200, `LAB_HLR` |
+| SIM change | 404 `NO_EVIDENCE` | 200, 10 ngày trước |
+| CIBA với operator token | auth_req_id; gửi lại 403 | như trên |
+| SIM Swap check | 404 | 200 `swapped:false` |
+| NV Auth Code → /verify | `false` (`SIM_SWAP_SUSPECT`) | `true` |
+| /verify Wi-Fi không có token | `FALLBACK WIFI_NOT_READY` | như trên |
+| Socket SCTP của gateway | không có | không có |
+
 ## 0. Yêu cầu môi trường
 
 - JDK zulu-25: `$HOME/.local/share/mise/installs/java/zulu-25`
@@ -55,6 +197,8 @@ UE (lab card) ── /ts43 ─► sas-ecs :8095 ─┘
   (chúng chạy trong user + network namespace riêng).
 
 ## 0a. Hai binary — quick start (verified 2026-10-01)
+
+> **Trước M3 (tách theo track).** Cấu hình operator-token phía gateway (`sas.operator-token.issuers-json`, khóa giải mã, ledger) trong mục này không còn tồn tại — token được redeem tại sas-ecs (§00). Các luồng vẫn chạy được với cấu hình lab hiện tại: `scripts/split-smoke.sh`.
 
 Chạy độc lập với simulator Diameter: cả hai binary ở profile lab dùng transport memory.
 Bao phủ: operator token sas-ecs → sas-camara (Wi-Fi `/verify`, CIBA + SIM Swap, replay),
@@ -223,6 +367,8 @@ tshark -r $P -Y 'http.response' -T fields -e tcp.srcport -e http.response.code
 `/bc-authorize` đầu tiên (các lần sau lấy từ cache); không có response `101`.
 
 ## 0b. Demo manual từng bước — Diameter (S6a/SWx/Gx) + CAMARA (verified 2026-09-03 · chân TS.43 cập nhật cho hai binary 2026-10-01)
+
+> **Trước M3.** Runbook này khởi động sas-camara với `-Dsas.transport.*` (S6a/SWx/Gx); từ M3 các transport đó cấu hình trên **sas-ecs** và đi qua exposure API (§00). Các kịch bản signalling S6a/Gx chưa được chạy lại trên kiến trúc mới.
 
 Artifact đã build sẵn: `dist/` (sas-camara), `dist-ecs/` (sas-ecs — chỉ cần cho Bước 12)
 + `sas-diameter-testapp/target/sas-diameter-testapp.jar`.
@@ -1216,6 +1362,8 @@ mvn -o test -pl sas-ecs-host,sas-operator-adapter -am \
 codec) — không chứng minh tuân thủ RFC 4187 (blocker P1 ở trên).
 
 ## 1. Build
+
+> **Trước M3** cho §1–§4: transport giờ thuộc sas-ecs (§00.2). Các bước chỉ liên quan CAMARA (SIM Swap/OTP, CIBA) vẫn áp dụng cho sas-camara.
 
 ```bash
 (cd sas-diameter-testapp && /usr/bin/mvn -B clean package)      # testapp jar ~26 MB

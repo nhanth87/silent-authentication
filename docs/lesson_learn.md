@@ -4,98 +4,74 @@ Date: 2026-08-21 · Scope: `sas/` (Restlink SAS, micro-jainslee) · Source: code
 
 ---
 
+> **Cập nhật 2026-10-01 — kiến trúc tách theo tầng** (`docs/design/sas-layered-architecture.md`).
+> Q1–Q4 dưới đây đã viết lại theo hai binary hiện tại; bản cũ (SAS tự verify SWx, CAMARA
+> tự giải mã operator token) không còn đúng.
+
 ## Q1. Flow xác thực qua SAS (end-to-end)
 
-Có **2 path**, chọn theo access tech của UE:
+Hai binary, tách theo **tầng**: **sas-camara** (CAMARA API gateway: OAuth, CAMARA API,
+chấm điểm) không chạm core; **sas-ecs** (entitlement server) là nơi duy nhất nói MAP/Diameter.
+Gateway hỏi mọi thông tin thuê bao qua **subscriber exposure API** (REST, kiểu 3GPP
+TS 29.522/29.122).
 
 **Path A — IP-match (cellular data, happy path):**
 
 ```
 User mở app
-  → Bank App (đang chạy 4G/5G) thu thập {srcIP, srcPort, ts, claimedMSISDN?}
-  → Bank App → Bank Backend: POST /login
-  → Bank Backend → SAS: POST /verify  (server-to-server, mTLS + OIDC token)
-  → SAS (VerifySbb FSM):
-       RESOLVING: resolver-ra  IP:port:ts → MSISDN/IMSI   (đọc PGW/CGNAT)
-       VERIFYING: map-verifier-ra (jSS7 PSI+SAI) hoặc s6a-verifier-ra (LTE) → HLR/HSS
+  → Bank App (4G/5G) → Bank Backend: login
+  → Bank Backend → sas-camara: Authorization Code + PKCE (NV) hoặc POST /verify
+  → sas-camara VerifySbb (FSM, qua exposure-ra = HTTP client):
+       RESOLVING: POST /ue-id/retrieve  {IP, port, ts}        → sas-ecs: Gx/RADIUS/CGNAT → GPSI
+       VERIFYING: POST /monitoring-event/…  ∥  POST /sim-change/retrieve
+                   → sas-ecs: SendIMSI + MAP PSI (hoặc S6a + Sh) · nguồn SIM-change
        SCORING:   assurance = w1·ipFresh + w2·reachable + w3·notSimSwapped + w4·locationPlausible
-  → SAS → Bank Backend: {devicePhoneNumberVerified:true/false}
-  → Bank Backend → App: Login OK (không OTP)
+                  (locationPlausible = PLMN nhà + tuổi vị trí ≤ ngưỡng — quyết ở gateway)
+  → sas-camara → Bank Backend: {devicePhoneNumberVerified: true/false}
 ```
 
-Code: `VerifyResource.verify()` → `bootstrap.submit(event)` → `VerifySbb.drive()` → `fsm.decide()`.
+Code: `VerifyResource` → `SasBootstrap.submit` → `VerifySbb.drive` → `ExposureAdapters` →
+`VerificationFsm.decide`. Phía ECS: `SubscriberExposureResource` → `EcsBootstrap` →
+`SubscriberSbb` → RA của `sas-operator-adapter`.
 
-**Path B — EAP-AKA/SWx (Wi-Fi, TS.43):** khi `accessTech=WIFI`, `VerifySbb.verifySwx()`
-bỏ qua Resolver, dùng `claimedMsisdn` làm identity anchor, gọi `swx-verifier-ra`.
+**Path B — TS.43 / EAP-AKA (Wi-Fi):** UE chạy EAP-AKA với **sas-ecs** (`/ts43`, vector qua
+MAP SAI hoặc SWx MAR, số xác nhận qua SendIMSI) → nhận **operator token** (JWE mã hóa cho
+chính ECS) → app → bank → sas-camara (`login_hint=operatortoken:` ở CIBA, hoặc `sub=` ở
+JWT-bearer) → sas-camara chuyển nguyên token sang `POST /operator-token/redeem` của ECS →
+ECS giải mã, kiểm tra, tiêu **đúng một lần** (ledger `ecs_operator_token_jti`) → trả
+*subscriber verification result*. Wi-Fi không có token đã redeem → `FALLBACK WIFI_NOT_READY`.
 
 ---
 
 ## Q2. EAP-AKA nằm ở đâu
 
-EAP-AKA là **root of trust của path Wi-Fi** — thay thế IP-match khi không có PGW binding.
-
-```
-Device(SIM) ──EAP-AKA──► WLAN AN ──SWm(Diameter)──► 3GPP AAA ──SWx──► HSS
-```
-
-Trong code SAS, nó nằm ở **`swx-verifier-ra`**:
-
-- `ras/swxverifier/InMemorySwxVerifierBackend.java` — mô phỏng trao đổi 3GPP AAA↔HSS
-  (TS 29.273 SWx / TS 33.402), evidence source = `"SWX-EAP-AKA"`.
-- SAS **không tự chạy EAP-AKA** với UE. SAS đứng ở phía server: nhận kết quả EAP-AKA
-  đã được 3GPP AAA xác thực, rồi query HSS qua SWx để lấy auth-vector + SIM-swap freshness.
-  EAP-AKA thực sự diễn ra giữa **UE ↔ 3GPP AAA** (do operator chạy), SAS chỉ là lớp
-  verify/entitlement phía trên.
-
-EAP-AKA = cơ chế chứng minh SIM ở access edge (SWm/AAA); SAS tiêu thụ kết quả qua SWx.
-Đây là open item "TS.43 entitlement server feasibility" trong AGENTS.md.
+Trong **sas-ecs**, endpoint `POST /ts43` (quyết định D6, Shape S): Restlink là EAP server
+theo thỏa thuận truy cập AuC với operator. Code: `sas-entitlement` (`eap/`, `EapAkaServer`)
++ `EntitlementSbb` (sas-ecs-host) + RA `auth-vector` (MAP SAI hoặc SWx MAR) và
+`subscriber-binding` (SendIMSI) trong `sas-operator-adapter`. **sas-camara không biết
+TS.43** (gate H25 cấm). Lưu ý P1: codec EAP-AKA chưa đúng RFC 4187 — lab card dùng cùng
+codec nên lab thành công không chứng minh được thiết bị thật.
 
 ---
 
 ## Q3. Có cần SDK để UE xác thực không
 
-**Path A (IP-match):** Không cần SDK "xác thực" nặng, nhưng cần **1 SDK thu thập session
-tuple nhỏ**. Vì CGNAT, app phải gửi chính xác `IP + source port + timestamp` (5-tuple + time)
-thì Resolver mới phân biệt được thuê bao. App tự đọc IP thì dễ, nhưng **source-port của
-bearer cellular + timestamp đồng bộ** thường cần SDK/helper của operator hoặc của Restlink.
+**Path A:** SDK mỏng thu tuple `IP + source port + timestamp` gửi lên **sas-ecs**
+`/session-tuple` (từ M3 nằm ở ECS — cạnh resolver). SDK khai báo bearer (`accessTech`);
+tuple Wi-Fi bị từ chối `400 ACCESS_TECH_NOT_CELLULAR`.
 
-**Path B (EAP-AKA):** Cần EAP-AKA client phía UE.
-
-- Trên Android/iOS, EAP-SIM/EAP-AKA thường do **OS/stack Wi-Fi** xử lý (khi join mạng dùng
-  EAP-AKA), app không tự implement.
-- Với browser/app không qua Wi-Fi EAP native, cần **SDK entitlement (TS.43)** để lấy
-  *temporary token* rồi backend đổi qua CIBA/JWT-Bearer (xem `camara-number-verification.md` §3).
-  Đây là open item chưa implement.
-
-**Kết luận:** không có SDK nào bắt buộc cho logic xác thực lõi (logic nằm ở SAS + operator
-core). Chỉ cần SDK mỏng phía app để (a) thu thập IP:port:ts cho path A, và (b) entitlement
-token cho path B.
+**Path B:** client TS.43/EAP-AKA phía UE (thường là OS/stack hoặc SDK entitlement) để lấy
+operator token. Logic xác thực lõi nằm ở server, không ở SDK.
 
 ---
 
 ## Q4. CAMARA API được gọi ở đâu
 
-CAMARA NumberVerification (NV v2.1.0) là **northbound surface** — lớp REST mà SAS expose ra
-cho **Bank Backend** gọi. Nằm ở:
-
-- **`sas/src/main/java/et/restlink/sas/api/VerifyResource.java`**
-  - `POST /verify` → `verify()` — nhận `{phoneNumber}` hoặc `{hashedPhoneNumber}` (đúng 1
-    trong 2), validate OIDC token + `amr` (403 nếu không phải mobile-network auth), rồi gọi
-    `bootstrap.submit(event)`.
-  - `GET /retrieve-phone-number` → hiện trả 501 (ngoài phạm vi P0).
-
-Chuỗi gọi CAMARA → nội bộ SAS:
-
-```
-POST /verify {phoneNumber}                     ← CAMARA contract (VerifyResource)
-  → TokenValidator + ReplayGuard               ← H14 single-use token
-  → bootstrap.submit(VerifyRequestEvent)       ← bridge vào SLEE event router
-  → VerifySbb (Resolver → Verifier → Policy)   ← micro-jainslee FSM
-  → {devicePhoneNumberVerified: bool}          ← CAMARA response, chỉ boolean
-```
-
-**Privacy H8:** CAMARA `/verify` chỉ trả **boolean** về Bank Backend; MSISDN/IMSI
-**không bao giờ** ra tới mobile app.
+CAMARA (NV v2.1.0, SIM Swap v2.1.0, OTP SMS v1.1.1, ICM OAuth) là **northbound của
+sas-camara**, do Bank Backend gọi server-to-server: `sas-api` (`VerifyResource`,
+`CamaraNumberVerificationResource`, `SimSwapResource`, `oauth/*`). Không có endpoint CAMARA
+nào trên sas-ecs. **Privacy:** response CAMARA chỉ có boolean/ngày; IMSI không bao giờ tới
+gateway; MSISDN không bao giờ tới app; nguồn evidence nội bộ (`evidenceSource`) chỉ vào CDR.
 
 ---
 
@@ -103,10 +79,38 @@ POST /verify {phoneNumber}                     ← CAMARA contract (VerifyResour
 
 | Câu hỏi | Trả lời |
 |---|---|
-| Flow | App→Bank Backend→SAS `/verify`→Resolver→Verifier(MAP/S6a/SWx)→Policy→boolean |
-| EAP-AKA ở đâu | Path Wi-Fi, giữa UE↔3GPP AAA (SWm); SAS tiêu thụ qua `swx-verifier-ra` (SWx) |
-| Cần SDK UE không | Không cho logic lõi; chỉ SDK mỏng thu thập IP:port:ts (path A) / entitlement token (path B) |
-| CAMARA gọi ở đâu | `VerifyResource.java` — `POST /verify`, do Bank Backend gọi server-to-server |
+| Flow | Bank → sas-camara (CAMARA/OAuth, chấm điểm) → exposure API → sas-ecs → MAP/Diameter → core |
+| EAP-AKA ở đâu | sas-ecs `/ts43` (EAP server), vector qua MAP SAI / SWx MAR |
+| Cần SDK UE không | Không cho logic lõi; SDK mỏng cho tuple (path A) / client TS.43 (path B) |
+| CAMARA gọi ở đâu | sas-camara (`sas-api`); sas-ecs không có CAMARA |
+
+## Sync 2026-10-01 — tách hai binary theo tầng (M0–M6)
+
+- **Không release SBB entity trên luồng đang hoàn tất future.** `future.whenComplete(release)`
+  chạy trên chính luồng event của container (bên trong `onEvent`) → dispatcher kẹt, mọi event
+  sau treo tới hết budget. Release bằng `whenCompleteAsync`. Unit test gọi `onEvent` trực tiếp
+  nên **không** bắt được — chỉ binary đóng gói mới lộ (exposure-smoke).
+- **Đừng để dữ liệu lab "bù" cho transport thật.** SIM-change từng trả ngày từ backend S6a
+  in-memory trong khi MAP chạy thật → evidence bịa. Nguồn evidence phải đi theo đúng transport
+  đang dùng; live mà chưa có nguồn → `NO_EVIDENCE`.
+- **Map lỗi một chỗ.** `ExposureAdapters` là nơi duy nhất đổi câu trả lời exposure thành
+  `ResolverResult`/`VerificationEvidence`; FSM giữ nguyên.
+- **Một normalizer số điện thoại** (`PhoneNumberNormalizer`, sas-common): có 5 bản copy khác
+  nhau (giữ/bỏ `+`, xóa/không xóa dấu cách). Số claim sai định dạng phải bị **từ chối**, không
+  được biến thành "không có claim" (sẽ chuyển sang discovery).
+- **Kiểm tra SCTP theo inode, đọc cột theo header.** `/proc/net/sctp/assocs` có cột INODE khác
+  `eps`; đoán số cột → check âm tính giả. Luôn có **đối chứng dương** (ECS phải bị phát hiện
+  có SCTP) trước khi tin kết quả "camara không có SCTP".
+- **`pkill -f <pattern>` có thể giết chính shell** nếu pattern xuất hiện trong dòng lệnh của
+  shell (exit 144). Dừng tiến trình theo PID / `/proc/<pid>/cmdline`.
+- **`wait` không đối số trong `trap cleanup` sẽ chờ cả tcpdump** → script treo. Chờ PID cụ thể.
+- **`git add -A <thư mục>` có thể cuốn file không được phép** (đã cuốn `harness/oracle/`).
+  Stage theo file/thư mục cụ thể và để thư mục local trong `.gitignore`.
+- **Dùng `x-correlator` mới cho mỗi request** trong script: CDR có unique `correlation_id`;
+  dùng lại → `persist failed … Could not commit transaction`.
+- **Contract test hai chiều:** DTO serialize phải khớp OpenAPI (networknt, format bật) và
+  validator Java phải đồng ý với schema trên cùng tập body hợp lệ/không hợp lệ (test A); gate
+  H28 giữ path/scope/cause/method đồng bộ giữa OpenAPI, resource ECS, client gateway.
 
 ## Sync 2026-08-23 — từ gmlc-microjainslee (Monitor Hub / KPI / fast-jar deploy)
 

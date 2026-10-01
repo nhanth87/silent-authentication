@@ -1,5 +1,11 @@
 # Demo Script — UE SDK → CAMARA `/verify` → Entitlement (TS.43) → S6a (cellular) + SWx (lab) (English)
 
+> **Layered architecture (M3+).** sas-camara no longer runs any signalling transport: the
+> S6a/SWx/Gx and resolver settings below now belong on **sas-ecs**, and operator tokens are
+> redeemed at sas-ecs. The verified step-by-step for today's binaries is
+> [`testflow.en.md` §00](testflow.en.md); sections below that start sas-camara with
+> `-Dsas.transport.*` are pre-M3 and were not re-run.
+
 > 🇻🇳 Vietnamese version: [`demo-script-ue-camara-entitlement-diameter.vi.md`](demo-script-ue-camara-entitlement-diameter.vi.md)
 
 > End-to-end demo script for Restlink Silent Auth (Ethiopia): from the **UE SDK**

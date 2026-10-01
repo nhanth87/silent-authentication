@@ -10,6 +10,7 @@ numbers and commands** — pick one language, never mix them:
 
 | § | Content |
 |---|---|
+| **00** | **layered architecture (M3+), start here** — four processes from the packaged dists, exposure API steps, CAMARA flows through the gateway, live vs lab evidence, `scripts/layered-e2e.sh` |
 | 0 | environment (JDK 25, sequential Maven) |
 | 0a | **two binaries** — sas-ecs → sas-camara operator token, CIBA + SIM Swap, **NV Authorization Code + PKCE**, surface isolation, `scripts/split-smoke.sh` + pcap |
 | 0b | manual Diameter runbook (S6a/SWx/Gx) + CAMARA NV / SIM Swap / OTP-SMS / CDR + CIBA money loop |
