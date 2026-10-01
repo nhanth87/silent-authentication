@@ -32,6 +32,7 @@
   <modules>
     <module>sas-common</module>
     <module>sas-token</module>
+    <module>sas-subscriber-api</module>
     <module>sas-operator-adapter</module>
     <module>sas-api</module>
     <module>sas-entitlement</module>
@@ -79,6 +80,11 @@
       <dependency>
         <groupId>et.restlink</groupId>
         <artifactId>sas-token</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>et.restlink</groupId>
+        <artifactId>sas-subscriber-api</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

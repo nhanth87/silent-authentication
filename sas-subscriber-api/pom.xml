@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>et.restlink</groupId>
+    <artifactId>sas-core</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>sas-subscriber-api</artifactId>
+  <name>sas-core :: sas-subscriber-api</name>
+  <description>The subscriber exposure contract in Java (docs/design/openapi/
+    sas-subscriber-exposure-v1.yaml): the SubscriberService interface sas-camara calls,
+    the DTOs, problem causes and the request validator. Pure Java, no I/O, no transport,
+    no REST resource — the one module both sides of the exposure hop share.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>et.restlink</groupId>
+      <artifactId>sas-common</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Contract test A: DTOs are validated against the OpenAPI schemas themselves. -->
+    <dependency>
+      <groupId>com.networknt</groupId>
+      <artifactId>json-schema-validator</artifactId>
+      <version>1.5.1</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
