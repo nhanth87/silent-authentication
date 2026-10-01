@@ -68,7 +68,7 @@ CHALLENGE="$(jfield "$CHALLENGE_JSON" challenge)"
 note "reqId=$REQ_ID"
 note "challenge=${CHALLENGE:0:64}…"
 
-step "HLR sim     the subscribers the HLR simulator is serving"
+step "HLR sim     seeded subscriber (lab control UI only — no UE/bank ever calls this)"
 note "$(curl -sS --max-time 5 "$HLR/subscribers")"
 
 step "UE          EAP-Response/AKA-Challenge (AT_MAC + AT_RES)"

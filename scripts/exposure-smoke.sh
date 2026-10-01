@@ -49,7 +49,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for url in http://127.0.0.1:8087/subscribers http://127.0.0.1:8095/entitlement/status; do
+for url in http://127.0.0.1:8087/health http://127.0.0.1:8095/entitlement/status; do
   for _ in $(seq 1 60); do curl -fs -o /dev/null "$url" 2>/dev/null && break; sleep 1; done
 done
 for _ in $(seq 1 60); do

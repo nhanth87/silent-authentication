@@ -55,7 +55,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for url in http://127.0.0.1:8087/subscribers http://127.0.0.1:8095/entitlement/status \
+# Readiness probes only: /health and /status carry no subscriber data, so nobody
+# reading the pcap mistakes the harness for a client of the core network.
+for url in http://127.0.0.1:8087/health http://127.0.0.1:8095/entitlement/status \
            http://127.0.0.1:8085/camara/health; do
   for _ in $(seq 1 60); do curl -fs -o /dev/null "$url" 2>/dev/null && break; sleep 1; done
 done

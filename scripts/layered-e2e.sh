@@ -85,7 +85,7 @@ wait_ecs() {
   done
   sleep 5
 }
-wait_up http://127.0.0.1:8087/subscribers
+wait_up http://127.0.0.1:8087/health
 wait_up http://127.0.0.1:8085/camara/health
 wait_ecs "$OUT/ecs-live.log"
 
