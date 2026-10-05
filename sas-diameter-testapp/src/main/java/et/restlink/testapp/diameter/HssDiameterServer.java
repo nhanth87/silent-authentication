@@ -39,7 +39,17 @@ public final class HssDiameterServer {
 
     public static final String LOCAL_HOST = "hss.restlink.et";
     public static final String LOCAL_REALM = "restlink.et";
-    public static final String CLIENT_HOST = "sas.restlink.et";
+    /**
+     * Default Origin-Host this simulator accepts in a CER.
+     *
+     * <p>jSS7/mobius compares {@code CER Origin-Host} to the link's peer host with a
+     * plain {@code String.equals} ({@code "invalid remote hostname in CER"} otherwise), so
+     * this is a single value and it has to be the one the client actually sends. Since the
+     * two-binary split the only Diameter client is <b>sas-ecs</b>, which originates from
+     * {@code ecs.restlink.et}; the pre-split gateway host stays available through
+     * {@code --client-host}.</p>
+     */
+    public static final String CLIENT_HOST = "ecs.restlink.et";
     public static final String CLIENT_REALM = "restlink.et";
 
     private static final String LINK_ID = "hss-sim";
@@ -53,11 +63,20 @@ public final class HssDiameterServer {
     private DiameterStack stack;
     private final IDGenerator<?> generator = new UUIDGenerator();
 
+    /** Origin-Host expected in a CER. Defaults to {@link #CLIENT_HOST}. */
+    private final String clientHost;
+
     public HssDiameterServer(HssSimulator hss, String bindAddress, int diameterPort, boolean sctp) {
+        this(hss, bindAddress, diameterPort, sctp, CLIENT_HOST);
+    }
+
+    public HssDiameterServer(HssSimulator hss, String bindAddress, int diameterPort, boolean sctp,
+                             String clientHost) {
         this.hss = hss;
         this.bindAddress = bindAddress;
         this.diameterPort = diameterPort;
         this.sctp = sctp;
+        this.clientHost = (clientHost == null || clientHost.isBlank()) ? CLIENT_HOST : clientHost.trim();
     }
 
     /** Start the stack and begin listening; answers route to {@code hss}. */
@@ -70,7 +89,7 @@ public final class HssDiameterServer {
         stack.getNetworkManager().addLink(LINK_ID,
                 InetAddress.getByName(bindAddress), 0,
                 InetAddress.getByName(bindAddress), diameterPort,
-                true, sctp, LOCAL_HOST, LOCAL_REALM, CLIENT_HOST, CLIENT_REALM, false);
+                true, sctp, LOCAL_HOST, LOCAL_REALM, clientHost, CLIENT_REALM, false);
 
         Package s6aCommands = packageOf("com.mobius.software.telco.protocols.diameter.commands.s6a",
                 com.mobius.software.telco.protocols.diameter.commands.s6a.UpdateLocationRequest.class);

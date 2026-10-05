@@ -31,6 +31,9 @@ public final class Main {
         int webPort = 8086;
         String bind = "127.0.0.1";
         boolean sctp = true;
+        // Origin-Host the simulator accepts in a CER; sas-ecs originates from
+        // ecs.restlink.et since the two-binary split.
+        String clientHost = HssDiameterServer.CLIENT_HOST;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -38,6 +41,7 @@ public final class Main {
                 case "--web-port" -> webPort = Integer.parseInt(args[++i]);
                 case "--bind" -> bind = args[++i];
                 case "--tcp" -> sctp = false;
+                case "--client-host" -> clientHost = args[++i];
                 default -> throw new IllegalArgumentException("unknown arg " + args[i]
                         + " (expected --diameter-port, --web-port, --bind, --tcp)");
             }
@@ -45,7 +49,8 @@ public final class Main {
 
         MessageLog messageLog = new MessageLog();
         HssSimulator hss = new HssSimulator(messageLog);
-        HssDiameterServer diameter = new HssDiameterServer(hss, bind, diameterPort, sctp);
+        HssDiameterServer diameter =
+                new HssDiameterServer(hss, bind, diameterPort, sctp, clientHost);
         ControlWebServer web = new ControlWebServer(hss, diameter);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

@@ -139,6 +139,15 @@ public class SasTransportConfig {
             defaultValue = "hss.restlink.et")
     String diameterDestinationHost;
 
+    /**
+     * Source address the Diameter client socket binds to. {@code 0.0.0.0} (default)
+     * lets the kernel choose, which on a multi-homed host can leave from an address the
+     * peer has not provisioned. Set {@code 127.0.0.1} for the lab.
+     */
+    @ConfigProperty(name = "sas.transport.diameter.local-bind-address",
+            defaultValue = "0.0.0.0")
+    String diameterLocalBindAddress;
+
     /** Destination (HSS/AAA) Diameter realm. */
     @ConfigProperty(name = "sas.transport.diameter.destination-realm",
             defaultValue = "restlink.et")
@@ -256,6 +265,10 @@ public class SasTransportConfig {
 
     public String diameterDestinationRealm() {
         return diameterDestinationRealm;
+    }
+
+    public String diameterLocalBindAddress() {
+        return diameterLocalBindAddress;
     }
 
     public String jss7HlrGt() {

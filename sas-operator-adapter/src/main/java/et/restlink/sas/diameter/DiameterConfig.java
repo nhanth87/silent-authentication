@@ -39,6 +39,20 @@ public class DiameterConfig {
     public String destinationRealm;
     public String peerHost;
     public int peerPort = 3868;
+
+    /**
+     * Source address the client socket binds to ({@code 0.0.0.0} = any).
+     *
+     * <p>Needed on multi-homed hosts: with {@code 0.0.0.0} the kernel picks the source
+     * address by route, so the SCTP association may leave from a LAN or IPv6
+     * link-local address that the peer does not provision, and the peer answers
+     * {@code Received connect request from non provisioned … address. Closing
+     * Channel} — the association then flaps in a reconnect loop and every request
+     * fails closed with {@code Can not route message for realm …, no links defined}
+     * (a misleading message: the link exists, it is simply not connected). Pinning
+     * the source address makes the lab deterministic; production keeps {@code 0.0.0.0}.</p>
+     */
+    public String localBindAddress = "0.0.0.0";
     public boolean isServer;
     public boolean isSctp = true;
 
@@ -107,6 +121,7 @@ public class DiameterConfig {
         cfg.destinationRealm = t.diameterDestinationRealm();
         cfg.peerHost = t.diameterPeerHost();
         cfg.peerPort = t.diameterPeerPort();
+        cfg.localBindAddress = t.diameterLocalBindAddress();
         cfg.isServer = false;
         cfg.isSctp = true;
         cfg.applications = List.of(
@@ -143,6 +158,11 @@ public class DiameterConfig {
     /** Effective realm for a link. */
     public String effectiveDestinationRealm() {
         return isBlank(destinationRealm) ? localRealm : destinationRealm;
+    }
+
+    /** Effective source address for a link (blank = any, like {@code 0.0.0.0}). */
+    public String effectiveLocalBindAddress() {
+        return isBlank(localBindAddress) ? "0.0.0.0" : localBindAddress.trim();
     }
 
     /** Effective peer host for a link. */

@@ -112,7 +112,7 @@ public final class CorsacSwxVerifierBackend implements SwxVerifierBackend, AuthV
                 10_000L, 2_000L, 5_000L, 5_000L, 5_000L);
         stack.getNetworkManager().addLink(LINK_ID,
                 InetAddress.getByName(cfg.effectivePeerHost()), cfg.peerPort,
-                InetAddress.getByName("0.0.0.0"), 0,
+                InetAddress.getByName(cfg.effectiveLocalBindAddress()), 0,
                 cfg.isServer, cfg.isSctp, cfg.localHost, cfg.localRealm,
                 cfg.effectiveDestinationHost(), cfg.effectiveDestinationRealm(), false);
         registerApplications(stack, LINK_ID, cfg);
