@@ -140,6 +140,51 @@ silent-auth-diameter-demo.pcap  372 packet — CER/CCA → ULR/ULA 2001
 | Shape R (relay AAA của operator) | R1–R3 phải đóng bằng văn bản trước khi boot production |
 | Contact info trên outro card | `terms.py` đang để placeholder `hello@restlink.et` — **sửa trước khi đưa khách** |
 
+### 3.5 QR hand-off desktop → phone (`nv-2`)
+
+Camera trên desktop không có SIM nên IP-match không thể chạy. Bank hiện mã QR,
+điện thoại quét và **chứng minh số thay cho desktop**.
+
+| Phần | File |
+|---|---|
+| Store (so 120 s, lazy expiry, không thread) | `sas-api/src/main/java/et/restlink/sas/qrsession/QrSessionStore.java` |
+| Resource `POST /qr-session/v1`, `POST /{id}/claim`, `GET /{id}` | `sas-api/src/main/java/et/restlink/sas/qrsession/QrSessionResource.java` |
+| Wire shapes | `sas-api/src/main/java/et/restlink/sas/qrsession/QrSessionRequests.java` |
+| Core SDK (JVM) | `ue-sdk/src/main/java/et/restlink/uesdk/QrSessionClient.java` + `JsonReader.java` |
+| Android (qua `CellularBearer`) | `ue-sdk-android/src/main/java/et/restlink/uesdk/android/QrSessionClient.java` |
+| iOS | `ue-sdk-ios/Sources/UESDK/QrSessionClient.swift` |
+| Web (chỉ tạo + poll) | `ue-sdk-web/src/qr-session.js` + `qr-session-state.js` + `qr-session.d.ts` |
+| Thiết kế + bằng chứng chạy thật | `docs/design/camara-qr-handoff.md` |
+
+Kết quả kiểm chứng trên dist đã đóng gói (HLR sim SCTP :2906):
+
+```
+claim cellular   → {"state":"RESOLVED","devicePhoneNumberVerified":false,"fallbackReason":"SIM_SWAP_SUSPECT"}
+                   MAP thật: sendImsi → provideSubscriberInfo → sendAuthenticationInfo
+claim TS.43      → {"devicePhoneNumberVerified":true,"decision":"APPROVED"}   (ECS lab-evidence, §00.5)
+dùng lại token   → 401 UNAUTHENTICATED                                          (single-use)
+phone Wi-Fi      → 400 ACCESS_TECH_NOT_CELLULAR
+phone B, mã QR cũ → 409 ALREADY_CLAIMED
+bearer bịa       → 400 INVALID_ARGUMENT (không đoán)
+```
+
+**Ba lỗi thật do test bắt được trong lúc làm:**
+1. `create()` dùng `computeIfAbsent` cho claim gate → session tạo lại cùng id bị
+   coi là đã claim. Đổi sang `put` (gate mới mỗi lần tạo).
+2. Bearer gate chạy **trước** nhánh operator-token → đường TS.43/Wi-Fi (vốn khai
+   `WIFI`) không bao giờ chạy được. Đảo thứ tự.
+3. Truyền `operatortoken:<tk>` vào anchor thay vì token trần → ECS nhận token nó
+   chưa phát hành, mọi claim Wi-Fi trả 401. Đã sửa + thêm test chốt.
+
+Ranh giới tầng giữ nguyên: QR surface nằm ở gateway, **không signal lõi mạng** —
+nó submit `VerifyRequestEvent` và đọc verdict, mọi sự thật thuê bao vẫn đi qua
+`SubscriberService` → sas-ecs. H25 vẫn 38/38 xanh.
+
+**iOS chưa compile được ở đây**: máy này không có Swift toolchain
+(`swift test` cần macOS/Xcode theo `AGENTS.md` §1). File Swift + test đã viết
+đúng API của module (`CellularBearer.Requirement`, `AccessTech` case names) nhưng
+**chưa được biên dịch** — cần chạy `swift test` trên macOS trước khi coi là xong.
+
 ---
 
 ## 4. Lệnh tái lập

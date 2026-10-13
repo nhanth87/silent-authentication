@@ -82,6 +82,41 @@ node --test   # or: npm test (Node >= 18)
 - MSISDN stays on the bank backend/SAS side per project privacy rule — never
   surfaced to any UI.
 
+
+## Desktop half of the QR hand-off (CAMARA NV v2)
+
+A browser **cannot** claim a session — it has no SIM and cannot bind a socket to
+a radio. This module therefore only opens the hand-off and reports the phone's
+verdict, which is the whole point of the flow.
+
+```js
+import { QrSessionClient } from '@restlink/ue-sdk-web/qr-session';
+
+const qr = new QrSessionClient({
+  baseUrl: 'https://sas.example.et',
+  authorization: nvAccessToken,        // single-use NV bearer for the bank session
+  apiKey: 'bank-tenant-key',
+  phoneNumber: '+251911111111',       // omit for the discovery variant
+});
+
+const { qrPayload } = await qr.create();   // render this as a QR image
+// ... the customer scans it with their phone ...
+
+const status = await qr.poll(sessionId, { intervalMs: 1500 });
+if (status.approved) {
+  // only ever true on an explicit `true` on a RESOLVED session
+} else {
+  // fall back to OTP / passkey / push
+}
+```
+
+Fail-closed: `devicePhoneNumberVerified` is `null` while pending — distinct from
+`false` — so a bank cannot read "not answered yet" as "answered no", and `poll`
+resolves with the last status rather than throwing, so a timeout cannot become a
+retry loop that looks like consent.
+
+Design and verification: `docs/design/camara-qr-handoff.md`.
+
 ## License
 
 Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).

@@ -137,6 +137,40 @@ JAVA_HOME=$HOME/.local/share/mise/installs/java/zulu-25 mvn clean test
 - Privacy: the SDK never reads subscriber identifiers; pass `msisdn` only if
   your app owns it, and keep it off any UI per project privacy rule.
 
+
+## Desktop → phone QR hand-off (CAMARA NV v2)
+
+A desktop login has no SIM, so the IP-match path cannot help the person sitting
+at it. The bank renders a QR code; the phone scans it and claims the session.
+
+```java
+// OFF the main thread — blocking I/O. There is deliberately no executor here:
+// the hosting app owns its threading.
+QrSessionClient qr = new QrSessionClient();
+String sessionId = QrSessionClient.parsePayload(scanned);   // refuses anything not a UUID
+
+QrSessionClient.ClaimResult verdict = qr.claim(
+        "https://sas.example.et",
+        sessionId,
+        cellularBearer,                // binds the socket to the cellular Network
+        CellularRequirement.CELLULAR,  // fails closed before the round trip
+        null,                          // msisdn, discovery variant
+        null,                          // operatorToken, Wi-Fi variant
+        apiKeyNullable);
+
+if (!verdict.approved()) {
+    // fallbackReason is set — fall back to OTP / passkey / push
+}
+```
+
+The bearer is the point: `Network.openConnection(URL)` pins **only** the returned
+connection to the cellular network, which is what makes the source IP
+attestable. A browser and a desktop cannot do this at all — that asymmetry is why
+the hand-off exists. A phone on Wi-Fi either carries a TS.43 temporary token or
+must fall back to OTP.
+
+Design and verification: `docs/design/camara-qr-handoff.md`.
+
 ## License
 
 Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).

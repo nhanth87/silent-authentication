@@ -106,6 +106,40 @@ swift test   # requires the Swift toolchain (macOS/Linux)
 - Privacy: pass `msisdn` only if your app owns it; keep it off any UI per
   project privacy rule.
 
+
+## Desktop → phone QR hand-off (CAMARA NV v2)
+
+A desktop login has no SIM, so the IP-match path cannot help the person sitting
+at it. The bank renders a QR code; the phone scans it and claims the session.
+
+```swift
+// The claim blocks; call it from a Task, not the main actor's synchronous path.
+let qr = QrSessionClient()
+let sessionId = try QrSessionClient.parsePayload(scanned)   // refuses anything not a UUID
+
+let verdict = try await qr.claim(
+    sasBaseUrl: "https://sas.example.et",
+    sessionId: sessionId,
+    bearer: CellularBearer(),          // NWPathMonitor gate, fails closed on Wi-Fi
+    requirement: .cellular,
+    operatorToken: nil                 // GSMA TS.43 temporary token, Wi-Fi variant
+)
+
+if verdict.approved {
+    // the bank may complete the desktop login
+} else {
+    // verdict.fallbackReason is set — fall back to OTP / passkey / push
+}
+```
+
+iOS cannot pin a `URLSession` to an interface — `requiredInterfaceType` lives on
+`NWParameters`, not `URLSessionConfiguration` (see `CellularBearer`). This client
+therefore *observes* the path and fails closed rather than pretending it pinned
+the socket, which is the honest behaviour for a product whose premise is that
+the address was assigned by the operator.
+
+Design and verification: `docs/design/camara-qr-handoff.md`.
+
 ## License
 
 Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).

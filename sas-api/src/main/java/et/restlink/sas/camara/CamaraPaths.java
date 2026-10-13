@@ -14,6 +14,8 @@ public final class CamaraPaths {
     private static final String NUMBER_VERIFICATION_PREFIX = "/number-verification/";
     private static final String SIM_SWAP_PREFIX = "/sim-swap/";
     private static final String ONE_TIME_PASSWORD_SMS_PREFIX = "/one-time-password-sms/";
+    /** Desktop → phone hand-off (Restlink extension, not a CAMARA-published API). */
+    private static final String QR_SESSION_PREFIX = "/qr-session/";
 
     private CamaraPaths() {
     }
@@ -44,7 +46,8 @@ public final class CamaraPaths {
                 || path.startsWith(API_ROOT + "/")
                 || path.startsWith(NUMBER_VERIFICATION_PREFIX)
                 || path.startsWith(SIM_SWAP_PREFIX)
-                || path.startsWith(ONE_TIME_PASSWORD_SMS_PREFIX);
+                || path.startsWith(ONE_TIME_PASSWORD_SMS_PREFIX)
+                || path.startsWith(QR_SESSION_PREFIX);
     }
 
     public static String withoutApiRoot(String rawPath) {

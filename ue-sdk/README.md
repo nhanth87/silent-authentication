@@ -103,6 +103,47 @@ declaration is only trustworthy when the socket that carries it is pinned.
 JAVA_HOME=$HOME/.local/share/mise/installs/java/zulu-25 mvn clean test
 ```
 
+
+## Desktop → phone QR hand-off (CAMARA NV v2)
+
+A customer signing in on a desktop has no SIM, so the cellular IP-match path
+cannot help them: the address the desktop sends was never assigned by a PGW. The
+bank renders a QR code, the phone scans it, and the phone becomes the device that
+proves the number.
+
+`QrSessionClient` is that device half. It moves three things — the session id
+from the QR image, the bearer it observed, and optionally a GSMA TS.43 temporary
+token or a number for the discovery variant. It makes **no** trust decision:
+`ClaimResult.approved()` is the server's verdict, reported as it arrived. A
+pending or unparseable answer reads as *not* approved, because silence is not
+consent.
+
+```java
+QrSessionClient qr = new QrSessionClient();
+String sessionId = QrSessionClient.parsePayload(scanned);  // refuses anything not a UUID
+
+QrSessionClient.ClaimResult verdict = qr.claim(
+        sasBaseUrl, sessionId,
+        AccessTech.LTE,                 // the bearer you observed
+        CellularRequirement.CELLULAR,   // fail-closed before the round trip
+        null,                           // msisdn, for the discovery variant
+        null,                           // operatorToken, for the Wi-Fi variant
+        apiKeyNullable,
+        connector);                     // pass a cellular-bound Connector
+
+if (verdict.approved()) {
+    // the bank may complete the desktop login
+} else {
+    // fallbackReason is set; the app must take OTP / passkey / push
+}
+```
+
+`JsonReader` backs the response parsing: a flat, single-level scalar reader that
+returns `{}` for anything it does not fully understand, so an unreadable answer
+can never be mistaken for an approval.
+
+Design and verification: `docs/design/camara-qr-handoff.md`.
+
 ## License
 
 Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
