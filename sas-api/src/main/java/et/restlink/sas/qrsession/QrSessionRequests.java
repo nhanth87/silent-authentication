@@ -77,8 +77,4 @@ public final class QrSessionRequests {
                                  String decision,
                                  long expiresInSeconds) {
     }
-
-    /** CAMARA-shaped error body: status + code + message, all required. */
-    public record QrError(int status, String code, String message) {
-    }
 }

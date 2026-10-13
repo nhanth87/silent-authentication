@@ -168,13 +168,50 @@ phone B, mã QR cũ → 409 ALREADY_CLAIMED
 bearer bịa       → 400 INVALID_ARGUMENT (không đoán)
 ```
 
-**Ba lỗi thật do test bắt được trong lúc làm:**
+**Bảy lỗi thật do test và ma trận request bắt được trong lúc làm:**
+
+Ba lỗi đầu do unit test bắt:
+
 1. `create()` dùng `computeIfAbsent` cho claim gate → session tạo lại cùng id bị
    coi là đã claim. Đổi sang `put` (gate mới mỗi lần tạo).
 2. Bearer gate chạy **trước** nhánh operator-token → đường TS.43/Wi-Fi (vốn khai
    `WIFI`) không bao giờ chạy được. Đảo thứ tự.
 3. Truyền `operatortoken:<tk>` vào anchor thay vì token trần → ECS nhận token nó
-   chưa phát hành, mọi claim Wi-Fi trả 401. Đã sửa + thêm test chốt.
+   chưa phát hành, mọi claim Wi-Fi trả 401.
+
+Bốn lỗi sau do ma trận request trên dist thật bắt (53 shape,
+`scripts/qr-request-matrix.py`). Nguyên nhân gốc: ma trận đầu tiên mở mọi
+session bằng operator token, khiến mọi session thành "specific-number" — **nhánh
+NV bearer mà production dùng chưa từng được chạy**:
+
+4. `GET /{id}` không cần credential, và key của tenant khác đọc được verdict của
+   session này → nay bắt buộc `X-Api-Key` của tenant sở hữu, tenant khác `403`.
+5. Phone có thể claim số **khác** số bank hỏi; SAS verify số của bank rồi trả
+   verdict đó cho phone → nay `422 MISMATCHING_IDENTIFIER`.
+6. Claim mang operator token hợp lệ bị đọc như JWT rồi từ chối → nay cùng thứ
+   tự ưu tiên như `create`.
+7. `msisdn` của phone không parse được bị **bỏ qua âm thầm** trên session
+   specific-number (với discovery thì 422) → nay `400 INVALID_ARGUMENT`.
+
+Thêm: `/camara/qr-session/v1` không tồn tại (client dựng URL từ `apiRoot` nhận
+HTML 404) → thêm alias resource thuần.
+
+**Một ranh giới framework đã ghi rõ thay vì hứa hào:** body không bind được (JSON
+array, JSON cắt cụt, sai kiểu scalar) trả `400` **rỗng** — Quarkus REST chặn
+trước mapper chain, không có switch `quarkus.*` nào ở 3.37.3 để đổi. `POST
+/verify` y hệt, nên hai surface nhất quán. Riêng *unknown property* có body
+(`CamaraUnrecognizedPropertyExceptionMapper`). Mọi lỗi do SAS tự sinh đều có
+`status`/`code`/`message`.
+
+Hai probe tái lập được, commit vào `scripts/`:
+
+```bash
+./scripts/qr-lab.sh up live            # transport thật (verdict = FALLBACK)
+python3 scripts/qr-request-matrix.py   # 53 shape, exit≠0 nếu có status lạ
+./scripts/qr-lab.sh up live enforced   # bật enforce-api-keys (hình dạng prod)
+python3 scripts/qr-tenant-probe.py     # 10 check, 10/10
+./scripts/qr-lab.sh down
+```
 
 Ranh giới tầng giữ nguyên: QR surface nằm ở gateway, **không signal lõi mạng** —
 nó submit `VerifyRequestEvent` và đọc verdict, mọi sự thật thuê bao vẫn đi qua

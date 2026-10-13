@@ -12,6 +12,8 @@ import et.restlink.sas.api.ApiCdrRecorder;
 import et.restlink.sas.api.SasVerifyEngine;
 import et.restlink.sas.api.TenantRegistry;
 import et.restlink.sas.api.dto.VerifyRequestDto;
+import et.restlink.sas.camara.CamaraErrorInfo;
+import et.restlink.sas.security.ApiKeyAuthenticator;
 import et.restlink.sas.events.VerifyRequestEvent;
 import et.restlink.sas.id.PhoneNumberNormalizer;
 import et.restlink.sas.model.AccessTech;
@@ -102,6 +104,7 @@ public class QrSessionResource {
     private static final String CODE_CONFLICT = "ALREADY_CLAIMED";
     private static final String CODE_NOT_CELLULAR = "ACCESS_TECH_NOT_CELLULAR";
     private static final String CODE_QUOTA_EXCEEDED = "QUOTA_EXCEEDED";
+    private static final String CODE_MISMATCHING = "MISMATCHING_IDENTIFIER";
 
     @Inject
     QrSessionStore sessions;
@@ -128,10 +131,50 @@ public class QrSessionResource {
     TenantRegistry tenants = new TenantRegistry();
 
     @Inject
+    ApiKeyAuthenticator apiKeys = new ApiKeyAuthenticator();
+
+    @Inject
     HttpHeaders httpHeaders;
 
     @Inject
     ApiCdrRecorder cdr = ApiCdrRecorder.NOOP;
+
+    /**
+     * Answers {@code null} when the caller may act on this session, or the error
+     * it must get instead.
+     *
+     * <p><strong>Why a QR session needs a credential at all.</strong> Its id is a
+     * 122-bit UUID, but it is not a secret: it is rendered on the customer's
+     * screen, it travels in a URL, and URLs end up in proxy logs, browser
+     * history and referrers. An unauthenticated read would turn any of those
+     * into a way to learn whether a given bank login succeeded — which is
+     * exactly the answer an attacker wants. So the two operations that reveal a
+     * verdict ({@code GET /{id}}, and the claim) require the tenant that opened
+     * the session.</p>
+     *
+     * <p>The NV bearer cannot serve here: it is single-use and already spent at
+     * {@code POST /qr-session/v1}. The tenant API key is the credential both
+     * hops can carry.</p>
+     *
+     * <p>Under {@code sas.security.enforce-api-keys=false} (lab) this is a no-op,
+     * exactly as at {@code /session-tuple} — the lab profile accepts no auth by
+     * design and the prod profile refuses to boot in that shape (PRO-31).</p>
+     */
+    private Response requireSessionTenant(QrSessionStore.QrSession session) {
+        String key = apiKeyHeader();
+        String rejection = apiKeys.validate(key);
+        if (rejection != null) {
+            return error(401, CODE_UNAUTHENTICATED, rejection, session.correlator());
+        }
+        TenantRegistry.TenantInfo tenant = tenants.resolve(key);
+        if (tenant == null || !tenant.tenantId().equals(session.tenantId())) {
+            LOG.warn("[SAS] /qr-session session={} refused — not the owning tenant",
+                    session.sessionId());
+            return error(403, CODE_PERMISSION_DENIED,
+                    "this QR session belongs to another tenant", session.correlator());
+        }
+        return null;
+    }
 
     // ------------------------------------------------------------------ create
 
@@ -280,6 +323,14 @@ public class QrSessionResource {
                     "qr session not found or expired", correlatorOf(xCorrelator));
         }
         String correlator = session.correlator();
+
+        // Before the claim gate, so a stranger cannot burn a session by guessing
+        // nothing but the id: consuming it would deny the real phone its turn.
+        Response tenantRefusal = requireSessionTenant(session);
+        if (tenantRefusal != null) {
+            return tenantRefusal;
+        }
+
         ApiAudit audit = ApiAudit.start("QRSESSION", "QRSESSION", correlator)
                 .detail("action", "claim")
                 .detail("sessionId", sessionId);
@@ -345,27 +396,69 @@ public class QrSessionResource {
                 return error(401, CODE_UNAUTHENTICATED,
                         "operator token binding is not a valid E.164 number", correlator);
             }
-        } else if (claimed == null) {
+        } else {
             // Discovery variant: the phone states which number it wants proven.
+            // Specific-number variant: it may repeat the number, but it may not
+            // swap it. Silently verifying the bank's number and handing that
+            // verdict to a phone that asked about another one would let an SDK
+            // report "your number is verified" about the wrong number.
             String phone = body == null ? null : trimToNull(body.msisdn());
-            claimed = phone == null ? null : PhoneNumberNormalizer.toE164(phone).orElse(null);
+            String stated = null;
+            if (phone != null) {
+                stated = PhoneNumberNormalizer.toE164(phone).orElse(null);
+                if (stated == null) {
+                    // Never ignore a number we could not read: on a
+                    // specific-number session it would be silently dropped and
+                    // the caller would learn nothing, while the same value at
+                    // create() is refused outright.
+                    audit.detail("reason", CODE_INVALID_ARGUMENT);
+                    cdr.record(audit.complete(400, CODE_INVALID_ARGUMENT));
+                    return error(400, CODE_INVALID_ARGUMENT,
+                            "msisdn must be E.164 (+<digits>)", correlator);
+                }
+            }
             if (claimed == null) {
-                cdr.record(audit.complete(422, "MISSING_IDENTIFIER"));
-                return error(422, "MISSING_IDENTIFIER",
-                        "this session was opened for number discovery; the phone must"
-                                + " supply msisdn (or an operatorToken)", correlator);
+                claimed = stated;
+                if (claimed == null) {
+                    cdr.record(audit.complete(422, "MISSING_IDENTIFIER"));
+                    return error(422, "MISSING_IDENTIFIER",
+                            "this session was opened for number discovery; the phone must"
+                                    + " supply msisdn (or an operatorToken)", correlator);
+                }
+            } else if (stated != null && !stated.equals(claimed)) {
+                audit.detail("reason", CODE_MISMATCHING);
+                cdr.record(audit.complete(422, CODE_MISMATCHING));
+                return error(422, CODE_MISMATCHING,
+                        "this session is open for a different number; the phone may not"
+                                + " substitute one", correlator);
             }
         }
         audit.msisdn(mask(claimed));
 
-        // The bank session was authenticated at create time; the claim rides that
-        // session rather than minting a second credential.
-        if (securityConfig.tokenValidationEnabled() && authorization != null
-                && !authorization.isBlank()) {
-            TokenValidator.DetailedAuth auth = tokenValidator.validateDetailed(authorization);
-            if (!auth.ok()) {
-                cdr.record(audit.complete(401, CODE_UNAUTHENTICATED));
-                return error(401, CODE_UNAUTHENTICATED, auth.error(), correlator);
+        // The bank session was authenticated at create time, so the claim does
+        // not need a credential — but if one is presented it must be understood,
+        // with the same precedence create() uses. Reading `operatortoken:<tk>`
+        // as a JWT would answer a perfectly valid caller with "malformed JWT",
+        // which is what the bank would see if it authenticated both hops the
+        // same way.
+        if (authorization != null && !authorization.isBlank()) {
+            String operatorCandidate = identityAnchor.extractCandidate(authorization, null, null);
+            if (operatorCandidate != null) {
+                IdentityAnchor.OperatorBinding presented =
+                        identityAnchor.resolveOperatorToken(operatorCandidate);
+                if (presented == null) {
+                    audit.detail("reason", "OPERATOR_TOKEN_REJECTED");
+                    cdr.record(audit.complete(401, CODE_UNAUTHENTICATED));
+                    return error(401, CODE_UNAUTHENTICATED,
+                            "operator token is invalid, expired or already used", correlator);
+                }
+            } else if (securityConfig.tokenValidationEnabled()) {
+                TokenValidator.DetailedAuth auth =
+                        tokenValidator.validateDetailed(authorization);
+                if (!auth.ok()) {
+                    cdr.record(audit.complete(401, CODE_UNAUTHENTICATED));
+                    return error(401, CODE_UNAUTHENTICATED, auth.error(), correlator);
+                }
             }
         }
 
@@ -413,6 +506,10 @@ public class QrSessionResource {
         if (session == null) {
             return error(404, CODE_NOT_FOUND,
                     "qr session not found or expired", correlatorOf(xCorrelator));
+        }
+        Response tenantRefusal = requireSessionTenant(session);
+        if (tenantRefusal != null) {
+            return tenantRefusal;
         }
         String correlator = session.correlator();
         QrSessionStore.State state = sessions.state(session, now);
@@ -496,7 +593,7 @@ public class QrSessionResource {
 
     private static Response error(int status, String code, String message, String correlator) {
         return Response.status(status)
-                .entity(new QrSessionRequests.QrError(status, code, message))
+                .entity(new CamaraErrorInfo(status, code, message))
                 .header("x-correlator", correlator)
                 .build();
     }

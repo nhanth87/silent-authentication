@@ -99,7 +99,10 @@ script. ⚠ The EAP-AKA wire codec is still a P1 blocker (architecture doc §9):
 uses a lab card built on the same codec, so it does not prove handset interoperability.
 
 ```bash
-./scripts/ts43-lab-demo.sh
+./scripts/ts43-lab-demo.sh                  # TS.43 entitlement demo (lab card, not a handset)
+./scripts/qr-lab.sh up live|enforced     # lab stack for the QR contract probes
+python3 scripts/qr-request-matrix.py     # 53 request shapes, non-zero exit on a surprise
+python3 scripts/qr-tenant-probe.py       # verdict-read scoping, enforced shape only
 ```
 
 Start sas-ecs for it with the MAP transports (own association, ss7-ecs.json):
@@ -364,6 +367,14 @@ Open items (do not silently invent answers):
       `private_key_jwt`, `/token` CIBA + `client_credentials` + JWT bearer
       (`sub=tel:<E.164>` / `operatortoken:<token>`), discovery/JWKS, and CAMARA scope
       policy. H14 source-checks the grant/auth surface.
+- [x] **CAMARA NV v2 desktop → phone QR hand-off (2026-10-13)** — `POST /qr-session/v1`,
+      `POST /qr-session/v1/{id}/claim`, `GET /qr-session/v1/{id}` on sas-camara, plus
+      `QrSessionClient` in every SDK (a browser cannot claim — it has no SIM and
+      cannot bind a socket). The claim runs the one verify FSM; the verdict is the
+      only thing that authenticates anyone. Verdicts are tenant-scoped, the claim
+      gate is a one-shot CAS, and the whole request surface is pinned by
+      `scripts/qr-request-matrix.py` + `scripts/qr-tenant-probe.py`. Doc:
+      `docs/design/camara-qr-handoff.md`
 - [x] **CAMARA NV Authorization Code + PKCE, ES256 tokens (2026-10-01)** — `GET /authorize`
       (exact redirect_uri, mandatory S256 PKCE, network authentication through the
       Resolver on the connection source), `/token` `authorization_code`, ES256 `at+jwt`

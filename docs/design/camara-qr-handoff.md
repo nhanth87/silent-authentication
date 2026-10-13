@@ -73,7 +73,7 @@ delivery mechanism, never a second way to be approved.
 |---|---|---|
 | `accessTech` | no | the phone's own bearer declaration: `GS_2G3G` \| `LTE` \| `NR` \| `WIFI` \| `FIXED` |
 | `operatorToken` | no | GSMA TS.43 temporary token — the Wi-Fi variant |
-| `msisdn` | no | claimed number, for the discovery variant |
+| `msisdn` | no | claimed number, for the discovery variant; must be E.164, and may not differ from the number the bank asked about |
 | header `X-Sas-Src-Ip` / `-Port` | no | the bearer tuple; production mints these at the edge, lab falls back to `10.20.30.40:55555` |
 
 ```json
@@ -87,7 +87,16 @@ delivery mechanism, never a second way to be approved.
 
 ### `GET /qr-session/v1/{id}`
 
-What the bank polls.
+What the bank polls. **Requires the tenant API key of the tenant that opened the
+session** (`X-Api-Key`), because a session id is not a secret: it is rendered on
+the customer's screen and travels in a URL, and URLs end up in proxy logs,
+browser history and referrers. An unauthenticated read would turn any of those
+into a way to learn whether a given bank login succeeded.
+
+The NV bearer cannot serve here — it is single-use and already spent at create.
+The tenant key is the one credential both hops carry. Under
+`sas.security.enforce-api-keys=false` (lab) the check is a no-op, exactly as at
+`/session-tuple`.
 
 ```json
 {
@@ -118,29 +127,57 @@ is "not authenticated"** — there is no default-approve reading of this object.
 
 ## 4. Fail-closed properties
 
+Measured against the packaged dists with `scripts/qr-request-matrix.py` (53
+request shapes) and `scripts/qr-tenant-probe.py` (10 checks in the enforced
+prod shape). Both exit non-zero on an unexpected status.
+
 | Situation | Answer |
 |---|---|
 | Session unknown, or past its 120 s budget | `404 NOT_FOUND` |
-| Second handset on the same code | `409 ALREADY_CLAIMED` |
+| Second handset on the same code, or five at once | `409 ALREADY_CLAIMED` (exactly one wins) |
 | Phone declares Wi-Fi/fixed and offers no operator token | `400 ACCESS_TECH_NOT_CELLULAR` |
 | Phone declares a bearer name outside the contract | `400 INVALID_ARGUMENT` — never guessed |
+| Phone's `msisdn` is not E.164 | `400 INVALID_ARGUMENT` — refused, not ignored |
+| Phone asks about a number other than the bank's | `422 MISMATCHING_IDENTIFIER` |
+| Bank states a number that its operator token contradicts | `422 UNNECESSARY_IDENTIFIER` |
 | Operator token invalid, expired or already used | `401 UNAUTHENTICATED` |
+| NV bearer or operator token replayed | `401 UNAUTHENTICATED` (single use) |
+| NV bearer without `number-verification:verify` | `403 PERMISSION_DENIED` |
 | Discovery session and the phone supplies no number | `422 MISSING_IDENTIFIER` |
 | Verifier FSM times out (5 s) or throws | `false` + `TIMEOUT` / `NETWORK_ERROR` |
-| Bank polls before the phone claims | `PENDING`, `devicePhoneNumberVerified: null` |
+| Poll with no credentials (enforced) | `401 UNAUTHENTICATED` |
+| Poll with another tenant's key | `403 PERMISSION_DENIED` |
+| Poll by the owning tenant | `200` |
+| Bank polls before the phone claims | `200 PENDING`, `devicePhoneNumberVerified: null` |
 | Bank polls after expiry | `404` — an expired session is never approvable |
+| Unknown request property | `400 INVALID_ARGUMENT`, naming the property |
+| Body that cannot be bound at all (JSON array, truncated, wrong scalar type) | `400`, **with no body** — see below |
+| Wrong method on any path | `405`, no body |
 
-Two design points that are easy to get wrong and are pinned by tests:
+### Known framework boundary: an unbindable body has no error body
+
+A request body that Jackson cannot bind — an array where an object belongs, a
+document truncated mid-value, a wrong scalar type — answers `400` with an empty
+body. Quarkus REST short-circuits these before the JAX-RS exception-mapper chain
+runs; an `ExceptionMapper` cannot intercept them, and no `quarkus.*` switch
+exists in 3.37.3 to change it. **This is not specific to the hand-off:
+`POST /verify` behaves identically**, so the two surfaces stay consistent.
+
+An *unknown property* is the exception and does carry a body
+(`CamaraUnrecognizedPropertyExceptionMapper`), because `fail-on-unknown-properties`
+surfaces as a distinct failure the chain does see. That is the malformed request a
+real bank client is most likely to send.
+
+Every error the SAS itself raises carries `status`, `code` and `message`.
+
+### Two design points that are easy to get wrong
 
 - **The claim gate never resets.** `beginClaim` is a compare-and-set per session
   id, so a replayed `claim` after a completed hand-off is refused rather than
-  answered twice. Two phones racing one QR code would otherwise leave the bank
-  unable to tell which handset the evidence belonged to.
+  answered twice, and five handsets racing one code yield exactly one verdict.
 - **The operator token is checked before the bearer gate.** The TS.43 path
   legitimately declares `WIFI`; gating on the bearer first would make the Wi-Fi
   variant permanently unreachable.
-
----
 
 ## 5. Layer split (gate H25)
 
@@ -171,7 +208,22 @@ a right-length string with the wrong separators.
 
 ---
 
-## 7. Verified on the packaged dists
+## 7. What the request matrix found
+
+The first matrix authenticated every `create` with an operator token, which
+silently made every session a *specific-number* session — so the bearer path
+that production actually uses was never exercised. Fixing that exposed five
+real defects, all fixed with tests:
+
+| # | Defect | Answer now |
+|---|---|---|
+| 1 | `GET /{id}` needed no credential, and any tenant's key read any session | tenant key required; another tenant gets `403` |
+| 2 | A phone could claim a *different* number than the bank asked about; the bank's number was verified and that verdict handed to the phone | `422 MISMATCHING_IDENTIFIER` |
+| 3 | A claim presenting a valid operator token was read as a JWT and refused | same precedence as `create` |
+| 4 | A phone's `msisdn` that could not be normalised was silently ignored on a specific-number session | `400 INVALID_ARGUMENT` |
+| 5 | `/camara/qr-session/v1` did not exist, so an `apiRoot`-configured client got an HTML 404 | pure alias resource added |
+
+## 8. Verified on the packaged dists
 
 SS7/MAP backend, HLR simulator on SCTP :2906:
 

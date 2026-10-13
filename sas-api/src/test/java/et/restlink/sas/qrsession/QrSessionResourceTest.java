@@ -51,6 +51,43 @@ class QrSessionResourceTest {
     private StubBootstrap stub;
     private QrSessionResource resource;
 
+    /**
+     * An anchor stub that overrides the default methods too.
+     *
+     * <p>A lambda for {@link IdentityAnchor} implements only
+     * {@code resolveOperatorToken}; {@code extractCandidate} stays the interface
+     * default and answers null, so a claim carrying an operator token would never
+     * reach the operator branch at all. This stub is what actually exercises it.
+     */
+    static final class StubAnchor implements IdentityAnchor {
+
+        final IdentityAnchor.OperatorBinding binding;
+        final java.util.List<String> seen = new java.util.ArrayList<>();
+
+        StubAnchor(IdentityAnchor.OperatorBinding binding) {
+            this.binding = binding;
+        }
+
+        @Override
+        public OperatorBinding resolveOperatorToken(String candidate) {
+            seen.add(candidate);
+            return binding;
+        }
+
+        @Override
+        public String extractCandidate(String authorizationHeader, String loginHint,
+                                       String operatorTokenHeader) {
+            if (authorizationHeader == null || authorizationHeader.isBlank()) {
+                return null;
+            }
+            String value = authorizationHeader.trim();
+            if (value.regionMatches(true, 0, "Bearer operatortoken:", 0, 21)) {
+                return value.substring(21).trim();
+            }
+            return null;
+        }
+    }
+
     /** Deterministic core: returns a canned verdict and captures what was asked. */
     static class StubBootstrap implements SasVerifyEngine {
         VerifyResult result;
@@ -112,6 +149,9 @@ class QrSessionResourceTest {
         setField(registry, "enforceApiKeys", false);
         setField(registry, "apiKeysRaw", "");
         resource.tenants = registry;
+        // the api-key gate is part of the surface now; wire it with the same
+        // config object the other collaborators get
+        resource.apiKeys = withConfig(new et.restlink.sas.security.ApiKeyAuthenticator(), config);
         resource.httpHeaders = fixedHeaders("X-Api-Key", null);
     }
 
@@ -369,6 +409,170 @@ class QrSessionResourceTest {
                 "the QR image must not leak billing context");
     }
 
+    // ---- who may read or claim a session (found by the live request matrix) ----
+
+    @Test
+    void theVerdictIsNotReadableWithoutTheOwningTenantsKey() throws Exception {
+        // Enforcement is off in every lab boot, so the gate is exercised here by
+        // turning it on for the whole exchange, create included.
+        resource.apiKeys = withConfig(new et.restlink.sas.security.ApiKeyAuthenticator(),
+                enforcingConfig("bank-tenant-key"));
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "bank-tenant-key");
+        String sessionId = openSession(MSISDN);
+        claimOk(sessionId);
+
+        resource.httpHeaders = fixedHeaders("X-Api-Key", null);
+        Response anonymous = resource.status(sessionId, null);
+        assertEquals(401, anonymous.getStatus(),
+                "a session id is not a secret: it is rendered on screen and travels in URLs");
+        assertEquals("UNAUTHENTICATED", codeOf(anonymous));
+    }
+
+    @Test
+    void anotherTenantsKeyCannotReadTheVerdict() throws Exception {
+        resource.apiKeys = withConfig(new et.restlink.sas.security.ApiKeyAuthenticator(),
+                enforcingConfig("own-key,stranger-key"));
+        resource.tenants = twoTenantRegistry();
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "own-key");
+        String sessionId = openSession(MSISDN);
+        claimOk(sessionId);
+
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "stranger-key");
+        Response stranger = resource.status(sessionId, null);
+        assertEquals(403, stranger.getStatus(),
+                "a valid key from another tenant must not read this session's verdict");
+        assertEquals("PERMISSION_DENIED", codeOf(stranger));
+    }
+
+    @Test
+    void theOwningTenantMayStillReadItsVerdict() throws Exception {
+        resource.apiKeys = withConfig(new et.restlink.sas.security.ApiKeyAuthenticator(),
+                enforcingConfig("own-key,stranger-key"));
+        resource.tenants = twoTenantRegistry();
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "own-key");
+        String sessionId = openSession(MSISDN);
+        claimOk(sessionId);
+
+        assertEquals(200, resource.status(sessionId, null).getStatus());
+    }
+
+    @Test
+    void aStrangerCannotBurnASessionByGuessingItsId() throws Exception {
+        resource.apiKeys = withConfig(new et.restlink.sas.security.ApiKeyAuthenticator(),
+                enforcingConfig("own-key,stranger-key"));
+        resource.tenants = twoTenantRegistry();
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "own-key");
+        String sessionId = openSession(MSISDN);
+
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "stranger-key");
+        assertEquals(403, resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest(null, "LTE", null),
+                null, null, "10.20.30.40", "55555", null).getStatus());
+
+        // the real phone must still get its turn
+        resource.httpHeaders = fixedHeaders("X-Api-Key", "own-key");
+        assertEquals(200, resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest(null, "LTE", null),
+                null, null, "10.20.30.40", "55555", null).getStatus(),
+                "a refused claim must not have consumed the session");
+    }
+
+    @Test
+    void theLabProfileStaysOpenSoTheDemoKeepsWorking() throws Exception {
+        String sessionId = openSession(MSISDN);
+        claimOk(sessionId);
+        // enforcement off, as in every lab boot: no key needed
+        assertEquals(200, resource.status(sessionId, null).getStatus());
+    }
+
+    // ---- a phone may not swap the number the bank asked about ----
+
+    @Test
+    void aPhoneCannotSubstituteADifferentNumber() {
+        String sessionId = openSession(MSISDN);   // bank asked for MSISDN
+
+        Response claim = resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest("+251933333333", "LTE", null),
+                null, null, "10.20.30.40", "55555", null);
+
+        assertEquals(422, claim.getStatus());
+        assertEquals("MISMATCHING_IDENTIFIER", codeOf(claim));
+        assertNull(stub.lastEvent,
+                "the session's own number is what gets verified, never the phone's");
+    }
+
+    @Test
+    void aPhoneMayRepeatTheNumberTheBankAskedAbout() {
+        String sessionId = openSession(MSISDN);
+
+        Response claim = resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest(MSISDN, "LTE", null),
+                null, null, "10.20.30.40", "55555", null);
+
+        assertEquals(200, claim.getStatus(), "restating the same number is harmless");
+        assertEquals(MSISDN, stub.lastEvent.claimedMsisdn());
+    }
+
+    @Test
+    void aNumberThatCannotBeNormalisedIsRefusedNotIgnored() {
+        String sessionId = openSession(MSISDN);
+
+        // The same value is refused at create(). Silently dropping it here would
+        // leave a caller that typed a national number with a 200 and no clue.
+        Response claim = resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest("not-a-number", "LTE", null),
+                null, null, "10.20.30.40", "55555", null);
+
+        assertEquals(400, claim.getStatus());
+        assertEquals("INVALID_ARGUMENT", codeOf(claim));
+        assertNull(stub.lastEvent, "a number we could not read must not reach the FSM");
+    }
+
+    @Test
+    void aDiscoveryClaimAlsoRefusesAnUnreadableNumber() {
+        String sessionId = openSession(null);
+
+        Response claim = resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest("0911111111", "LTE", null),
+                null, null, "10.20.30.40", "55555", null);
+
+        assertEquals(400, claim.getStatus());
+        assertEquals("INVALID_ARGUMENT", codeOf(claim));
+    }
+
+    // ---- a claim understands the same credentials create() does ----
+
+    @Test
+    void aClaimPresentingAnOperatorTokenIsNotMistakenForAJwt() {
+        StubAnchor anchor = new StubAnchor(
+                new IdentityAnchor.OperatorBinding(MSISDN, "655010000000001", "EAP-AKA"));
+        resource.identityAnchor = anchor;
+        String sessionId = openSession(MSISDN);
+
+        Response claim = resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest(null, "LTE", null),
+                null, "Bearer operatortoken:tk-bank", "10.20.30.40", "55555", null);
+
+        assertEquals(java.util.List.of("tk-bank"), anchor.seen,
+                "the operator token must be recognised, not parsed as a JWT");
+        assertEquals(200, claim.getStatus(),
+                "a bank that authenticates both hops the same way must not be told"
+                        + " its operator token is a malformed JWT");
+    }
+
+    @Test
+    void aClaimPresentingAnUnusableOperatorTokenIsRefused() {
+        resource.identityAnchor = new StubAnchor(null);
+        String sessionId = openSession(MSISDN);
+
+        Response claim = resource.claim(sessionId,
+                new QrSessionRequests.ClaimRequest(null, "LTE", null),
+                null, "Bearer operatortoken:tk-stale", "10.20.30.40", "55555", null);
+
+        assertEquals(401, claim.getStatus());
+        assertNull(stub.lastEvent);
+    }
+
     // ---- helpers ----
 
     private String openSession(String phoneNumber) {
@@ -385,7 +589,23 @@ class QrSessionResourceTest {
     }
 
     private static String codeOf(Response response) {
-        return ((QrSessionRequests.QrError) response.getEntity()).code();
+        return ((et.restlink.sas.camara.CamaraErrorInfo) response.getEntity()).code();
+    }
+
+    /** Two tenants, so a cross-tenant read can be attempted. */
+    private static TenantRegistry twoTenantRegistry() throws Exception {
+        TenantRegistry registry = new TenantRegistry();
+        setField(registry, "enforceApiKeys", true);
+        setField(registry, "apiKeysRaw", "tenant-a=own-key,tenant-b=stranger-key");
+        return registry;
+    }
+
+    /** A config with {@code sas.security.enforce-api-keys=true} and one key list. */
+    private static SasSecurityConfig enforcingConfig(String key) throws Exception {
+        SasSecurityConfig config = new SasSecurityConfig();
+        setField(config, "enforceApiKeys", true);
+        setOptionalField(config, "apiKey", key);
+        return config;
     }
 
     private static <T> T withConfig(T target, SasSecurityConfig config) {
@@ -397,6 +617,14 @@ class QrSessionResourceTest {
             throw new IllegalStateException(e);
         }
         return target;
+    }
+
+    /** Sets an {@code Optional<String>} config field. */
+    private static void setOptionalField(Object obj, String name, String value)
+            throws Exception {
+        var field = obj.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(obj, java.util.Optional.ofNullable(value));
     }
 
     private static void setField(Object obj, String name, Object value) throws Exception {
