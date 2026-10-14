@@ -6,6 +6,9 @@
  */
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // URLSession lives here on Linux
+#endif
 #if canImport(Network)
 import Network
 #endif
@@ -111,11 +114,14 @@ public final class CellularBearer {
     public static func cellularSessionConfiguration(timeout: TimeInterval) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.default
         configuration.allowsCellularAccess = true
+        #if canImport(Darwin)
         // Cellular counts as expensive/constrained: without these the request
         // can be deferred under Low Data Mode instead of failing fast.
+        // (Apple-only properties; the Linux build exists for CI only.)
         configuration.allowsExpensiveNetworkAccess = true
         configuration.allowsConstrainedNetworkAccess = true
         configuration.waitsForConnectivity = false
+        #endif
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout
         configuration.urlCache = nil

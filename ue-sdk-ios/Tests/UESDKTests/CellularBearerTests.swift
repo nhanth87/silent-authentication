@@ -6,6 +6,9 @@
  */
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import XCTest
 @testable import UESDK
 
@@ -72,9 +75,11 @@ final class CellularBearerTests: XCTestCase {
         XCTAssertTrue(configuration.allowsCellularAccess)
         // Cellular counts as "expensive": without this Low Data Mode defers the
         // request and the 3 s SAS budget turns into a timeout.
+        #if canImport(Darwin)
         XCTAssertTrue(configuration.allowsExpensiveNetworkAccess)
         XCTAssertTrue(configuration.allowsConstrainedNetworkAccess)
         XCTAssertFalse(configuration.waitsForConnectivity)
+        #endif
         XCTAssertEqual(configuration.timeoutIntervalForRequest, 3, accuracy: 0.001)
     }
 }

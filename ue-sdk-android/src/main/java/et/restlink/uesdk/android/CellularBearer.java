@@ -29,13 +29,14 @@ import java.net.URLConnection;
  *
  * <p><strong>Why reflection?</strong> This artifact is built with plain
  * {@code javac --release 8} and no {@code android.jar} so it stays unit-testable
- * on a JVM. {@code ConnectivityManager.NetworkCallback} is an abstract class, so
- * a reflective {@code requestNetwork()} would need a generated subclass — which
- * is why {@link #bind(Object, CellularRequirement)} walks
- * {@code getActiveNetwork()}/{@code getAllNetworks()} instead. When the app needs
- * an explicit {@code requestNetwork()} (for example to pin a specific SIM on a
- * dual-SIM phone), pass that {@code Network} to {@link #fromNetwork(Object,
- * AccessTech)} from its own {@code NetworkCallback.onAvailable()}.</p>
+ * on a JVM. {@link #bind(Object, CellularRequirement)} only walks
+ * {@code getActiveNetwork()}/{@code getAllNetworks()}, so it finds cellular only
+ * when it is already up — not while Wi-Fi is the default route. The CAMARA NV v2
+ * path ({@link NumberVerification}) therefore asks the platform to bring cellular
+ * up with {@code requestNetwork()} ({@link CellularNetworkRequest}, compiled
+ * against signature stubs because {@code NetworkCallback} must be subclassed).
+ * On a dual-SIM phone the app can request a chosen subscription's network itself
+ * and pass it to {@link #fromNetwork(Object, AccessTech)}.</p>
  */
 public final class CellularBearer implements Connector, Closeable {
 
@@ -76,14 +77,42 @@ public final class CellularBearer implements Connector, Closeable {
     private final Object context;
     private final AccessTech accessTech;
     private final String description;
+    /** Undoes whatever acquired the network (a registered request); null = nothing. */
+    private final Closeable release;
+    /** True once the platform reported the network lost; null = never checked. */
+    private final Liveness liveness;
     private boolean closed;
+
+    /** Reports whether a requested network is still up. */
+    interface Liveness {
+        boolean lost();
+    }
 
     private CellularBearer(Object network, Object context, AccessTech accessTech,
                            String description) {
+        this(network, context, accessTech, description, null, null);
+    }
+
+    private CellularBearer(Object network, Object context, AccessTech accessTech,
+                           String description, Closeable release, Liveness liveness) {
         this.network = network;
         this.context = context;
         this.accessTech = accessTech == null ? AccessTech.UNKNOWN : accessTech;
         this.description = description;
+        this.release = release;
+        this.liveness = liveness;
+    }
+
+    /**
+     * A bearer over a network the SDK itself requested with
+     * {@code ConnectivityManager.requestNetwork()}. {@code release} unregisters
+     * that request; it runs exactly once, on {@link #close()}.
+     */
+    static CellularBearer requested(Object network, Object context, AccessTech accessTech,
+                                    Closeable release, Liveness liveness) {
+        return new CellularBearer(network, context, accessTech,
+                "cellular via requestNetwork(sdk)#" + System.identityHashCode(network)
+                        + " tech=" + accessTech.name(), release, liveness);
     }
 
     /** The radio the SDK observed. Never {@code null}. */
@@ -182,6 +211,11 @@ public final class CellularBearer implements Connector, Closeable {
         if (closed) {
             throw new IOException("cellular bearer already closed");
         }
+        if (liveness != null && liveness.lost()) {
+            // The radio went away after the request was granted. Opening on a
+            // lost Network would fail anyway; say why, and never reroute.
+            throw new IOException("cellular network was lost - fall back, never reroute");
+        }
         if (network == null) {
             return url.openConnection();
         }
@@ -194,13 +228,25 @@ public final class CellularBearer implements Connector, Closeable {
     }
 
     /**
-     * Nothing to release: this bearer never registers a {@code NetworkCallback}
-     * and never calls {@code bindProcessToNetwork}, so there is no process-wide
-     * state to unwind and no dialog to leak.
+     * Releases the bearer. A bearer the SDK requested unregisters its
+     * {@code NetworkCallback} here, which lets Android tear the cellular data
+     * connection back down when Wi-Fi is the default route; the other kinds
+     * hold nothing. Never calls {@code bindProcessToNetwork}, so there is no
+     * process-wide state to unwind. Idempotent.
      */
     @Override
     public void close() {
+        if (closed) {
+            return;
+        }
         closed = true;
+        if (release != null) {
+            try {
+                release.close();
+            } catch (IOException | RuntimeException alreadyGone) {
+                // the request is gone either way; nothing more to undo
+            }
+        }
     }
 
     @Override
@@ -239,7 +285,13 @@ public final class CellularBearer implements Connector, Closeable {
 
     private static Method resolve(Object target, String owner, String method, Class<?>[] types) {
         try {
-            return Class.forName(owner).getMethod(method, types);
+            Class<?> declared = Class.forName(owner);
+            if (!declared.isInstance(target)) {
+                // A fake, or a framework object of an unrelated type: the owner's
+                // method cannot be invoked on it, so look on the target itself.
+                return target.getClass().getMethod(method, types);
+            }
+            return declared.getMethod(method, types);
         } catch (Throwable ownerAbsent) {
             try {
                 return target.getClass().getMethod(method, types);
@@ -336,7 +388,7 @@ public final class CellularBearer implements Connector, Closeable {
      * the deprecated {@code getNetworkType()}. Both are swallowed to null on a
      * SecurityException so a permission-less build still works.
      */
-    private static AccessTech radioTech(Object context) {
+    static AccessTech radioTech(Object context) {
         Object tm = call(context, CTX, "getSystemService",
                 new Class<?>[] {String.class}, new Object[] {TELEPHONY_SERVICE});
         if (tm == null) {

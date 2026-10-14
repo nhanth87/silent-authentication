@@ -1,12 +1,56 @@
 # Silent Auth UE SDK (iOS)
 
-Swift Package `UESDK` — device-side poster for the Silent Auth SAS
+Swift Package `UESDK` — **CAMARA Number Verification v2** on iOS (silent
+authorization over `NWConnection` pinned to cellular, TS.43 operator-token path,
+QR claim) plus the older device-side poster for the Silent Auth SAS
 `POST /session-tuple` endpoint. `URLSession` with a 3 s request/resource
 timeout. Devices cannot observe the real CGNAT IP/port, so the body carries
 `ts` plus an optional app-supplied `msisdn`; nulls are omitted
 (`encodeIfPresent`). No authentication logic — approval happens server-side.
 
-## SPM usage
+## CAMARA Number Verification v2 (start here)
+
+The device half of NV v2: carry the bank backend's OIDC authorization request
+(`prompt=none`, PKCE S256) over the **cellular interface** and hand the code back.
+The backend redeems it and calls `POST /number-verification/v2/verify`, and that
+answer is the verdict. Design and evidence:
+[`../docs/design/camara-nv2-device-sdk.md`](../docs/design/camara-nv2-device-sdk.md).
+
+```swift
+var configuration = NumberVerification.Configuration()
+configuration.requirement = .cellular              // or .cellular4GPlus
+configuration.operatorTokens = tokenSource         // optional: TS.43 path for Wi-Fi
+do {
+    let result = try await NumberVerification(configuration: configuration)
+        .authorize(authorizeURLFromBackend)
+    try await backend.send(code: result.code, state: result.state)   // never log it
+} catch {
+    // CellularBearer.Unavailable / AuthorizationError / transport: OTP or passkey
+}
+```
+
+**How the request is pinned.** `URLSession` cannot pin an interface:
+`URLSessionConfiguration` has no `requiredInterfaceType`. A BSD `bind()` to a fixed
+local address cannot work either, because the cellular address comes from the PGW
+and changes. `CellularHTTPClient` sends each hop over **`NWConnection`** with
+`NWParameters.requiredInterfaceType = .cellular` and
+`prohibitedInterfaceTypes = [.wifi, .wiredEthernet]`. TLS uses Network.framework
+defaults (system trust, SNI) with a TLS 1.2 floor. If there is no cellular path the
+connection goes `.waiting` and the SDK stops at once (`TransportError.cellularUnavailable`).
+It then uses the operator token if one is configured, and otherwise throws
+`CellularBearer.Unavailable`.
+
+The request is validated first (https, `response_type=code`, PKCE `S256`,
+`prompt=none`, `state`, `scope`, `client_id`, absolute `redirect_uri`, no repeated
+parameter). Redirects are followed on the same interface (max 10), the
+`redirect_uri` is caught and never loaded, and `state` is checked in constant time.
+Timeouts: 5 s per hop, one retry on a transport error, 15 s total.
+
+iOS gives a third-party app no API to run EAP-AKA against the SIM, so the TS.43
+token comes from the operator via `OperatorTokenSource`. The SDK never mints it.
+Privacy: nothing is logged, and `AuthorizationResult.description` redacts the code.
+
+## SPM usage (session tuple, pre-v2)
 
 ```swift
 // Package.swift
@@ -95,7 +139,16 @@ stays `GS_2G3G` (MAP-verifiable) — the SDK never guesses `LTE`/`NR`.
 
 ```bash
 swift test   # requires the Swift toolchain (macOS/Linux)
+
+# Linux CI without a local toolchain (verified 2026-10-14: 47 run, 44 pass, 3 skipped):
+docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w swift:5.10-jammy swift test
 ```
+
+On Linux, `CellularHTTPClient` (Network.framework) and CoreTelephony are compiled
+out (`#if canImport`), `URLSession` comes from `FoundationNetworking`
+(`LinuxCompat.swift`), and 3 tests that pin Apple's `JSONEncoder` key order are
+skipped. The NWConnection path is therefore only proven by `swift test` on macOS
+and on a device.
 
 ## Notes
 
@@ -120,7 +173,7 @@ let sessionId = try QrSessionClient.parsePayload(scanned)   // refuses anything 
 let verdict = try await qr.claim(
     sasBaseUrl: "https://sas.example.et",
     sessionId: sessionId,
-    bearer: CellularBearer(),          // NWPathMonitor gate, fails closed on Wi-Fi
+    bearer: CellularBearer(),          // observed bearer, reported on refusal
     requirement: .cellular,
     operatorToken: nil                 // GSMA TS.43 temporary token, Wi-Fi variant
 )
@@ -132,11 +185,67 @@ if verdict.approved {
 }
 ```
 
-iOS cannot pin a `URLSession` to an interface — `requiredInterfaceType` lives on
-`NWParameters`, not `URLSessionConfiguration` (see `CellularBearer`). This client
-therefore *observes* the path and fails closed rather than pretending it pinned
-the socket, which is the honest behaviour for a product whose premise is that
-the address was assigned by the operator.
+iOS cannot pin a `URLSession` to an interface: `requiredInterfaceType` lives on
+`NWParameters`, not `URLSessionConfiguration`. Since 2026-10-14 the claim is
+therefore sent through `CellularHTTPClient` (`NWConnection`,
+`requiredInterfaceType = .cellular`). It leaves on cellular **even while Wi-Fi is
+the default route**, or it throws `CellularBearer.Unavailable`. Pass
+`QrSessionClient(transport: nil)` to get the old observe-and-fail-closed gate.
+
+## App Clip (no bank app installed)
+
+An App Clip runs the native, cellular-pinned code above without the user
+installing the bank app. App Clip rules checked against Apple's documentation:
+
+- Network.framework and `URLSession` are allowed, but BSD/POSIX sockets are not.
+- CoreTelephony is allowed, except eSIM provisioning.
+- There is no background work.
+- `identifierForVendor` is empty.
+- Face ID is not available; Touch ID via LocalAuthentication is.
+- Size limit: 10 MB (iOS 15), 15 MB (iOS 16), 100 MB (iOS 17+, digital invocations only).
+  This SDK is a few hundred KB with no dependencies.
+
+How the session reaches the App Clip:
+
+| User is on | The bank shows | iOS hands the App Clip |
+|---|---|---|
+| a desktop | a QR code of `https://clip.bank.example/s/<session id>` | that URL, after the camera scan + one tap on the card |
+| the iPhone itself (cannot scan its own screen) | the same link as a button / Safari App Clip card (`appClipBannerTag()` in `ue-sdk-web`) | that URL, after one tap on the card |
+
+```swift
+// SwiftUI App Clip
+.onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+    Task {
+        do {
+            let invocation = try AppClipInvocation.parse(activity, allowedHosts: ["clip.bank.example"])
+            let verdict = try await QrSessionClient().claim(
+                sasBaseUrl: "https://sas.example.et", sessionId: invocation.sessionId,
+                bearer: CellularBearer())
+            // show done / fallback; the bank page polls the verdict
+        } catch {
+            // AppClipInvocation.Refused, CellularBearer.Unavailable, …: fallback
+        }
+    }
+}
+```
+
+`AppClipInvocation` accepts only `https` on the bank's listed hosts, with the session
+UUID in the last path segment or `?session=` / `?s=`. A look-alike domain or an
+ambiguous URL is refused.
+
+Two iOS behaviours to plan for:
+
+- From the App Library or Spotlight, iOS relaunches with the **previous** URL. That
+  session is already claimed or expired, so the claim comes back not approved.
+- From a notification or the App Switcher there is no URL at all. Start again from
+  the bank's page.
+
+iOS never opens an App Clip silently: one tap on the card is always required.
+
+Not yet proven: an App Clip build on a real device. Still to do on the bank side:
+App Clip target, `appclips:` Associated Domains, AASA file, App Clip experience in
+App Store Connect. Still to do on the server: show who is asking before the claim
+(anti-hijack).
 
 Design and verification: `docs/design/camara-qr-handoff.md`.
 

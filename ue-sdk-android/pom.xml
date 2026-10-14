@@ -10,8 +10,10 @@
   <packaging>jar</packaging>
 
   <name>Silent Auth UE SDK (Android)</name>
-  <description>Device-side poster for the SAS /session-tuple CGNAT
-    disambiguation path on Android (minSdk 24). Thin: java.net only, zero
+  <description>Device side of CAMARA Number Verification v2 on Android
+    (minSdk 24): the OIDC authorization request over a requested cellular
+    network, the TS.43 operator-token path for Wi-Fi, the desktop-to-phone QR
+    claim and the SAS /session-tuple poster. Thin: java.net only, zero
     third-party runtime dependencies.</description>
 
   <licenses>
@@ -53,6 +55,40 @@
         <version>3.14.0</version>
         <configuration>
           <release>8</release>
+        </configuration>
+      </plugin>
+      <!-- Compile-only android.net stubs (src/stubs/java): the three framework
+           classes ConnectivityManager.requestNetwork() needs, because its
+           NetworkCallback is a class to subclass and reflection cannot do that.
+           They are excluded from the jar below; on a device the real framework
+           classes with identical signatures are used. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>android-stubs</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>src/stubs/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+        <configuration>
+          <excludes>
+            <exclude>android/**</exclude>
+          </excludes>
         </configuration>
       </plugin>
       <plugin>

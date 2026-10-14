@@ -7,6 +7,9 @@
  */
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // URLSession lives here on Linux
+#endif
 import XCTest
 @testable import UESDK
 

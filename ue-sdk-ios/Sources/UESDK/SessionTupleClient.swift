@@ -6,6 +6,9 @@
  */
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // URLSession lives here on Linux
+#endif
 
 /// Posts a `TupleSnapshot` to the SAS `POST /session-tuple` endpoint over
 /// `URLSession`.

@@ -6,6 +6,9 @@
  */
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking   // URLSession lives here on Linux
+#endif
 #if canImport(Network)
 import Network
 #endif
@@ -31,11 +34,19 @@ import Network
 /// A pending or unparseable answer reads as *not* approved, because silence is
 /// not consent.
 ///
-/// **The iOS constraint, restated.** `requiredInterfaceType` lives on
-/// `NWParameters`, not on `URLSessionConfiguration` — see ``CellularBearer``.
-/// This client therefore *observes* the path through `NWPathMonitor` and fails
-/// closed when the claim would leave over Wi-Fi, rather than pretending it
-/// pinned the socket.
+/// **How the claim reaches the operator over cellular.** `requiredInterfaceType`
+/// lives on `NWParameters`, not on `URLSessionConfiguration`, so a `URLSession`
+/// cannot pin the claim. Where Network.framework exists (iOS, and so an App
+/// Clip) the claim is sent through ``CellularHTTPClient`` with
+/// `requiredInterfaceType = .cellular`. It leaves on the cellular interface
+/// **even while Wi-Fi is the default route**, or it does not leave at all
+/// (``CellularBearer/Unavailable``). Without Network.framework (Linux CI), or
+/// when the caller passes `transport: nil`, the old behaviour stays: observe the
+/// default path and fail closed on Wi-Fi.
+///
+/// **Same device vs. desktop.** The session id can arrive in a scanned QR code
+/// (desktop → phone) or in a link the user taps on the iPhone itself (Safari App
+/// Clip card, Messages). ``AppClipInvocation`` reads either form.
 public final class QrSessionClient {
 
     /// Scheme the bank puts in the QR image.
@@ -82,9 +93,29 @@ public final class QrSessionClient {
     }
 
     private let timeout: TimeInterval
+    private let transport: AuthorizeTransport?
+    private let radio: () -> AccessTech
 
-    public init(timeout: TimeInterval = 5.0) {
+    /// - Parameters:
+    ///   - transport: pins the claim to cellular. Defaults to ``CellularHTTPClient``
+    ///     where Network.framework exists; `nil` keeps the observe-and-fail-closed
+    ///     behaviour.
+    ///   - radio: radio generation of the cellular interface (tests inject it).
+    public init(timeout: TimeInterval = 5.0,
+                transport: AuthorizeTransport? = QrSessionClient.defaultTransport(),
+                radio: (() -> AccessTech)? = nil) {
         self.timeout = timeout
+        self.transport = transport
+        self.radio = radio ?? { CellularBearer.radioTech() }
+    }
+
+    /// ``CellularHTTPClient`` where Network.framework exists, else nil.
+    public static func defaultTransport() -> AuthorizeTransport? {
+        #if canImport(Network)
+        return CellularHTTPClient()
+        #else
+        return nil
+        #endif
     }
 
     // MARK: - payload
@@ -145,6 +176,11 @@ public final class QrSessionClient {
                       operatorToken: String? = nil,
                       apiKey: String? = nil) async throws -> ClaimResult {
         let tokenPath = !(operatorToken?.isEmpty ?? true)
+        if !tokenPath, requirement != .any, let transport = transport {
+            return try await claimOverCellular(transport, sasBaseUrl: sasBaseUrl, sessionId: sessionId,
+                                               bearer: bearer, requirement: requirement,
+                                               msisdn: msisdn, apiKey: apiKey)
+        }
         let tech = bearer.accessTech()
         if !tokenPath {
             try bearer.check(requirement)
@@ -168,6 +204,44 @@ public final class QrSessionClient {
 
         let payload = try await Self.send(request, bearer: bearer)
         let flat = Flat(payload)
+        return ClaimResult(sessionId: flat.string("sessionId"),
+                           state: flat.state("state"),
+                           verified: flat.bool("devicePhoneNumberVerified"),
+                           fallbackReason: flat.string("fallbackReason"))
+    }
+
+    /// The pinned claim: the radio is checked first (a 4G+ demand on a 3G radio
+    /// never sends), then the POST goes out on the cellular interface only.
+    private func claimOverCellular(_ transport: AuthorizeTransport, sasBaseUrl: String,
+                                   sessionId: String, bearer: CellularBearer,
+                                   requirement: CellularBearer.Requirement,
+                                   msisdn: String?, apiKey: String?) async throws -> ClaimResult {
+        let observed = bearer.accessTech()
+        let tech = observed.isCellular ? observed : radio()
+        if requirement == .cellular4GPlus && tech != .lte && tech != .nr {
+            throw CellularBearer.Unavailable(requirement, tech)
+        }
+        let declared: AccessTech = tech.isCellular ? tech : .gs2g3g
+        var headers: [(String, String)] = [("Content-Type", "application/json"),
+                                           ("Accept", "application/json"),
+                                           ("X-Sas-Access-Tech", declared.rawValue)]
+        if let apiKey = apiKey, !apiKey.isEmpty {
+            headers.append(("X-Api-Key", apiKey))
+        }
+        let body = Data(Self.claimBody(msisdn: msisdn, accessTech: declared, operatorToken: nil).utf8)
+        let url = try Self.url(sasBaseUrl, path: "/qr-session/v1/\(sessionId)/claim")
+        let answer: HTTPHead
+        do {
+            answer = try await transport.send("POST", url, headers: headers, body: body,
+                                              cellularOnly: true, timeout: timeout)
+        } catch TransportError.cellularUnavailable {
+            throw CellularBearer.Unavailable(requirement, observed)
+        }
+        // A 4xx body is still parsed: it carries the server's reason.
+        guard answer.status == 200 || (400..<600).contains(answer.status) else {
+            throw TransportError.malformedResponse
+        }
+        let flat = Flat(answer.body)
         return ClaimResult(sessionId: flat.string("sessionId"),
                            state: flat.state("state"),
                            verified: flat.bool("devicePhoneNumberVerified"),
@@ -292,7 +366,13 @@ struct Flat {
             } else if let number = value as? NSNumber {
                 // JSONSerialization collapses true/false into NSNumber; keep the
                 // distinction so `false` never reads as the string "0".
-                if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                #if canImport(Darwin)
+                let isBool = CFGetTypeID(number) == CFBooleanGetTypeID()
+                #else
+                // corelibs boxes JSON true/false as __NSCFBoolean (objCType "c")
+                let isBool = String(describing: type(of: number)) == "__NSCFBoolean"
+                #endif
+                if isBool {
                     parsed[key] = number.boolValue ? "true" : "false"
                 } else {
                     parsed[key] = number.stringValue

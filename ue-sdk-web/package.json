@@ -1,7 +1,7 @@
 {
   "name": "@restlink/ue-sdk-web",
-  "version": "0.2.0",
-  "description": "Silent Auth UE SDK (Web) - browser-side session-tuple poster, plus the desktop half of the CAMARA NV v2 desktop-to-phone QR hand-off. Zero dependencies, ES2020.",
+  "version": "0.3.0",
+  "description": "Silent Auth UE SDK (Web) - CAMARA Number Verification v2 in the browser (silent prompt=none authorization, callback parsing, SIM credential via the Digital Credentials API), the desktop half of the QR hand-off, and the session-tuple poster. Zero dependencies, ES2020.",
   "type": "module",
   "main": "src/session-tuple.js",
   "types": "src/session-tuple.d.ts",
@@ -13,6 +13,14 @@
     "./qr-session": {
       "types": "./src/qr-session.d.ts",
       "default": "./src/qr-session.js"
+    },
+    "./number-verification": {
+      "types": "./src/number-verification.d.ts",
+      "default": "./src/number-verification.js"
+    },
+    "./hand-off": {
+      "types": "./src/hand-off.d.ts",
+      "default": "./src/hand-off.js"
     }
   },
   "files": [
