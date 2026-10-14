@@ -240,3 +240,92 @@ tshark -r target/demo-videos/silent-auth-ss7-demo.pcap \
 # cổng lab: camara 8085 · ecs 8095 · HSS sim 3868 (UI 8086) · HLR sim 2906 (UI 8087)
 # SCTP không hiện trong `ss -ltn`; xem `/proc/net/sctp/eps`
 ```
+
+---
+
+## 5. SDK thiết bị theo CAMARA NV v2 (2026-10-14)
+
+Chỉ làm SDK (web, android, ios), không đụng core. Thiết kế, FSM, timeout, bằng chứng:
+[`design/camara-nv2-device-sdk.md`](design/camara-nv2-device-sdk.md).
+
+| SDK | API mới | Cơ chế thật |
+|---|---|---|
+| Android | `NumberVerification`, `AuthorizeUrl`, `AuthorizationResult/Exception`, `OperatorTokenSource`, `CellularNetworkRequest` | `ConnectivityManager.requestNetwork(TRANSPORT_CELLULAR + INTERNET)` → mỗi hop dùng `Network.openConnection(URL)`; unregister khi xong. Stub `android.net` chỉ dùng lúc compile (`src/stubs/java`), không đóng vào jar |
+| iOS | `NumberVerification`, `AuthorizeURL`, `CellularHTTPClient`, `AuthorizationResult/Error`, `OperatorTokenSource` | `NWConnection` với `requiredInterfaceType = .cellular` + cấm Wi-Fi/ethernet; HTTP/1.1 trên TLS của Network.framework (≥ 1.2) |
+| Web | `number-verification.js`: `startAuthorization`, `parseAuthorizationCallback`, `requestSimCredential` | điều hướng top-level với `prompt=none`; Digital Credentials API cho credential SIM (không silent: có sheet của OS) |
+
+Ba snippet trong file yêu cầu là **sai**, nên không làm theo:
+
+- `getActiveNetworkForType(TYPE_MOBILE)`: deprecated, và chỉ báo mạng mobile đang có sẵn. Khi Wi-Fi đang bật thì Android đã tắt mobile data nên không tìm thấy gì.
+- `bind()` socket vào `192.168.1.1`: IP cellular do PGW cấp và thay đổi liên tục.
+- `navigator.getSimToken()`: API này không tồn tại.
+
+Kết quả kiểm chứng:
+
+```
+ue-sdk-android  mvn -o test           62/62
+ue-sdk-web      node --test           39/39
+ue-sdk-ios      swift test (docker)   47 chạy, 44 pass, 3 skip (thứ tự key JSONEncoder chỉ Apple mới đảm bảo), 0 fail
+scripts/sdk-nv2-e2e.sh (dist đóng gói, netns riêng, trust-src-header=false):
+  Android A  socket từ 10.20.30.40:55555 → code (network auth) → /token → /verify true
+  Web A      startAuthorization + callback → /verify true
+  127.0.0.1  → access_denied NO_BINDING; Android tự chuyển sang operator token → có code
+  Wi-Fi không có token → từ chối ngay trên máy, không gửi gì
+  token đã dùng → access_denied; thiếu prompt=none → từ chối ngay trên máy
+```
+
+**Gap phía server (chưa sửa, vì yêu cầu là không làm core):** code cấp qua
+`login_hint=operatortoken:` mang `amr=[]`, nên `/verify` trả `403
+USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`. Phía SDK đã làm đúng phần của nó (lấy được code).
+Luồng SIM-based chỉ chạy được end-to-end khi AS cấp `amr` mà resource server chấp nhận.
+
+**App Clip (bổ sung trong ngày):**
+- `QrSessionClient.claim()` trên iOS giờ đi qua `NWConnection` gắn cellular. Trước đây nó dùng `URLSession` nên fail-closed hễ Wi-Fi bật.
+- Thêm `AppClipInvocation` (allowlist host, session id lấy từ path hoặc query).
+- Web có `hand-off.js`: desktop thì hiện QR, điện thoại thì hiện link hoặc thẻ App Clip trong Safari, vì điện thoại không tự quét màn hình của mình được.
+- Kết quả: iOS 57 chạy, 54 pass, 3 skip; web 43/43. Chi tiết ở `design/camara-nv2-device-sdk.md` §6b.
+
+**Chưa chứng minh:** đường `NWConnection` (Linux không có Network.framework) và chạy trên
+máy thật (Android Wi-Fi+4G/5G, chỉ Wi-Fi, chỉ cellular; iOS máy thật).
+
+---
+
+## 6. CAMARA NV v2 Phase 1–2 (2026-10-14)
+
+Phạm vi: toàn bộ Phase 1 (hạ tầng) và Phase 2 (kiểm thử) trong file yêu cầu, gồm cả core.
+Thiết kế, sequence diagram, bảng DPoP, timeout: [`design/camara-nv2-phase1-2.md`](design/camara-nv2-phase1-2.md).
+
+**Ba lỗi thật tìm và sửa:**
+
+| # | Lỗi | Hậu quả | Sửa |
+|---|---|---|---|
+| 1 | Code/token lấy qua `operatortoken:` (TS.43) có `amr=[]` | Mọi luồng SIM-based bị `/verify` trả 403, tính năng chính của v2 không chạy | `AuthMethods`: network → `[mno]`, SIM → `[hwk,mno]`, `tel:` do bên gọi tự khai → không có amr |
+| 2 | `/verify` lấy header `X-Sas-Amr` **do bên gọi gửi** làm bằng chứng khi token không có amr | Bypass: token JWT-bearer `sub=tel:<số bất kỳ>` thêm `X-Sas-Amr: mno` là qua được | Chỉ tin amr trong token đã ký; header chỉ được đọc ở pilot mode hoặc khi bật `trust-amr-header` tường minh; prod bị PRO-37 chặn. Testflow P10 trước đây ghi kỳ vọng `true` cho đúng bypass này, đã sửa |
+| 3 | `hasScope`: scope cùng họ ngang hàng được tính là cho phép nhau | Token `number-verification:verify` đọc được số qua `/device-phone-number`; `sim-swap:check` gọi được `retrieve-date` | Một scope chỉ cấp được các scope con của nó (CAMARA định nghĩa scope theo từng thao tác). Test cũ quy định hành vi sai, đã đổi |
+
+**Phần bổ sung:**
+- `prompt`: `login`/`consent`/`select_account` trả lỗi `*_required`; `none` đi kèm giá trị khác trả `invalid_request`.
+- CIBA nhận thêm `login_hint` dạng `ipport:` và `tel:`.
+- **DPoP (RFC 9449)**: `/token` gắn `cnf.jkt` vào token; `DpopResourceFilter` kiểm proof ở phía resource.
+- TTL token cấu hình được, tối đa 300 s.
+- Profile prod chỉ cho TLS 1.2 trở lên.
+- Discovery quảng bá `prompt_values_supported` và `dpop_signing_alg_values_supported`.
+- Module mới `bank-backend-sdk` (mục 1.4).
+
+**Kết quả:**
+
+```
+mvn -o test (9 module)                          788 pass, 0 fail
+bank-backend-sdk / ue-sdk / ue-sdk-android      pass
+ue-sdk-web                                      43/43
+ue-sdk-ios (swift test, docker Linux)           57 chạy, 54 pass, 3 skip, 0 fail
+harness gates / mutations / preflight self-test 38/38 · 29/29 · 47/47
+scripts/camara-nv2-conformance.sh (dist đóng gói)   ALL 50 CHECKS PASS
+scripts/sdk-nv2-e2e.sh                              Android ALL OK · Web ALL OK (luồng SIM giờ ra true)
+```
+
+**Còn mở:**
+- DPoP `nonce` và các claim `camara:qh`/`camara:bh` (CAMARA để tùy chọn).
+- Store dùng chung cho chạy nhiều instance: pending state, authorization code, replay cache của DPoP.
+- Chạy trên sandbox của nhà mạng và trên máy thật.
+- M4 (mTLS trên exposure hop).

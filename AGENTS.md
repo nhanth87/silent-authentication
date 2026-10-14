@@ -39,6 +39,7 @@ main/
 ├── ue-sdk-android/           ← Android SDK: pins its socket to the cellular Network
 ├── ue-sdk-ios/               ← Swift SDK: NWPathMonitor/CoreTelephony bearer gate
 ├── ue-sdk-web/               ← browser SDK: observes navigator.connection, fails closed
+├── bank-backend-sdk/         ← customer backend for CAMARA NV v2 (PKCE, private_key_jwt, DPoP) — standalone build
 ├── scripts/                  ← package-dist.sh + run.sh (Quarkus fast-jar dist)
 ├── harness/                  ← gates.yaml + run_hardness.py + preflight_prod.py (prod gate)
 └── slides/                   ← PPTX/SVG pitch assets (gitignored local artifact)
@@ -83,10 +84,15 @@ scripts/layered-e2e.sh dist dist-ecs         # PACKAGED dists + HLR sim + Diamet
 scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapter; sas-camara no MAP/Diameter/SCTP jar
 scripts/check-no-sctp.sh <pid> [label]       # runtime: a process owns no SCTP socket (used by the smokes)
 
-# UE SDKs
+# UE SDKs (CAMARA NV v2 device side: docs/design/camara-nv2-device-sdk.md)
 (cd ue-sdk && mvn -o test) && (cd ue-sdk-android && mvn -o test)
 (cd ue-sdk-web && node --test)
-(cd ue-sdk-ios && swift test)                # macOS/Xcode only
+(cd ue-sdk-ios && swift test)                # macOS; on Linux via docker:
+(cd ue-sdk-ios && docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w \
+   swift:5.10-jammy swift test)              # NWConnection path compiled out on Linux
+scripts/sdk-nv2-e2e.sh                       # Android (JVM) + Web SDK vs PACKAGED dists, user netns
+(cd bank-backend-sdk && mvn -o test)         # customer-backend reference (standalone)
+scripts/camara-nv2-conformance.sh            # CAMARA NV v2 Phase 2: 50 checks vs PACKAGED dists
 
 # Lab signalling simulators (standalone; run AFTER building them)
 java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar   # HSS/AAA/Gx :3868
@@ -118,7 +124,7 @@ Start sas-ecs for it with the MAP transports (own association, ss7-ecs.json):
 python3 harness/run_hardness.py              # 38/38 gates H1–H28, exit 0 = pass
 python3 harness/run_hardness.py --mutations  # H24 10/10 + H25 11/11 + H28 8/8 mutation self-tests
 python3 harness/preflight_prod.py --service camara|ecs|all   # prod verdict for THIS env
-python3 harness/preflight_prod.py --selftest # 45/45 scenarios (camara + ecs baselines + mutations)
+python3 harness/preflight_prod.py --selftest # 47/47 scenarios (camara + ecs baselines + mutations)
 
 # Artifacts
 python3 proposal/scripts/build_proposal_docx.py
@@ -406,6 +412,24 @@ Open items (do not silently invent answers):
       `AccessTech` on `POST /session-tuple` (+ `X-Sas-Access-Tech`), the SAS refuses
       non-cellular tuples, clients fail closed on an unusable bearer. Contract + platform
       matrix: `docs/design/cellular-bearer-login.md`; gate H22.
+- [x] **CAMARA NV v2 device SDKs (2026-10-14)** — Android `NumberVerification`
+      (`requestNetwork(CELLULAR)` + `Network.openConnection`, compile-only `android.net`
+      stubs in `src/stubs/java`, excluded from the jar), iOS `NumberVerification`
+      (`NWConnection` with `requiredInterfaceType = .cellular`), Web
+      `number-verification.js` (`prompt=none` navigation, callback parsing, Digital
+      Credentials API). All three: validate the backend's request (PKCE S256,
+      `prompt=none`), catch the redirect, check `state`, TS.43 `OperatorTokenSource` for
+      Wi-Fi, fail closed, log nothing. Doc: `docs/design/camara-nv2-device-sdk.md`.
+      Still open: real-handset runs; `swift test` on macOS (NWConnection path).
+- [x] **CAMARA NV v2 Phase 1–2 (2026-10-14)** — `docs/design/camara-nv2-phase1-2.md`:
+      amr per authentication (`mno` network, `hwk+mno` SIM/TS.43, none for asserted `tel:`)
+      so SIM-based NV passes `/verify`; the caller's `X-Sas-Amr` header is no longer
+      evidence once tokens are validated (bypass closed, PRO-37); sibling scopes no
+      longer cover each other (`number-verification:verify` read the device number);
+      `prompt` handled (`login_required` …); CIBA `ipport:`/`tel:` hints; DPoP (RFC 9449)
+      at `/token` + `DpopResourceFilter`; TTL configurable ≤ 300 s; TLS 1.2+ pinned in
+      prod; `bank-backend-sdk`; conformance 50/50 on the packaged dists.
+      Still open: DPoP nonce / `camara:qh|bh`; shared stores for multi-instance.
 - [ ] Post-CGNAT `srcPort` discovery: devices cannot observe the translated port, so
       `/session-tuple` still receives `srcPort=0` from real handsets. Needs a small echo
       endpoint — `sas-host/TODO.md` P-H8.
