@@ -126,8 +126,31 @@ class AuthorizationRequestServiceTest {
     @Test
     void unsupportedLoginHintShape_invalidRequest() {
         CibaException e = assertThrows(CibaException.class,
-                () -> service.start("tel:+251911111111", "", 0, SCOPE_VERIFY));
+                () -> service.start("sub:+251911111111", "", 0, SCOPE_VERIFY));
         assertEquals("invalid_request", e.error());
+    }
+
+    @Test
+    void telHintIsAcceptedButCarriesNoAuthentication() {
+        AuthorizationRequestService.AuthRequest auth =
+                service.start("tel:+251911111111", null, 0, SCOPE_VERIFY);
+        PendingBinding binding = service.poll(auth.authReqId());
+        assertEquals("+251911111111", binding.msisdn());
+        assertEquals(java.util.List.of(), binding.amr(),
+                "an asserted number must never look network-authenticated");
+        assertThrows(CibaException.class, () -> service.start("tel:not-a-number", null, 0, SCOPE_VERIFY));
+    }
+
+    @Test
+    void ipportHintParsesBothFamiliesAndNeedsAPort() {
+        assertEquals(new AuthorizationRequestService.IpPort("10.20.30.40", 55555),
+                AuthorizationRequestService.IpPort.parse("10.20.30.40:55555"));
+        assertEquals(new AuthorizationRequestService.IpPort("2001:db8::1", 443),
+                AuthorizationRequestService.IpPort.parse("[2001:db8::1]:443"));
+        for (String bad : new String[] {"10.20.30.40", "2001:db8::1:443", "10.20.30.40:0",
+                "10.20.30.40:70000", "host.example:443", "[2001:db8::1]443", "999.1.1.1:5"}) {
+            assertThrows(CibaException.class, () -> AuthorizationRequestService.IpPort.parse(bad), bad);
+        }
     }
 
     // ---- operator-token path ----

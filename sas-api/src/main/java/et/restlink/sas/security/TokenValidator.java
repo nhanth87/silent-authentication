@@ -132,7 +132,14 @@ public class TokenValidator {
             return new DetailedAuth(null, sha256Hex(authorizationHeader),
                     Set.of(), List.of());
         }
-        return validateJwt(token);
+        DetailedAuth auth = validateJwt(token);
+        if (!auth.ok()) {
+            return auth;
+        }
+        String[] parts = token.split("\\.");
+        String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+        String dpopError = dpopSchemeError(authorizationHeader, payloadJson);
+        return dpopError == null ? auth : DetailedAuth.fail(dpopError);
     }
 
     /** Validate the amr claim — must indicate mobile-network auth. */
@@ -149,9 +156,14 @@ public class TokenValidator {
 
     /**
      * Resolve the effective amr and enforce mobile-network authentication.
-     * The signed JWT {@code amr} claim is preferred over the client-supplied
-     * {@code X-Sas-Amr} header; when neither source carries an amr the
-     * request fails closed. Returns null when mobile-network auth is proven.
+     *
+     * <p>Only the signed {@code amr} claim counts. The client-supplied
+     * {@code X-Sas-Amr} header is read in pilot mode (token validation off, where
+     * nothing is verified anyway) or when {@code sas.security.trust-amr-header}
+     * is set explicitly. Otherwise a bank could add {@code X-Sas-Amr: mno} to a
+     * token minted for a merely asserted {@code tel:} subject and pass. CAMARA NV
+     * (403 {@code USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK}) reads the amr of the
+     * 3-legged access token. Returns null when mobile-network auth is proven.</p>
      */
     public String resolveAmrError(List<String> jwtAmrValues, String headerAmr) {
         if (jwtAmrValues != null && !jwtAmrValues.isEmpty()) {
@@ -162,10 +174,13 @@ public class TokenValidator {
             }
             return "token amr claim is not mobile-network auth (amr=" + jwtAmrValues + ")";
         }
-        if (headerAmr != null && !headerAmr.isBlank()) {
+        boolean headerAllowed = config == null || !config.tokenValidationEnabled()
+                || config.trustAmrHeader();
+        if (headerAllowed && headerAmr != null && !headerAmr.isBlank()) {
             return validateAmr(headerAmr);
         }
-        return "no amr evidence (neither token amr claim nor X-Sas-Amr header)";
+        return "no amr evidence in the access token (the subscriber was not authenticated"
+                + " by the mobile network)";
     }
 
     /**
@@ -190,14 +205,12 @@ public class TokenValidator {
             if (s.endsWith(":*") && req.startsWith(s.substring(0, s.length() - 1))) {
                 return true;
             }
-            // family root grants its sub-scopes ("number-verification",
-            // "number-verification:device-phone-number", ...).
-            int colon = s.indexOf(':');
-            if (colon > 0) {
-                if (req.startsWith(s.substring(0, colon) + ":")) {
-                    return true;
-                }
-            } else if (req.startsWith(s + ":")) {
+            // A granted scope covers only scopes BELOW it: the family root
+            // "number-verification" covers "number-verification:verify", and
+            // "number-verification:device-phone-number" covers its ":read".
+            // A sibling never covers a sibling: "number-verification:verify" must not
+            // read the device phone number, "sim-swap:check" must not retrieve the date.
+            if (req.startsWith(s + ":")) {
                 return true;
             }
         }
@@ -342,6 +355,27 @@ public class TokenValidator {
         String h = header.trim();
         if (h.regionMatches(true, 0, "Bearer ", 0, 7)) {
             return h.substring(7).trim();
+        }
+        if (h.regionMatches(true, 0, "DPoP ", 0, 5)) {
+            // The proof itself was verified by DpopResourceFilter before the resource ran.
+            return h.substring(5).trim();
+        }
+        return null;
+    }
+
+    /**
+     * Defense in depth for RFC 9449 §7.1, independent of the filter: a DPoP-bound
+     * token ({@code cnf.jkt}) never passes as a Bearer token, and the DPoP scheme
+     * never carries an unbound token. Null when the pairing is consistent.
+     */
+    static String dpopSchemeError(String authorizationHeader, String payloadJson) {
+        boolean dpopScheme = authorizationHeader.trim().regionMatches(true, 0, "DPoP ", 0, 5);
+        boolean bound = et.restlink.sas.oauth.DpopResourceFilter.cnfJktOfPayload(payloadJson) != null;
+        if (bound && !dpopScheme) {
+            return "DPoP-bound access token presented without the DPoP scheme";
+        }
+        if (dpopScheme && !bound) {
+            return "the DPoP scheme was used with an access token that is not DPoP-bound";
         }
         return null;
     }

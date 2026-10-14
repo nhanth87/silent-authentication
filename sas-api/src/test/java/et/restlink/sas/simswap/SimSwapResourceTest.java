@@ -275,15 +275,17 @@ class SimSwapResourceTest {
     }
 
     @Test
-    void threeLegged_familyScopeSemantics_subScopeSatisfiesTheWholeFamily() throws Exception {
-        // TokenValidator.hasScope is a family match (same rule as
-        // number-verification): one granted sim-swap:* scope satisfies the
-        // family, so a check-scoped token also answers retrieve-date.
+    void threeLegged_siblingScopeDoesNotCoverTheOtherOperation() throws Exception {
+        // CAMARA scopes are per operation (api:[resource:]action). A token consented
+        // for sim-swap:check must not retrieve the swap date; only the family root
+        // ("sim-swap", test above) or sim-swap:* covers both. Before 2026-10-14 any
+        // sibling covered the family, which also let number-verification:verify read
+        // the device phone number.
         enableValidation();
         evidence.put(MSISDN_A, hoursAgo(1));
 
         String token = makeJwt("jti-cross", "sim-swap:check", "\"phone_number\":\"" + MSISDN_A + "\"");
-        assertEquals(200, resource.retrieveDate(new SimSwapDateRequest(null),
+        assertEquals(403, resource.retrieveDate(new SimSwapDateRequest(null),
                 "corr-26", "Bearer " + token).getStatus());
     }
 

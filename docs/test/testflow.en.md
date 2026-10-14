@@ -1167,7 +1167,7 @@ curl -s -X POST "$BASE/number-verification/v2/verify" \
   -H 'X-Sas-Amr: mobile' -H 'X-Sas-Assurance-Detail: true' \
   -d '{"phoneNumber":"+251911111111"}'
 ```
-→ expect: `true`, `APPROVE`, `score: 100`.
+→ expect (since 2026-10-14): `403 NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`. A `tel:` subject is asserted, not authenticated, so the token carries no `amr`, and the caller's `X-Sas-Amr` header is no longer evidence once token validation is on. Before this fix the step answered `true` — that was the bypass. Use `sub=operatortoken:<tk>` (amr `[hwk,mno]`) for a JWT-bearer NV token; see `docs/design/camara-nv2-phase1-2.md` §2.2.
 
 **P11 — JWT bearer negatives:**
 

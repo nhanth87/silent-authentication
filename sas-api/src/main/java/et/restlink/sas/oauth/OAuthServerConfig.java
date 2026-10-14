@@ -75,6 +75,20 @@ public class OAuthServerConfig {
         return normalized(accessTokenAudience);
     }
 
+    /**
+     * Access-token lifetime. CAMARA NV caps it at 300 s and the resource server
+     * refuses anything longer, so a larger value is clamped, never honoured. A lab
+     * may lower it to exercise expiry.
+     */
+    @Inject
+    @ConfigProperty(name = "sas.oauth.access-token-ttl-seconds", defaultValue = "300")
+    Optional<Long> accessTokenTtlSeconds;
+
+    public long accessTokenTtlSeconds() {
+        long ttl = accessTokenTtlSeconds == null ? 300L : accessTokenTtlSeconds.orElse(300L);
+        return Math.max(1L, Math.min(AccessTokenService.TOKEN_TTL_SECONDS, ttl));
+    }
+
     public String signingAlg() {
         String alg = value(signingAlg, "HS256");
         return alg.toUpperCase(java.util.Locale.ROOT);

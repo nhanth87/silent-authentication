@@ -46,6 +46,11 @@ public class OAuthException extends RuntimeException {
         return new OAuthException("access_denied", 403, description);
     }
 
+    /** RFC 9449 §12.2: the DPoP proof is missing, malformed or does not verify. */
+    public static OAuthException invalidDpopProof(String description) {
+        return new OAuthException("invalid_dpop_proof", 400, description);
+    }
+
     public static OAuthException serverError(String description) {
         return new OAuthException("server_error", 500, description);
     }

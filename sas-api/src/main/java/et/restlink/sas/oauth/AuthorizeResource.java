@@ -41,6 +41,7 @@ import java.util.Optional;
  * <pre>
  *  device ──(cellular)── GET /authorize?response_type=code&amp;client_id&amp;redirect_uri
  *                                  &amp;scope&amp;state&amp;nonce&amp;code_challenge&amp;code_challenge_method=S256
+ *                                  &amp;prompt=none   (login/consent/select_account → *_required)
  *     SAS: client + exact redirect_uri check ─► PKCE present ─► scope policy
  *          ─► network-based authentication: source IP:port:now ─► Resolver ─► one MSISDN
  *             (or login_hint=operatortoken:&lt;tk&gt; for the TS.43 / Wi-Fi path)
@@ -68,7 +69,7 @@ public class AuthorizeResource {
 
     /** RFC 8176 has no value for network-based (bearer IP) authentication; the SAS
      *  resource servers accept {@code mno} as mobile-network authentication. */
-    public static final List<String> AMR_NETWORK = List.of("mno");
+    public static final List<String> AMR_NETWORK = AuthMethods.NETWORK;
 
     @Inject
     OAuthClientRegistry registry;
@@ -97,6 +98,7 @@ public class AuthorizeResource {
                               @QueryParam("code_challenge") String codeChallenge,
                               @QueryParam("code_challenge_method") String codeChallengeMethod,
                               @QueryParam("login_hint") String loginHint,
+                              @QueryParam("prompt") String prompt,
                               @HeaderParam("X-Sas-Src-Ip") String srcIpHeader,
                               @HeaderParam("X-Sas-Src-Port") String srcPortHeader,
                               @Context HttpServerRequest request) {
@@ -123,6 +125,11 @@ public class AuthorizeResource {
             }
             OAuthScopePolicy.ScopeGrant grant = OAuthScopePolicy.parse(scope);
             client.authorizeScope(grant, false);
+            String interaction = interactionError(prompt);
+            if (interaction != null) {
+                return redirectError(redirectUri, state, interaction,
+                        "this authorization server authenticates silently only (prompt=none)");
+            }
 
             // 4. Authenticate the subscriber.
             String msisdn;
@@ -136,7 +143,7 @@ public class AuthorizeResource {
                             "operator token is invalid, expired or already used");
                 }
                 msisdn = binding.msisdn();
-                amr = List.of();
+                amr = AuthMethods.SIM;
             } else if (loginHint != null && !loginHint.isBlank()) {
                 return redirectError(redirectUri, state, "invalid_request",
                         "login_hint must be operatortoken:<token> or absent");
@@ -167,6 +174,34 @@ public class AuthorizeResource {
             LOG.warn("[SAS] /authorize refused for client {}: {} ({})", clientId, e.error(), e.getMessage());
             return redirectError(redirectUri, state, e.error(), e.getMessage());
         }
+    }
+
+    /**
+     * OIDC Core §3.1.2.1 {@code prompt}. Number Verification authenticates without
+     * any page, so {@code none} (or no prompt) is served. A value asking for a page
+     * gets the OIDC error that says "interaction needed" (§3.1.2.6), and {@code none}
+     * combined with anything else is malformed. Returns null when the request may
+     * proceed silently.
+     */
+    static String interactionError(String prompt) {
+        if (prompt == null || prompt.isBlank()) {
+            return null;
+        }
+        java.util.Set<String> values = new java.util.LinkedHashSet<>(
+                java.util.Arrays.asList(prompt.trim().split("\\s+")));
+        if (values.contains("none")) {
+            return values.size() == 1 ? null : "invalid_request";
+        }
+        if (values.contains("login")) {
+            return "login_required";
+        }
+        if (values.contains("consent")) {
+            return "consent_required";
+        }
+        if (values.contains("select_account")) {
+            return "account_selection_required";
+        }
+        return "invalid_request";
     }
 
     record Source(String ip, int port) {}

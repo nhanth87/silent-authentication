@@ -21,6 +21,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.security.SecureRandom;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -86,7 +87,8 @@ public class AuthorizationRequestService {
         long nowSec = System.currentTimeMillis() / 1000L;
         evictExpired(nowSec);
 
-        IdentityAnchor.OperatorBinding anchor = resolveAnchor(loginHint, srcIp, srcPort, nowSec, clientId);
+        Anchored anchored = resolveAnchor(loginHint, srcIp, srcPort, nowSec, clientId);
+        IdentityAnchor.OperatorBinding anchor = anchored.binding();
         String msisdn = PhoneNumberNormalizer.toE164(anchor.msisdn()).orElse(null);
         if (msisdn == null) {
             LOG.warn("bc-authorize: anchor resolved a non-E.164 identity — rejecting");
@@ -96,7 +98,7 @@ public class AuthorizationRequestService {
         String authReqId = randomAuthReqId();
         pendings.put(authReqId, new PendingBinding(
                 authReqId, msisdn, anchor.imsi(), scopes,
-                nowSec, nowSec + AUTH_REQ_TTL_SECONDS, clientId));
+                nowSec, nowSec + AUTH_REQ_TTL_SECONDS, clientId, anchored.amr()));
         LOG.info("[SAS] bc-authorize bound {} to {} (ttl={}s)",
                 maskMsisdn(msisdn), authReqId, AUTH_REQ_TTL_SECONDS);
         return new AuthRequest(authReqId, AUTH_REQ_TTL_SECONDS);
@@ -142,7 +144,24 @@ public class AuthorizationRequestService {
 
     // ---- identity anchors ----
 
-    private IdentityAnchor.OperatorBinding resolveAnchor(
+    /** The resolved subscriber and how it was authenticated ({@link AuthMethods}). */
+    record Anchored(IdentityAnchor.OperatorBinding binding, List<String> amr) {}
+
+    /**
+     * CAMARA login hints, in order:
+     * <ul>
+     *   <li>{@code operatortoken:<tk>} — SIM-based (GSMA TS.43), redeemed at the
+     *       entitlement server; amr {@link AuthMethods#SIM}</li>
+     *   <li>{@code ipport:<ipv4>:<port>} / {@code ipport:[<ipv6>]:<port>} — network-based,
+     *       the device's public address as the client observed it; amr
+     *       {@link AuthMethods#NETWORK}</li>
+     *   <li>{@code tel:+<E.164>} — an asserted number, nobody authenticated it; no amr,
+     *       so Number Verification refuses the token (SIM Swap and similar
+     *       consent-based APIs accept it)</li>
+     *   <li>no hint — the legacy {@code X-Sas-Src-Ip/Port} headers, network-based</li>
+     * </ul>
+     */
+    private Anchored resolveAnchor(
             String loginHint, String srcIp, int srcPort, long nowSec, String clientId) {
         String hint = loginHint == null ? "" : loginHint.trim();
         String candidate = IdentityAnchor.parseLoginHint(hint);
@@ -153,23 +172,84 @@ public class AuthorizationRequestService {
                 throw CibaException.accessDenied(
                         "operator token is invalid, expired or already used");
             }
-            return binding;
+            return new Anchored(binding, AuthMethods.SIM);
+        }
+        if (hint.regionMatches(true, 0, "tel:", 0, 4)) {
+            String e164 = PhoneNumberNormalizer.toE164(hint.substring(4).trim()).orElseThrow(() ->
+                    CibaException.invalidRequest("login_hint tel: must carry an E.164 number"));
+            return new Anchored(new IdentityAnchor.OperatorBinding(e164, null), AuthMethods.NONE);
+        }
+        if (hint.regionMatches(true, 0, "ipport:", 0, 7)) {
+            IpPort ipport = IpPort.parse(hint.substring(7).trim());
+            return new Anchored(resolveNetwork(ipport.ip(), ipport.port(), nowSec), AuthMethods.NETWORK);
         }
         if (!hint.isEmpty()) {
             throw CibaException.invalidRequest(
-                    "login_hint must be operatortoken:<token>");
+                    "login_hint must be operatortoken:<token>, ipport:<ip>:<port> or tel:+<E.164>");
         }
         if (srcIp == null || srcIp.isBlank()) {
             throw CibaException.invalidRequest(
-                    "no identity anchor: provide login_hint=operatortoken:<tk> "
+                    "no identity anchor: provide login_hint=operatortoken:<tk>, ipport:<ip>:<port> "
                             + "or X-Sas-Src-Ip/X-Sas-Src-Port headers");
         }
-        ResolverResult result = awaitResolver(srcIp.trim(), Math.max(0, srcPort), nowSec * 1000L);
+        return new Anchored(resolveNetwork(srcIp.trim(), Math.max(0, srcPort), nowSec), AuthMethods.NETWORK);
+    }
+
+    private IdentityAnchor.OperatorBinding resolveNetwork(String ip, int port, long nowSec) {
+        ResolverResult result = awaitResolver(ip, port, nowSec * 1000L);
         if (!result.found()) {
             throw CibaException.accessDenied(
                     "no unique subscriber bound to the network tuple (" + result.miss() + ")");
         }
         return new IdentityAnchor.OperatorBinding(result.msisdn(), result.imsi());
+    }
+
+    /**
+     * {@code <ipv4>:<port>} or {@code [<ipv6>]:<port>}. The port is mandatory: behind
+     * CGNAT an address alone names many subscribers (IP + port + ts rule).
+     */
+    record IpPort(String ip, int port) {
+        static IpPort parse(String raw) {
+            String ip;
+            String portText;
+            if (raw.startsWith("[")) {
+                int close = raw.indexOf(']');
+                if (close < 0 || close + 1 >= raw.length() || raw.charAt(close + 1) != ':') {
+                    throw CibaException.invalidRequest("login_hint ipport: must be [ipv6]:port");
+                }
+                ip = raw.substring(1, close);
+                portText = raw.substring(close + 2);
+            } else {
+                int colon = raw.lastIndexOf(':');
+                if (colon <= 0 || raw.indexOf(':') != colon) {
+                    throw CibaException.invalidRequest("login_hint ipport: must be ipv4:port or [ipv6]:port");
+                }
+                ip = raw.substring(0, colon);
+                portText = raw.substring(colon + 1);
+            }
+            int port;
+            try {
+                port = Integer.parseInt(portText);
+            } catch (NumberFormatException e) {
+                throw CibaException.invalidRequest("login_hint ipport: port is not a number");
+            }
+            if (port < 1 || port > 65535 || !validAddress(ip)) {
+                throw CibaException.invalidRequest("login_hint ipport: address or port out of range");
+            }
+            return new IpPort(ip, port);
+        }
+
+        private static boolean validAddress(String ip) {
+            if (ip.isEmpty() || !ip.matches("[0-9A-Fa-f:.]+")) {
+                return false;   // literal addresses only: never a hostname lookup
+            }
+            try {
+                java.net.InetAddress.ofLiteral(ip);
+                return true;
+            } catch (IllegalArgumentException e) {
+                return false;
+            }
+        }
     }
 
     /**

@@ -39,6 +39,9 @@ public class OAuthMetadataService {
     @Inject
     OAuthSigningKeys signingKeys;
 
+    @Inject
+    DpopProofVerifier dpop;
+
     public static final String AUTHORIZATION_PATH = "/authorize";
 
     public Map<String, Object> metadata(UriInfo uriInfo) {
@@ -54,6 +57,12 @@ public class OAuthMetadataService {
         metadata.put("response_types_supported", List.of("code"));
         metadata.put("response_modes_supported", List.of("query"));
         metadata.put("code_challenge_methods_supported", List.of("S256"));
+        // OIDC: prompt=none is the only interaction this server serves silently.
+        metadata.put("prompt_values_supported", List.of("none"));
+        if (dpop != null && dpop.enabled()) {
+            // CAMARA security profile: DPoP support is advertised here (RFC 9449 §5.1).
+            metadata.put("dpop_signing_alg_values_supported", DpopProofVerifier.SUPPORTED_ALGS);
+        }
         metadata.put("subject_types_supported", List.of("pairwise"));
         metadata.put("grant_types_supported", List.of(
                 TokenResource.AUTHORIZATION_CODE_GRANT_TYPE,

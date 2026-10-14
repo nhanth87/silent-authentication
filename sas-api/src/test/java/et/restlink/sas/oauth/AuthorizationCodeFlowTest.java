@@ -171,7 +171,7 @@ class AuthorizationCodeFlowTest {
     @Test
     void unknownClientIsNeverRedirected() {
         Response r = authorize.authorize("code", "nobody", REDIRECT, SCOPE, "s", null,
-                challenge(VERIFIER), "S256", null, DEVICE_IP, "1234", null);
+                challenge(VERIFIER), "S256", null, null, DEVICE_IP, "1234", null);
         assertEquals(400, r.getStatus());
         assertNull(r.getLocation());
     }
@@ -232,7 +232,7 @@ class AuthorizationCodeFlowTest {
 
     private String authorizeOk(String state, String nonce) {
         Response r = authorize.authorize("code", CLIENT_ID, REDIRECT, SCOPE, state, nonce,
-                challenge(VERIFIER), "S256", null, DEVICE_IP, "40000", null);
+                challenge(VERIFIER), "S256", null, null, DEVICE_IP, "40000", null);
         assertEquals(302, r.getStatus(), () -> String.valueOf(r.getEntity()));
         Map<String, String> q = query(r.getLocation());
         assertEquals(state, q.get("state"));
@@ -242,7 +242,7 @@ class AuthorizationCodeFlowTest {
 
     private Response authorizeCall(String redirect, String challenge, String method, String ip) {
         return authorize.authorize("code", CLIENT_ID, redirect, SCOPE, "st", null,
-                challenge, method, null, ip, "40000", null);
+                challenge, method, null, null, ip, "40000", null);
     }
 
     private Response exchange(String code, String redirect, String verifier) {

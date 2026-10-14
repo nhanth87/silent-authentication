@@ -15,6 +15,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.FormParam;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
@@ -24,6 +25,7 @@ import jakarta.ws.rs.core.UriInfo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -36,6 +38,18 @@ import java.util.Set;
  * {@code invalid_grant}, expired ones {@code expired_token}. JWT bearer
  * assertions are one-time client-authenticated authorization grants that
  * identify the user through {@code tel:} or {@code operatortoken:}.
+ *
+ * <h2>DPoP (RFC 9449, CAMARA security profile)</h2>
+ * <pre>
+ *  DPoP header?  server DPoP on?  client dpop_bound_access_tokens?  →  result
+ *  valid proof   yes              any                                 DPoP token (cnf.jkt), token_type=DPoP
+ *  bad proof     yes              any                                 400 invalid_dpop_proof
+ *  any           no               any                                 Bearer token (CAMARA: never an error)
+ *  none          yes              no                                  Bearer token
+ *  none          yes              yes                                 400 invalid_dpop_proof
+ * </pre>
+ * The proof's {@code htu} must be this token endpoint (configured public URL or
+ * the request URL) and its {@code htm} POST.
  */
 @Path("/token")
 @Produces(MediaType.APPLICATION_JSON)
@@ -71,6 +85,17 @@ public class TokenResource {
     @Inject
     IdTokenService idTokens;
 
+    @Inject
+    DpopProofVerifier dpop;
+
+    /** Kept for callers without a DPoP header (tests, older wiring). */
+    public Response token(String grantType, String authReqId, String scope, String clientId,
+                          String clientAssertionType, String clientAssertion, String assertion,
+                          String code, String redirectUri, String codeVerifier, UriInfo uriInfo) {
+        return token(grantType, authReqId, scope, clientId, clientAssertionType, clientAssertion,
+                assertion, code, redirectUri, codeVerifier, null, uriInfo);
+    }
+
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response token(@FormParam("grant_type") String grantType,
@@ -83,20 +108,22 @@ public class TokenResource {
                           @FormParam("code") String code,
                           @FormParam("redirect_uri") String redirectUri,
                           @FormParam("code_verifier") String codeVerifier,
+                          @HeaderParam("DPoP") String dpopProof,
                           @Context UriInfo uriInfo) {
         String normalizedGrantType = trimToNull(grantType);
         if (normalizedGrantType == null) {
             return error(OAuthException.unsupportedGrantType("grant_type is required"));
         }
         try {
+            String jkt = dpopThumbprint(dpopProof, uriInfo);
             return switch (normalizedGrantType) {
                 case AUTHORIZATION_CODE_GRANT_TYPE -> authorizationCodeToken(code, redirectUri,
-                        codeVerifier, clientId, clientAssertionType, clientAssertion, uriInfo);
+                        codeVerifier, clientId, clientAssertionType, clientAssertion, uriInfo, jkt);
                 case CIBA_GRANT_TYPE -> cibaToken(authReqId, scope, clientId,
-                        clientAssertionType, clientAssertion, uriInfo);
+                        clientAssertionType, clientAssertion, uriInfo, jkt);
                 case CLIENT_CREDENTIALS_GRANT_TYPE -> clientCredentialsToken(scope, clientId,
-                        clientAssertionType, clientAssertion, uriInfo);
-                case JWT_BEARER_GRANT_TYPE -> jwtBearerToken(scope, assertion, uriInfo);
+                        clientAssertionType, clientAssertion, uriInfo, jkt);
+                case JWT_BEARER_GRANT_TYPE -> jwtBearerToken(scope, assertion, uriInfo, jkt);
                 default -> throw OAuthException.unsupportedGrantType(
                         "unsupported grant_type: " + normalizedGrantType);
             };
@@ -113,12 +140,14 @@ public class TokenResource {
                                String clientId,
                                String clientAssertionType,
                                String clientAssertion,
-                               UriInfo uriInfo) {
+                               UriInfo uriInfo,
+                               String jkt) {
         if (trimToNull(scope) != null) {
             throw OAuthException.invalidRequest("scope MUST NOT be specified for the CIBA token request");
         }
         OAuthClient client = authenticateClient(
                 clientId, clientAssertionType, clientAssertion, uriInfo, false);
+        requireDpopWhenBound(client, jkt);
         client.authorizeGrant(CIBA_GRANT_TYPE);
 
         AuthorizationRequestService.ConsumeResult consumed = authRequests.consume(authReqId);
@@ -132,9 +161,10 @@ public class TokenResource {
             throw OAuthException.invalidGrant("auth_req_id was issued to another client");
         }
         client.authorizeGrantedScopes(binding.scopes());
-        String accessToken = accessTokens.issue(binding);
+        String accessToken = accessTokens.issueUserToken(binding.msisdn(), binding.scopes(),
+                binding.clientId(), binding.amr(), jkt);
         LOG.info("[SAS] /token granted CIBA token for {}", binding.authReqId());
-        return tokenResponse(accessToken, binding.scopes());
+        return tokenResponse(accessToken, binding.scopes(), null, jkt);
     }
 
     /**
@@ -148,7 +178,8 @@ public class TokenResource {
                                             String clientId,
                                             String clientAssertionType,
                                             String clientAssertion,
-                                            UriInfo uriInfo) {
+                                            UriInfo uriInfo,
+                                            String jkt) {
         if (authorizationCodes == null) {
             throw OAuthException.serverError("authorization code flow is unavailable");
         }
@@ -157,6 +188,7 @@ public class TokenResource {
         }
         OAuthClient client = authenticateClient(
                 clientId, clientAssertionType, clientAssertion, uriInfo, false);
+        requireDpopWhenBound(client, jkt);
         String authenticatedClientId = client.clientId() != null ? client.clientId() : trimToNull(clientId);
         AuthorizationCodeService.AuthorizationCode granted = authorizationCodes.consume(code)
                 .orElseThrow(() -> OAuthException.invalidGrant(
@@ -172,7 +204,7 @@ public class TokenResource {
         }
         client.authorizeGrant(AUTHORIZATION_CODE_GRANT_TYPE);
         String accessToken = accessTokens.issueUserToken(granted.msisdn(), granted.scopes(),
-                granted.clientId(), granted.amr());
+                granted.clientId(), granted.amr(), jkt);
         String idToken = null;
         if (granted.openid()) {
             if (idTokens == null || !idTokens.available()) {
@@ -183,16 +215,18 @@ public class TokenResource {
                     granted.authTimeEpochSec(), granted.amr());
         }
         LOG.info("[SAS] /token granted authorization-code token for client {}", granted.clientId());
-        return tokenResponse(accessToken, granted.scopes(), idToken);
+        return tokenResponse(accessToken, granted.scopes(), idToken, jkt);
     }
 
     private Response clientCredentialsToken(String scope,
                                             String clientId,
                                             String clientAssertionType,
                                             String clientAssertion,
-                                            UriInfo uriInfo) {
+                                            UriInfo uriInfo,
+                                            String jkt) {
         OAuthClient client = authenticateClient(
                 clientId, clientAssertionType, clientAssertion, uriInfo, false);
+        requireDpopWhenBound(client, jkt);
         if (client.clientId() == null || client.clientId().isBlank()) {
             throw OAuthException.invalidRequest("client_id is required");
         }
@@ -200,12 +234,12 @@ public class TokenResource {
         OAuthScopePolicy.ScopeGrant grant = OAuthScopePolicy.parse(scope);
         client.authorizeScope(grant, false);
         Set<String> scopes = grant.responseScopes();
-        String accessToken = accessTokens.issueClientToken(client.clientId(), scopes);
+        String accessToken = accessTokens.issueClientToken(client.clientId(), scopes, jkt);
         LOG.info("[SAS] /token granted 2-legged token for client {}", client.clientId());
-        return tokenResponse(accessToken, scopes);
+        return tokenResponse(accessToken, scopes, null, jkt);
     }
 
-    private Response jwtBearerToken(String scope, String assertion, UriInfo uriInfo) {
+    private Response jwtBearerToken(String scope, String assertion, UriInfo uriInfo, String jkt) {
         if (trimToNull(scope) != null) {
             throw OAuthException.invalidRequest(
                     "scope MUST NOT be specified for the JWT bearer token request");
@@ -216,15 +250,20 @@ public class TokenResource {
         OAuthClientAuthenticator.AuthenticatedAssertion authenticated =
                 clientAuthenticator.authenticateJwtBearer(assertion, metadata.tokenEndpointAudiences(uriInfo));
         OAuthClient client = authenticated.client();
+        requireDpopWhenBound(client, jkt);
         client.authorizeGrant(JWT_BEARER_GRANT_TYPE);
         OAuthScopePolicy.ScopeGrant grant =
                 OAuthScopePolicy.parse(authenticated.assertion().stringClaim("scope"));
         client.authorizeScope(grant, true);
-        String msisdn = resolveSubject(authenticated.assertion().stringClaim("sub"));
+        String subject = authenticated.assertion().stringClaim("sub");
+        String msisdn = resolveSubject(subject);
+        // operatortoken: was authenticated by the operator (SIM, TS.43); tel: is asserted.
+        List<String> amr = IdentityAnchor.parseLoginHint(trimToNull(subject)) != null
+                ? AuthMethods.SIM : AuthMethods.NONE;
         Set<String> scopes = grant.responseScopes();
-        String accessToken = accessTokens.issueUserToken(msisdn, scopes, client.clientId());
+        String accessToken = accessTokens.issueUserToken(msisdn, scopes, client.clientId(), amr, jkt);
         LOG.info("[SAS] /token granted JWT-bearer token for client {}", client.clientId());
-        return tokenResponse(accessToken, scopes);
+        return tokenResponse(accessToken, scopes, null, jkt);
     }
 
     private OAuthClient authenticateClient(String clientId,
@@ -269,15 +308,46 @@ public class TokenResource {
                 OAuthException.invalidGrant(subjectType + " subject is not a valid E.164 number"));
     }
 
-    private static Response tokenResponse(String accessToken, Set<String> scopes) {
-        return tokenResponse(accessToken, scopes, null);
+    /**
+     * The proof's key thumbprint, or null when there is no proof or the server has
+     * DPoP switched off (CAMARA: an unsupported DPoP header is never an error).
+     */
+    private String dpopThumbprint(String proof, UriInfo uriInfo) {
+        if (proof == null || dpop == null || !dpop.enabled()) {
+            return null;
+        }
+        java.util.Set<String> htus = new java.util.LinkedHashSet<>();
+        if (metadata != null) {
+            htus.add(metadata.tokenEndpoint(uriInfo));
+        }
+        if (uriInfo != null && uriInfo.getAbsolutePath() != null) {
+            htus.add(uriInfo.getAbsolutePath().toString());
+        }
+        try {
+            return dpop.verify(proof, "POST", htus, null);
+        } catch (DpopProofVerifier.InvalidProof e) {
+            throw OAuthException.invalidDpopProof(e.getMessage());
+        }
     }
 
-    private static Response tokenResponse(String accessToken, Set<String> scopes, String idToken) {
+    /** A client registered with {@code dpop_bound_access_tokens} gets no Bearer token. */
+    private void requireDpopWhenBound(OAuthClient client, String jkt) {
+        if (client != null && client.dpopBoundAccessTokens() && jkt == null
+                && dpop != null && dpop.enabled()) {
+            throw OAuthException.invalidDpopProof("this client must send a DPoP proof");
+        }
+    }
+
+    private Response tokenResponse(String accessToken, Set<String> scopes) {
+        return tokenResponse(accessToken, scopes, null, null);
+    }
+
+    private Response tokenResponse(String accessToken, Set<String> scopes, String idToken, String jkt) {
         Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("access_token", accessToken);
-        body.put("token_type", "Bearer");
-        body.put("expires_in", AccessTokenService.TOKEN_TTL_SECONDS);
+        body.put("token_type", jkt == null ? "Bearer" : "DPoP");
+        body.put("expires_in", accessTokens == null ? AccessTokenService.TOKEN_TTL_SECONDS
+                : accessTokens.ttlSeconds());
         body.put("scope", String.join(" ", scopes));
         if (idToken != null) {
             body.put("id_token", idToken);

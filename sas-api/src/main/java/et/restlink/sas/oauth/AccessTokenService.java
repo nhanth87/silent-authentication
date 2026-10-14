@@ -93,7 +93,14 @@ public class AccessTokenService {
             List<String> amr,
             String jti,
             Long iat,
-            Long exp) {}
+            Long exp,
+            Map<String, String> cnf) {
+
+        TokenPayload(String iss, String aud, String sub, String phoneNumber, String clientId,
+                     String tokenUse, String scope, List<String> amr, String jti, Long iat, Long exp) {
+            this(iss, aud, sub, phoneNumber, clientId, tokenUse, scope, amr, jti, iat, exp, null);
+        }
+    }
 
     public record Decoded(
             String msisdn,
@@ -125,7 +132,7 @@ public class AccessTokenService {
      *         (misconfiguration never downgrades to unsigned tokens)
      */
     public String issue(PendingBinding binding) {
-        return issueUserToken(binding.msisdn(), binding.scopes(), binding.clientId());
+        return issueUserToken(binding.msisdn(), binding.scopes(), binding.clientId(), binding.amr());
     }
 
     public String issueUserToken(String msisdn, Set<String> scopes, String clientId) {
@@ -138,6 +145,15 @@ public class AccessTokenService {
      */
     public String issueUserToken(String msisdn, Set<String> scopes, String clientId,
                                  List<String> amr) {
+        return issueUserToken(msisdn, scopes, clientId, amr, null);
+    }
+
+    /**
+     * @param jkt RFC 7638 thumbprint of the client's DPoP key; non-null binds the token
+     *            ({@code cnf.jkt}, RFC 9449 §6.1) so it is useless without that key
+     */
+    public String issueUserToken(String msisdn, Set<String> scopes, String clientId,
+                                 List<String> amr, String jkt) {
         if (msisdn == null || msisdn.isBlank()) {
             throw new IllegalStateException("user-bound access token requires an msisdn");
         }
@@ -153,14 +169,19 @@ public class AccessTokenService {
                 amr == null || amr.isEmpty() ? null : List.copyOf(amr),
                 randomJti(),
                 nowSec,
-                nowSec + TOKEN_TTL_SECONDS);
+                nowSec + ttlSeconds(),
+                jkt == null ? null : Map.of("jkt", jkt));
         String token = sign(payload);
-        LOG.info("[SAS] user-bound access token issued for {} (ttl={}s)",
-                AuthorizationRequestService.maskMsisdn(msisdn), TOKEN_TTL_SECONDS);
+        LOG.info("[SAS] user-bound access token issued for {} (ttl={}s{})",
+                AuthorizationRequestService.maskMsisdn(msisdn), ttlSeconds(), jkt == null ? "" : ", DPoP-bound");
         return token;
     }
 
     public String issueClientToken(String clientId, Set<String> scopes) {
+        return issueClientToken(clientId, scopes, null);
+    }
+
+    public String issueClientToken(String clientId, Set<String> scopes, String jkt) {
         if (clientId == null || clientId.isBlank()) {
             throw new IllegalStateException("client-credentials access token requires client_id");
         }
@@ -176,10 +197,11 @@ public class AccessTokenService {
                 null,
                 randomJti(),
                 nowSec,
-                nowSec + TOKEN_TTL_SECONDS);
+                nowSec + ttlSeconds(),
+                jkt == null ? null : Map.of("jkt", jkt));
         String token = sign(payload);
-        LOG.info("[SAS] 2-legged access token issued for client {} (ttl={}s)",
-                clientId, TOKEN_TTL_SECONDS);
+        LOG.info("[SAS] 2-legged access token issued for client {} (ttl={}s{})",
+                clientId, ttlSeconds(), jkt == null ? "" : ", DPoP-bound");
         return token;
     }
 
@@ -255,6 +277,11 @@ public class AccessTokenService {
 
     public String issuer() {
         return config == null ? ISSUER : config.issuer();
+    }
+
+    /** Lifetime of issued access tokens; ≤ {@link #TOKEN_TTL_SECONDS}. */
+    public long ttlSeconds() {
+        return config == null ? TOKEN_TTL_SECONDS : config.accessTokenTtlSeconds();
     }
 
     private String audience() {

@@ -59,6 +59,20 @@ public class SasSecurityConfig {
     @ConfigProperty(name = "sas.security.accept-hs256")
     java.util.Optional<Boolean> acceptHs256;
 
+    /**
+     * Accept the client-supplied {@code X-Sas-Amr} header as authentication evidence
+     * when a validated token carries no {@code amr}. Off by default: a header the
+     * caller writes proves nothing, and honouring it let a token minted for an
+     * asserted {@code tel:} subject pass the mobile-network check. Only the pilot
+     * mode (token validation off) still reads the header.
+     */
+    @ConfigProperty(name = "sas.security.trust-amr-header")
+    java.util.Optional<Boolean> trustAmrHeader;
+
+    public boolean trustAmrHeader() {
+        return trustAmrHeader != null && trustAmrHeader.orElse(false);
+    }
+
     public boolean acceptHs256() {
         return acceptHs256 == null || acceptHs256.orElse(true);
     }

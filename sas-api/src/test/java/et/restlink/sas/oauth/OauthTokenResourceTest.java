@@ -90,7 +90,7 @@ class OauthTokenResourceTest {
                 null, CLIENT_ID, null, null, null, null, null, null, null);
 
         assertEquals(200, response.getStatus());
-        assertEquals(CLIENT_ID, accessTokens.lastBinding.clientId());
+        assertEquals(CLIENT_ID, accessTokens.lastClientId);
     }
 
     @Test
@@ -219,6 +219,7 @@ class OauthTokenResourceTest {
         String json = MAPPER.writeValueAsString(response.getEntity());
         assertTrue(json.contains("\"access_token\":\"user-token\""));
         assertEquals(MSISDN, accessTokens.lastMsisdn);
+        assertEquals(AuthMethods.NONE, accessTokens.lastAmr, "an asserted tel: subject is not authenticated");
         assertEquals(CLIENT_ID, accessTokens.lastClientId);
         assertEquals(Set.of(PURPOSE, SCOPE_VERIFY), accessTokens.lastScopes);
         assertEquals(Set.of("https://sas.example.com/token", "https://sas.example.com"),
@@ -236,6 +237,7 @@ class OauthTokenResourceTest {
 
         assertEquals(200, response.getStatus());
         assertEquals(MSISDN, accessTokens.lastMsisdn);
+        assertEquals(AuthMethods.SIM, accessTokens.lastAmr, "operator-authenticated SIM");
         assertEquals(VALID_OPERATOR_TOKEN, operatorAnchor.lastCandidate);
     }
 
@@ -391,6 +393,8 @@ class OauthTokenResourceTest {
         String lastClientId;
         String lastMsisdn;
         Set<String> lastScopes;
+        List<String> lastAmr;
+        String lastJkt;
 
         @Override
         public String issue(PendingBinding binding) {
@@ -402,23 +406,27 @@ class OauthTokenResourceTest {
         }
 
         @Override
-        public String issueUserToken(String msisdn, Set<String> scopes, String clientId) {
+        public String issueUserToken(String msisdn, Set<String> scopes, String clientId,
+                                     List<String> amr, String jkt) {
             if (failure != null) {
                 throw failure;
             }
             lastMsisdn = msisdn;
             lastScopes = scopes;
             lastClientId = clientId;
+            lastAmr = amr;
+            lastJkt = jkt;
             return token;
         }
 
         @Override
-        public String issueClientToken(String clientId, Set<String> scopes) {
+        public String issueClientToken(String clientId, Set<String> scopes, String jkt) {
             if (failure != null) {
                 throw failure;
             }
             lastClientId = clientId;
             lastScopes = scopes;
+            lastJkt = jkt;
             return token;
         }
     }

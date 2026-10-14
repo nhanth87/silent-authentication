@@ -270,6 +270,50 @@ class TokenValidatorTest {
     }
 
     @Test
+    void amResolution_headerIsNotEvidenceOnceTokensAreValidated() throws Exception {
+        setConfig("tokenValidationEnabled", true);
+        // The bypass this closes: a token minted for an asserted tel: subject carries no
+        // amr, and the bank adds X-Sas-Amr: mno itself.
+        assertNotNull(validator.resolveAmrError(List.of(), "mno"));
+        assertNotNull(validator.resolveAmrError(null, "mobile"));
+        assertNull(validator.resolveAmrError(List.of("hwk", "mno"), null), "SIM-based token");
+        setConfig("trustAmrHeader", java.util.Optional.of(true));
+        assertNull(validator.resolveAmrError(List.of(), "mno"), "explicit legacy switch only");
+    }
+
+    @Test
+    void siblingScopesNeverCoverEachOther() {
+        assertFalse(TokenValidator.hasScope(java.util.Set.of("number-verification:verify"),
+                TokenValidator.SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ));
+        assertFalse(TokenValidator.hasScope(java.util.Set.of("sim-swap:check"),
+                TokenValidator.SCOPE_SIM_SWAP_RETRIEVE_DATE));
+        assertTrue(TokenValidator.hasScope(java.util.Set.of("number-verification"),
+                TokenValidator.SCOPE_NUMBER_VERIFICATION_VERIFY));
+        assertTrue(TokenValidator.hasScope(java.util.Set.of("number-verification:device-phone-number"),
+                TokenValidator.SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ));
+        assertTrue(TokenValidator.hasScope(java.util.Set.of("number-verification:*"),
+                TokenValidator.SCOPE_NUMBER_VERIFICATION_DEVICE_PHONE_NUMBER_READ));
+        assertFalse(TokenValidator.hasScope(java.util.Set.of("number-verification-x"),
+                TokenValidator.SCOPE_NUMBER_VERIFICATION_VERIFY));
+    }
+
+    @Test
+    void dpopSchemeMustMatchTheTokenBinding() {
+        String bound = "{\"sub\":\"+251911111111\",\"cnf\":{\"jkt\":\"abc\"}}";
+        String plain = "{\"sub\":\"+251911111111\",\"scope\":\"cnf jkt\"}";
+        assertNotNull(TokenValidator.dpopSchemeError("Bearer x.y.z", bound));
+        assertNull(TokenValidator.dpopSchemeError("DPoP x.y.z", bound));
+        assertNotNull(TokenValidator.dpopSchemeError("DPoP x.y.z", plain));
+        assertNull(TokenValidator.dpopSchemeError("Bearer x.y.z", plain), "words in a scope are not a binding");
+    }
+
+    private void setConfig(String field, Object value) throws Exception {
+        var f = SasSecurityConfig.class.getDeclaredField(field);
+        f.setAccessible(true);
+        f.set(config, value);
+    }
+
+    @Test
     void amResolution_noEvidenceAtAll_failsClosed() {
         String err = validator.resolveAmrError(List.of(), null);
         assertNotNull(err);

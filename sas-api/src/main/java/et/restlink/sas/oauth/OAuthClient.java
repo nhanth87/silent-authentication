@@ -23,7 +23,15 @@ public record OAuthClient(
         Set<String> grantTypes,
         Set<String> redirectUris,
         Set<String> scopes,
-        Set<String> purposes) {
+        Set<String> purposes,
+        boolean dpopBoundAccessTokens) {
+
+    /** Registered without {@code dpop_bound_access_tokens} (the default: DPoP optional). */
+    public OAuthClient(String clientId, String tokenEndpointAuthMethod, JsonWebKeySet jwks,
+                       Set<String> grantTypes, Set<String> redirectUris, Set<String> scopes,
+                       Set<String> purposes) {
+        this(clientId, tokenEndpointAuthMethod, jwks, grantTypes, redirectUris, scopes, purposes, false);
+    }
 
     public static final String AUTH_METHOD_PRIVATE_KEY_JWT = "private_key_jwt";
 
@@ -57,7 +65,8 @@ public record OAuthClient(
                 stringSet(node.get("grant_types")),
                 stringSet(node.get("redirect_uris")),
                 stringSet(node.get("scopes")),
-                stringSet(node.get("purposes")));
+                stringSet(node.get("purposes")),
+                node.path("dpop_bound_access_tokens").asBoolean(false));
     }
 
     public static List<OAuthClient> parseRegistry(String json) {

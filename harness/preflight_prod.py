@@ -551,6 +551,20 @@ def oauth_checks(p: Profile) -> Report:
           p.get("sas.security.accept-hs256", "true") == "false",
           "sas.security.accept-hs256 must be false in prod: an HS256 secret lets anyone "
           "holding it mint CAMARA access tokens")
+
+    # CAMARA NV v2: authentication evidence comes from the signed token only, and
+    # every connection is TLS 1.2 or better (security profile §TLS).
+    notes = []
+    if p.get("sas.security.trust-amr-header", "false") == "true":
+        notes.append("sas.security.trust-amr-header=true lets the caller assert mobile-network "
+                     "authentication with a header (X-Sas-Amr)")
+    protocols = [x.strip() for x in (p.get("quarkus.http.ssl.protocols", "") or "").split(",") if x.strip()]
+    if not protocols:
+        notes.append("quarkus.http.ssl.protocols must be pinned (TLSv1.3,TLSv1.2)")
+    elif any(x not in ("TLSv1.2", "TLSv1.3") for x in protocols):
+        notes.append(f"quarkus.http.ssl.protocols allows {protocols}: only TLSv1.2/TLSv1.3")
+    r.add("PRO-37", "NV evidence only from signed tokens; TLS 1.2+ only",
+          not notes, "\n".join(notes))
     return r
 
 
@@ -971,6 +985,8 @@ MUTATIONS: dict[str, list[tuple[str, dict, set[str]]]] = {
         ("lab OTP SMS sender", {"sas.otp.enabled": "true", "sas.otp.sms-delivery": "log"},
          {"PRO-29"}),
         ("HS256 bearer tokens re-enabled", {"sas.security.accept-hs256": "true"}, {"PRO-33"}),
+        ("amr header trusted", {"sas.security.trust-amr-header": "true"}, {"PRO-37"}),
+        ("TLS 1.1 allowed", {"quarkus.http.ssl.protocols": "TLSv1.3,TLSv1.1"}, {"PRO-37"}),
         ("ephemeral AS signing key", {"sas.oauth.allow-ephemeral-signing-key": "true"},
          {"PRO-24"}),
         ("resource server not pinned to this AS", {"SAS_SECURITY_ISSUER": "https://idp.other"},

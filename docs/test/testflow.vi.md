@@ -1158,7 +1158,7 @@ curl -s -X POST "$BASE/number-verification/v2/verify" \
   -H 'X-Sas-Amr: mobile' -H 'X-Sas-Assurance-Detail: true' \
   -d '{"phoneNumber":"+251911111111"}'
 ```
-→ kỳ vọng: `true`, `APPROVE`, `score: 100`.
+→ kỳ vọng (từ 2026-10-14): `403 NUMBER_VERIFICATION.USER_NOT_AUTHENTICATED_BY_MOBILE_NETWORK`. Subject `tel:` chỉ là số do bên gọi tự khai, chưa được ai xác thực, nên token không có `amr`. Khi đã bật kiểm tra token thì header `X-Sas-Amr` của bên gọi không còn được tính là bằng chứng. Trước bản sửa này, bước này trả `true`: đó chính là lỗ bypass. Muốn có token NV qua JWT bearer thì dùng `sub=operatortoken:<tk>` (amr `[hwk,mno]`). Xem `docs/design/camara-nv2-phase1-2.md` §2.2.
 
 **P11 — JWT bearer negatives:**
 
