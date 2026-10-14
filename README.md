@@ -94,7 +94,7 @@ contract parity) and by `scripts/check-dependency-boundary.sh` / `check-no-sctp.
 ## Build, run, verify
 
 Full build guide (prerequisites, upstream dependencies, every deliverable, Android/iOS/App Clip/Web
-integration, verification): **[`BUILD.md`](BUILD.md)**.
+integration, verification): **[`docs/BUILD.md`](docs/BUILD.md)**.
 
 ```bash
 mvn -o test                                   # 9 modules, JDK 25 (mise: zulu-25)
