@@ -527,10 +527,12 @@ gates:
         - ue-sdk-android/README.md
         - ue-sdk-ios/README.md
         - ue-sdk-web/README.md
+        - bank-backend-sdk/README.md
       poms:
         - pom.xml
         - ue-sdk/pom.xml
         - ue-sdk-android/pom.xml
+        - bank-backend-sdk/pom.xml
         - sas-jss7-testapp/pom.xml
         - sas-diameter-testapp/pom.xml
       npm:

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>et.restlink</groupId>
+  <artifactId>bank-backend-sdk</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>CAMARA NV v2 bank backend SDK</name>
+  <description>Reference customer backend for CAMARA Number Verification v2:
+    PKCE + state + nonce, private_key_jwt client authentication, DPoP (RFC 9449),
+    Authorization Code / CIBA / JWT bearer, /verify (plain and hashed) and
+    /device-phone-number. java.net.http only, zero third-party runtime
+    dependencies.</description>
+
+  <licenses>
+    <license>
+      <name>GNU Affero General Public License v3.0 or later (Community edition)</name>
+      <url>https://www.gnu.org/licenses/agpl-3.0.html</url>
+      <distribution>manual</distribution>
+      <comments>Dual licensed work; SPDX expression:
+        AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0. This entry is
+        the AGPL Community grant only: copyleft, and AGPL section 13 also covers
+        serving the software over a network. Production rights without copyleft,
+        private builds, a permissive client option and L1/L2 SLA come from the
+        proprietary Operator license held by the copyright owner; see LICENSE.md.
+      </comments>
+    </license>
+  </licenses>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>25</maven.compiler.release>
+    <surefire.version>3.5.4</surefire.version>
+    <junit-jupiter.version>5.12.2</junit-jupiter.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit-jupiter.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.14.0</version>
+        <configuration>
+          <release>25</release>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
