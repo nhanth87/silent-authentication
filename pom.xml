@@ -48,7 +48,7 @@
     <microjainslee.version>1.2.0-SNAPSHOT</microjainslee.version>
     <surefire.version>3.5.4</surefire.version>
     <compiler.plugin.version>3.14.0</compiler.plugin.version>
-    <log4j2.version>2.23.1</log4j2.version>
+    <log4j2.version>2.26.0</log4j2.version>
     <jss7.version>9.2.8-j25</jss7.version>
     <corsac-diameter.version>10.0.0-41-SNAPSHOT</corsac-diameter.version>
     <nimbus-jose.version>10.9.1</nimbus-jose.version>
@@ -56,6 +56,16 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- Workspace mandate: log4j-bom BEFORE quarkus-bom, so log4j-api, -core and the
+           bridges share one version whatever micro-jainslee or Quarkus pin. A mixed
+           api 2.26 / core 2.23 classpath fails in ThreadContextDataInjector. -->
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-bom</artifactId>
+        <version>${log4j2.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>io.quarkus.platform</groupId>
         <artifactId>quarkus-bom</artifactId>

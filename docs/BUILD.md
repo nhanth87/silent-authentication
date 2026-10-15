@@ -5,10 +5,8 @@ the lab simulators, the device SDKs (Android, iOS, Web) and the customer-backend
 SDK. It also covers the verification runs that prove a build works. Commands run
 from the repository root unless stated otherwise.
 
-> **Read §2 first.** Some deliverables build on any machine with only Maven
-> Central. Others depend on upstream forks, and two of those forks currently carry
-> changes that exist only in the author's working copies (status checked
-> 2026-10-14).
+> **Read §2 first.** The device SDKs and the backend SDK need only Maven Central.
+> The server side needs four upstream forks, all pushed (§2).
 
 | Deliverable | Directory | Output | Upstream forks needed |
 |---|---|---|---|
@@ -46,21 +44,30 @@ java -version          # must print 25
 The server side links four upstream projects, built locally and installed with
 `mvn -DskipTests install`. They are not on Maven Central in these versions.
 
-| Artifacts | Version | Repository and branch | Reproducible from the remote? |
+| Artifacts | Version | Repository, branch (commit 2026-10-15) | Visibility |
 |---|---|---|---|
-| `com.microjainslee:*` (micro-jainslee) | `1.2.0-SNAPSHOT` | `github.com/nhanth87/jain-slee`, branch **`major-lotus`** | **yes**: clean, nothing unpushed |
-| `org.restcomm.protocols.ss7:*` + `org.mobicents.protocols.asn:asn` (jSS7, includes `asn/`) | `9.2.8-j25` | `github.com/digicom-et/jss7`, branch **`j25`** | **yes**: clean, nothing unpushed |
-| `org.mobicents.protocols.sctp:*` (`sctp-api`, `sctp-core`, `sctp-impl`, `sctp-backend-fstack`) | `2.27.32` | `github.com/nhanth87/sctp`, branch `master` | **no**: 15 modified files (F-Stack backend) are not committed |
-| `com.mobius-software.protocols.diameter:*` (corsac-diameter) | `10.0.0-41-SNAPSHOT` | `github.com/mobius-software-ltd/corsac-diameter`, branch `main` | **no**: the local patch (`pom.xml`, `DiameterLinkImpl`) is not committed and there is no fork remote |
+| `org.mobicents.protocols.sctp:*` (`sctp-api`, `sctp-core`, `sctp-impl`, `sctp-backend-fstack`) | `2.27.32` | `github.com/nhanth87/sctp` or `digicom-et/sctp`, branch **`master`** (`d086c0f`) | nhanth87 public, digicom-et private |
+| `org.restcomm.protocols.ss7:*` + `org.mobicents.protocols.asn:asn` (jSS7, includes `asn/`) | `9.2.8-j25` | `github.com/digicom-et/jss7` or `nhanth87/jss7`, branch **`j25`** | digicom-et private, nhanth87 public |
+| `com.microjainslee:*` (micro-jainslee) | `1.2.0-SNAPSHOT` | `github.com/nhanth87/jain-slee` or `digicom-et/jain-slee`, branch **`major-lotus`** | digicom-et private |
+| `com.mobius-software.protocols.diameter:*` (corsac-diameter fork) | `10.0.0-41-SNAPSHOT` | `github.com/nhanth87/corsac-diameter`, branch **`main`** (`2ddcbe4`, Java 25 baseline + Session-Id fix) | **private** |
+
+All four are committed and pushed: a clean machine with access to these repositories
+reproduces the server build.
 
 Install order: sctp → jSS7 → micro-jainslee → corsac-diameter.
 
 ```bash
-git clone -b major-lotus https://github.com/nhanth87/jain-slee.git && (cd jain-slee && mvn -DskipTests install)
+git clone https://github.com/nhanth87/sctp.git && (cd sctp && mvn -DskipTests install)
 git clone -b j25 https://github.com/digicom-et/jss7.git && (cd jss7 && mvn -DskipTests install)
-# sctp and corsac-diameter: build from the author's working copies until the
-# changes above are pushed (see "To make the server build reproducible").
+git clone -b major-lotus https://github.com/nhanth87/jain-slee.git && (cd jain-slee && mvn -DskipTests install)
+git clone https://github.com/nhanth87/corsac-diameter.git && (cd corsac-diameter && mvn -DskipTests install)
 ```
+
+`-DskipTests` is the documented build of each fork. Their own suites are not all green:
+20 of 39 `sctp-impl` tests fail (mostly TCP variants and `ManagementTest` persistence);
+`sctp-api` and `sctp-core` pass. The SAS suite (§8) is what verifies the integration.
+The F-Stack native dataplane work in progress lives on sctp branch
+`fstack-native-dataplane`, not on `master`.
 
 The micro-jainslee checkout at `jain-slee/jain-slee` (branch `micro-jainslee-2`) is
 now at **1.2.2-SNAPSHOT**. Building it does **not** produce the `1.2.0-SNAPSHOT`
@@ -72,13 +79,6 @@ resolve through the Restcomm/JBoss repositories declared in the upstream POMs
 (`oss.sonatype.org/content/groups/public`, `repository.jboss.org/nexus/...`). If those
 are unreachable from your network, copy them from a machine that has them in
 `~/.m2`.
-
-**To make the server build reproducible** (owner action, not done yet):
-1. Commit and push the sctp changes to `nhanth87/sctp`.
-2. Fork corsac-diameter (for example to `nhanth87/corsac-diameter`) and push the patch.
-3. Pin all four to tags.
-4. Optionally publish them to a private Maven repository (for example GitHub
-   Packages), so a clean machine needs nothing but credentials.
 
 > Licensing: jSS7, sctp and corsac-diameter are third-party AGPL-3.0 code. They are
 > linked by sas-ecs and the simulators only. sas-camara, the device SDKs and
