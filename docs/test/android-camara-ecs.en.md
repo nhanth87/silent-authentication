@@ -1,18 +1,20 @@
 # Android device → CAMARA gateway → entitlement server: test steps
 
 > Verified 2026-10-23 on branch `nv-2`: Android emulator API 36, `dist/` (sas-camara),
-> `dist-ecs/` (sas-ecs), and the HLR, HSS and PCRF simulators. 8/8 scenarios pass, plus
-> the capture check in both profiles. Automated run: about 2.5–4 min, depending on host
-> load.
+> `dist-ecs/` (sas-ecs), and the HLR, HSS and PCRF simulators.
+> - Automated run (§2): 8/8 scenarios pass, plus the capture check in both profiles; about
+>   2.5–4 min, depending on host load.
+> - Screencast (§4): 9/9 logins as expected, covering Number Verification v2 (verify,
+>   hashed verify, device-phone-number) and SIM Swap v2 (check, retrieve-date); about 8 min.
 
-This guide tests CAMARA Number Verification v2 end to end, from a real Android app
-built on `ue-sdk-android` to the two server binaries and the core-network simulators
-behind them:
+This guide tests CAMARA Number Verification v2 and SIM Swap v2 end to end, from a real
+Android app built on `ue-sdk-android` to the two server binaries and the core-network
+simulators behind them:
 
 | Component | Binary / file | Role in this test |
 |---|---|---|
 | Android app "Silent Auth Demo" | `demo-android/apk/silent-auth-demo-0.1.0-debug.apk` | **Login** button: `/nv/start` → SDK `authorize()` over **cellular** → `/nv/complete` |
-| Bank backend (lab) | `demo-android/server/DemoBank.java` (`bank-backend-sdk`) | builds the OIDC request (PKCE, `prompt=none`), redeems the code, calls `/verify` |
+| Bank backend (lab) | `demo-android/server/DemoBank.java` (`bank-backend-sdk`) | builds the OIDC request (PKCE, `prompt=none`), redeems the code, then makes **one** CAMARA call with the token: NV v2 `verify` (phone or hashed) or `device-phone-number`, or SIM Swap v2 `check` / `retrieve-date` (§3.1) |
 | Edge proxy simulator (lab) | `demo-android/server/EdgeSim.java` | stamps `X-Sas-Src-Ip/Port = 10.20.30.40:55555`, the post-CGNAT tuple |
 | **CAMARA gateway** | `dist/` = sas-camara :8085 | OAuth AS (`/authorize`, `/token`) + `POST /number-verification/v2/verify` |
 | **Entitlement server** | `dist-ecs/` = sas-ecs :8095 | subscriber exposure API (`ue-id`, `sim-change`, `monitoring-event`), the only path to the core |
@@ -188,7 +190,7 @@ to the sas-ecs command.
 **T3: CAMARA gateway** (sas-camara)
 
 ```bash
-CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
+CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","number-verification:device-phone-number:read","sim-swap:check","sim-swap:retrieve-date"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
 (cd dist && SAS_JAVA_OPTS="-Dsas.security.token-validation-enabled=true -Dsas.security.accept-hs256=false -Dsas.oauth.authorize.trust-src-header=true -Dsas.oauth.clients-json=$CLIENTS" ./run.sh)
 curl -s http://127.0.0.1:8085/camara/health
 ```
@@ -234,7 +236,84 @@ adb emu network capture stop
 tshark -r ~/.android/avd/sa-demo.avd/console_out/manual.pcap -Y http.request -T fields -e ip.src -e http.request.uri | cut -c1-50
 ```
 
-## 4. Known behaviours and pitfalls
+### 3.1 The other CAMARA operations: NV v2 and SIM Swap v2
+
+The bank makes exactly **one** CAMARA call per login. sas-camara pairs an access token with a
+single `x-correlator`, so a second call with the same token is answered
+`401 UNAUTHENTICATED` (anti-replay). Select the operation for the next logins, then press
+**Login** (or send the intent from §2):
+
+```bash
+curl -s -X POST http://127.0.0.1:8092/nv/mode -d '{"mode":"phone"}'                 # default
+curl -s -X POST http://127.0.0.1:8092/nv/mode -d '{"mode":"hashed"}'
+curl -s -X POST http://127.0.0.1:8092/nv/mode -d '{"mode":"device"}'
+curl -s -X POST http://127.0.0.1:8092/nv/mode -d '{"mode":"simswap","maxAge":72}'
+curl -s -X POST http://127.0.0.1:8092/nv/mode -d '{"mode":"simswap-date"}'
+```
+
+| Mode | Scope requested at `/authorize` | CAMARA call on the wire | Answer (lab, `+251911111111`) | App |
+|---|---|---|---|---|
+| `phone` | `number-verification:verify`, `…:device-phone-number:read` | `POST /camara/number-verification/v2/verify {"phoneNumber"}` | `{"devicePhoneNumberVerified":true}` | Logged in |
+| `hashed` | same | `POST …/v2/verify {"hashedPhoneNumber": SHA-256(E.164)}` | `{"devicePhoneNumberVerified":true}` | Logged in |
+| `device` | same | `GET …/v2/device-phone-number` (the bank compares it with the typed number) | `{"devicePhoneNumber":"+251911111111"}` | Logged in |
+| `simswap`, `maxAge` 72 | `sim-swap:check` | `POST /camara/sim-swap/v2/check {"maxAge":72}` | `{"swapped":false}` | Logged in |
+| `simswap`, `maxAge` 720 | `sim-swap:check` | `POST /camara/sim-swap/v2/check {"maxAge":720}` | `{"swapped":true}` (the lab SIM changed 10 days ago) | The operator refused (`sim_swapped_recently`) |
+| `simswap-date` | `sim-swap:retrieve-date` | `POST /camara/sim-swap/v2/retrieve-date` | `{"latestSimChange":"<10 days ago>"}` | Logged in |
+
+The SIM-change date comes from the in-memory HLR of the gx profile (`evidenceSource=LAB_HLR`).
+On the full live core there is no SIM-change source yet (§2.1).
+
+## 4. Screencast: Hyprland, terminals, Wireshark, Android emulator
+
+`scripts/android-demo-screencast.sh` films the whole test on a Hyprland workspace: terminals
+open, commands are typed and run line by line (packet capture first), the Android emulator
+boots with the demo app, every login is followed live in Wireshark, and the clip ends on the
+CAMARA API in Wireshark. English subtitles, intro/outro cards and chapters are added in post.
+
+```bash
+./scripts/android-demo-screencast.sh
+# → target/android-demo-screencast/silent-auth-camara-v2-screencast.mp4            (subtitles burned in)
+#   target/android-demo-screencast/silent-auth-camara-v2-screencast.srt
+#   target/android-demo-screencast/run/camara.pcap, host-lo.pcap, device.pcap
+./scripts/android-demo-screencast.sh _compose    # post production again, from the same recording
+```
+
+Needs Hyprland, `wf-recorder`, `kitty`, `wireshark`, `ffmpeg` with libass, ImageMagick,
+`tshark`, `jq`, `nsenter`, plus everything in §1. Run `scripts/android-demo-e2e.sh` once
+first: it saves the emulator snapshot `sa-e2e-sw`.
+
+**What is filmed.**
+- **Only the demo:** a headless Hyprland output (`SADEMO`), created for the run and removed
+  afterwards. Only the demo windows go there, and `wf-recorder` films it below the shell's bar,
+  so no other application can appear. Desktop notifications are muted while recording.
+- **Your desktop stays usable:** focus and the cursor are given back each time a demo window
+  opens.
+- **No root:** every command runs inside one private user + network namespace.
+
+| Chapter | On screen |
+|---|---|
+| 1 | Three kitty terminals open: `pcap · core`, `camara services`, `android test` |
+| 2 | `mkfifo lo.fifo` · `tcpdump -i lo -U -w - … \| tee camara.pcap > lo.fifo &` · `wireshark -k -i lo.fifo -Y "$CAMARA_VIEW"`, and the Wireshark window opens |
+| 3–6 | PCRF simulator, sas-ecs (`SCTP INIT`, Diameter CER/CEA in Wireshark), sas-camara, bank, edge proxy, warm-up |
+| 7 | `emulator -avd sa-demo …`, and the emulator window opens with the demo app (`android_ready`) |
+| 8–10 | A `verify(phoneNumber)`, A2 `verify(hashedPhoneNumber)`, A3 `device-phone-number` |
+| 11–13 | SIM Swap `check` 72 h → `swapped:false`, `check` 720 h → `swapped:true`, `retrieve-date` |
+| 14–16 | B another number, C mobile data off, D PCRF down |
+| 17 | The phone's cellular capture: `/authorize` only |
+| 18 | `wireshark -r camara.pcap -Y "$CAMARA_API" -g <frame>`: the window fills the screen, only the CAMARA API calls are shown, and the NV v2 answer `devicePhoneNumberVerified:true` is selected |
+
+**No secret on screen.** Wireshark's columns come from a demo-only Lua post-dissector,
+`scripts/video/camara-masked.lua`:
+- **Path:** the request path without its query string;
+- **Body:** JSON members and form fields, with `code`, `state`, `nonce`, `code_verifier`,
+  `code_challenge`, `access_token`, `id_token`, `refresh_token` and `authorizeUrl`
+  shown as `•••`;
+- **Message:** the HTTP method or status, the Diameter command and result, or the SCTP setup.
+
+The Info column is not shown. The **pcaps themselves contain the lab tokens and codes**
+(plain HTTP): keep them local, never publish them.
+
+## 5. Known behaviours and pitfalls
 
 | Symptom | Cause | What the script does |
 |---|---|---|
@@ -246,3 +325,8 @@ tshark -r ~/.android/avd/sa-demo.avd/console_out/manual.pcap -Y http.request -T 
 | D is answered from the cache | the ECS caches a Gx/Sd binding (`sd.stale-after-ms`, default 60 s) | sets it to 5 s and waits until the binding is stale |
 | `adb emu network capture start /path/x.pcap` → `KO` | the console takes a bare file name only | writes to `console_out/`, then moves the file |
 | Emulator window doesn't open on Wayland | no Qt Wayland plugin | `QT_QPA_PLATFORM=xcb` |
+| A second CAMARA call with the same token → `401 UNAUTHENTICATED` | sas-camara pairs a token with one `x-correlator` (anti-replay); `bank-backend-sdk` sends a new one per call | one CAMARA operation per login (§3.1) |
+| Wireshark rejects a `diameter.*` display filter (red bar), and Diameter is not decoded | a relocated `wireshark` binary looks for its data in `../share/wireshark` | the screencast links `share/wireshark` and `lib/wireshark` next to its copy |
+| The masking Lua script does not load | Wireshark loads no user Lua when running as root | tcpdump captures as root and writes a fifo; Wireshark reads it as the desktop user (`unshare --map-user`) |
+| `nsenter: setgroups failed` | a user namespace made by `unshare -r` denies `setgroups` | `nsenter --preserve-credentials` |
+| `kitty @ … connect: invalid argument` | a unix socket path must stay under 108 bytes | sockets in `$XDG_RUNTIME_DIR/sademo/` |

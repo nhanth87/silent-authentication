@@ -22,7 +22,7 @@ for p in 8084 8085 8092 8095; do
   if ss -ltn "sport = :$p" | grep -q LISTEN; then echo "port $p is already in use"; exit 2; fi
 done
 
-CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code","urn:openid:params:grant-type:ciba"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","sim-swap:check"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
+CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code","urn:openid:params:grant-type:ciba"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","number-verification:device-phone-number:read","sim-swap:check"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
 
 pids=()
 cleanup() {

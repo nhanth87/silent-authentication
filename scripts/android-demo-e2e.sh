@@ -191,7 +191,7 @@ emulator_ready() { # once: boot, radio, app; saves the snapshot after a cold boo
 }
 
 # ---------------------------------------------------------------- server side
-CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code","urn:openid:params:grant-type:ciba"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","sim-swap:check"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
+CLIENTS='{"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code","urn:openid:params:grant-type:ciba"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","number-verification:device-phone-number:read","sim-swap:check"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
 
 up() { # url [seconds]
   until_true $(( ${2:-90} * 4 )) curl -fs -o /dev/null "$1" && return 0
