@@ -41,3 +41,10 @@ M3ua_*.xml
 
 # local research oracle — never part of the repository
 harness/oracle/
+
+# Android demo app: the app's source stays local; only the built APK and the two lab
+# servers the E2E needs (demo-android/server: edge-sim, demo-bank) are published.
+demo-android/*
+!demo-android/server/
+!demo-android/apk/
+local.properties

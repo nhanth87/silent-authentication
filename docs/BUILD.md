@@ -268,6 +268,7 @@ python3 harness/preflight_prod.py --selftest                  # 47/47 scenarios
 ./scripts/package-dist.sh all
 ./scripts/camara-nv2-conformance.sh                           # CAMARA NV v2 Phase 2: 50 checks
 ./scripts/sdk-nv2-e2e.sh                                      # Android + Web SDK against the dists
+./scripts/android-demo-e2e.sh                                 # Android app on the emulator + simulators, pcaps
 ./scripts/layered-e2e.sh dist dist-ecs                        # MAP/Diameter core paths (needs the simulators)
 ```
 
@@ -308,4 +309,5 @@ Results on 2026-10-14:
 | Device SDKs, platform matrix, App Clip | `docs/design/camara-nv2-device-sdk.md` |
 | Two-binary layered architecture | `docs/design/sas-layered-architecture.md` |
 | Test flows with expected outputs | `docs/test/testflow.en.md` |
+| Android app → CAMARA gateway → entitlement server | `docs/test/android-camara-ecs.en.md` |
 | Gates and preflight | `docs/design/hardness.md` |
