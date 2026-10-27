@@ -5,7 +5,7 @@ Verification v2 (request Phase 1.4). It covers everything the bank's server does
 and nothing the device should. It uses `java.net.http` only, has zero third-party
 runtime dependencies and targets Java 25. The device half lives in `ue-sdk-android`,
 `ue-sdk-ios` and `ue-sdk-web`. Design:
-[`../docs/design/camara-nv2-phase1-2.md`](../docs/design/camara-nv2-phase1-2.md).
+[`../../docs/design/camara-nv2-phase1-2.md`](../../docs/design/camara-nv2-phase1-2.md).
 
 ```java
 Jose clientKey = Jose.fromPrivateJwk(vault.read("nv-client-key"));    // registered as private_key_jwt
@@ -54,13 +54,13 @@ Rules the SDK enforces:
 ## Build / test
 
 ```bash
-(cd bank-backend-sdk && mvn -o test)
+(cd sdk/bank-backend && mvn -o test)
 ./scripts/camara-nv2-conformance.sh      # this SDK + ue-sdk-android against the packaged dists
 ```
 
 ## License
 
-Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../../LICENSE.md)).
 
 `SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
 

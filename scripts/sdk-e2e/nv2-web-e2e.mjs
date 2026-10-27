@@ -11,8 +11,8 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import {
   AuthMethod, AuthorizationError, parseAuthorizationCallback, startAuthorization,
-} from '../../ue-sdk-web/src/number-verification.js';
-import { CellularUnavailableError } from '../../ue-sdk-web/src/session-tuple.js';
+} from '../../sdk/ue-web/src/number-verification.js';
+import { CellularUnavailableError } from '../../sdk/ue-web/src/session-tuple.js';
 
 const CAM = 'http://127.0.0.1:8085';
 const CAM_FROM_CELL = 'http://10.20.30.40:8085';

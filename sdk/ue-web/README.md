@@ -11,7 +11,7 @@ omitted. No authentication logic — approval happens server-side.
 ## CAMARA Number Verification v2 (start here)
 
 `@restlink/ue-sdk-web/number-verification`. Design and evidence:
-[`../docs/design/camara-nv2-device-sdk.md`](../docs/design/camara-nv2-device-sdk.md).
+[`../../docs/design/camara-nv2-device-sdk.md`](../../docs/design/camara-nv2-device-sdk.md).
 
 ```js
 import {
@@ -186,7 +186,7 @@ Design and verification: `docs/design/camara-qr-handoff.md`.
 
 ## License
 
-Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../../LICENSE.md)).
 
 `SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
 

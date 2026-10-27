@@ -4,8 +4,8 @@
 # ue-sdk-android (device).
 #
 #   ./scripts/package-dist.sh all                       # dists with the current code
-#   (cd bank-backend-sdk && mvn -o -q compile)
-#   (cd ue-sdk-android && mvn -o -q compile)
+#   (cd sdk/bank-backend && mvn -o -q compile)
+#   (cd sdk/ue-android && mvn -o -q compile)
 #   ./scripts/camara-nv2-conformance.sh                 # exit 0 = every check passed
 #
 # The gateway runs in the prod-shaped configuration that matters here:
@@ -26,7 +26,7 @@ LOGS="$ROOT/target/camara-nv2-conformance"
 rm -rf "$LOGS"; mkdir -p "$LOGS"
 JAVA_HOME="${JAVA_HOME:-$HOME/.local/share/mise/installs/java/zulu-25}"
 export JAVA_HOME PATH="$JAVA_HOME/bin:$PATH"
-CP="$ROOT/bank-backend-sdk/target/classes:$ROOT/ue-sdk-android/target/classes"
+CP="$ROOT/sdk/bank-backend/target/classes:$ROOT/sdk/ue-android/target/classes"
 RUNNER="$ROOT/scripts/sdk-e2e/Nv2Conformance.java"
 TTL=20
 

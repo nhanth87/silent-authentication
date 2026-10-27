@@ -129,9 +129,9 @@ conformance run uses 20 s to test expiry.
 
 ```bash
 mvn -o test                                   # all modules (sas-api: DpopTest, PromptAndAmrTest, …)
-(cd bank-backend-sdk && mvn -o test)
-(cd ue-sdk-android && mvn -o test); (cd ue-sdk-web && node --test)
-(cd ue-sdk-ios && docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w swift:5.10-jammy swift test)
+(cd sdk/bank-backend && mvn -o test)
+(cd sdk/ue-android && mvn -o test); (cd sdk/ue-web && node --test)
+(cd sdk/ue-ios && docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w swift:5.10-jammy swift test)
 ./scripts/package-dist.sh all
 ./scripts/camara-nv2-conformance.sh            # 2.1–2.4 against the packaged dists
 ./scripts/sdk-nv2-e2e.sh                       # device SDKs (Android JVM + Web) end to end

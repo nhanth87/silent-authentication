@@ -125,8 +125,8 @@ const { code } = parseAuthorizationCallback(location.href, stateFromBackend);
 
 | What | Command | Result |
 |---|---|---|
-| Android unit tests | `(cd ue-sdk-android && mvn -o test)` | 62/62 (new: `NumberVerificationTest` 18, `AuthorizeUrlTest` 8, `CellularNetworkRequestTest` 6) |
-| Web unit tests | `(cd ue-sdk-web && node --test)` | 39/39 (new: 14) |
+| Android unit tests | `(cd sdk/ue-android && mvn -o test)` | 62/62 (new: `NumberVerificationTest` 18, `AuthorizeUrlTest` 8, `CellularNetworkRequestTest` 6) |
+| Web unit tests | `(cd sdk/ue-web && node --test)` | 39/39 (new: 14) |
 | iOS unit tests on Linux | `docker run --rm -v $PWD/ue-sdk-ios:/w -w /w swift:5.10-jammy swift test` | 47 run, 44 pass, 3 skipped (JSONEncoder key order is Apple-specific), 0 fail |
 | E2E vs packaged dists | `scripts/sdk-nv2-e2e.sh` | Android A–E OK, Web A–D OK, 1 known server gap each (below) |
 

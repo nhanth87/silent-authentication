@@ -17,7 +17,7 @@ The device half of NV v2: carry the bank backend's OIDC authorization request
 The backend redeems it (`private_key_jwt` + the PKCE verifier only it holds) and
 calls `POST /number-verification/v2/verify`. That answer is the verdict, never
 anything on the device. Design, state machine and test evidence:
-[`../docs/design/camara-nv2-device-sdk.md`](../docs/design/camara-nv2-device-sdk.md).
+[`../../docs/design/camara-nv2-device-sdk.md`](../../docs/design/camara-nv2-device-sdk.md).
 
 ```java
 // Worker thread: blocking network I/O.
@@ -237,7 +237,7 @@ Design and verification: `docs/design/camara-qr-handoff.md`.
 
 ## License
 
-Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../../LICENSE.md)).
 
 `SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
 

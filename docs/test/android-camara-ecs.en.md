@@ -13,9 +13,9 @@ simulators behind them:
 
 | Component | Binary / file | Role in this test |
 |---|---|---|
-| Android app "Silent Auth Demo" | `demo-android/apk/silent-auth-demo-0.1.0-debug.apk` | **Login** button: `/nv/start` → SDK `authorize()` over **cellular** → `/nv/complete` |
-| Bank backend (lab) | `demo-android/server/DemoBank.java` (`bank-backend-sdk`) | builds the OIDC request (PKCE, `prompt=none`), redeems the code, then makes **one** CAMARA call with the token: NV v2 `verify` (phone or hashed) or `device-phone-number`, or SIM Swap v2 `check` / `retrieve-date` (§3.1) |
-| Edge proxy simulator (lab) | `demo-android/server/EdgeSim.java` | stamps `X-Sas-Src-Ip/Port = 10.20.30.40:55555`, the post-CGNAT tuple |
+| Android app "Silent Auth Demo" | `demo/android/apk/silent-auth-demo-0.1.0-debug.apk` | **Login** button: `/nv/start` → SDK `authorize()` over **cellular** → `/nv/complete` |
+| Bank backend (lab) | `demo/server/DemoBank.java` (`bank-backend-sdk`) | builds the OIDC request (PKCE, `prompt=none`), redeems the code, then makes **one** CAMARA call with the token: NV v2 `verify` (phone or hashed) or `device-phone-number`, or SIM Swap v2 `check` / `retrieve-date` (§3.1) |
+| Edge proxy simulator (lab) | `demo/server/EdgeSim.java` | stamps `X-Sas-Src-Ip/Port = 10.20.30.40:55555`, the post-CGNAT tuple |
 | **CAMARA gateway** | `dist/` = sas-camara :8085 | OAuth AS (`/authorize`, `/token`) + `POST /number-verification/v2/verify` |
 | **Entitlement server** | `dist-ecs/` = sas-ecs :8095 | subscriber exposure API (`ue-id`, `sim-change`, `monitoring-event`), the only path to the core |
 | PCRF simulator | `sas-diameter-testapp` :3870 | Gx/Sd: binds `10.20.30.40` → `+251911111111` |
@@ -59,12 +59,12 @@ The AVD must be named `sa-demo`. On a Wayland desktop, start the emulator with
 
 ```bash
 ./scripts/package-dist.sh all                                     # dist/ + dist-ecs/ (docs/BUILD.md §2–3: upstream forks first)
-(cd bank-backend-sdk && mvn -o package)
+(cd sdk/bank-backend && mvn -o package)
 (cd sas-diameter-testapp && mvn -o package)
 (cd sas-jss7-testapp && mvn -o package -DskipTests)
 ```
 
-The APK is in the repository (`demo-android/apk/`). The app's source is not.
+The APK is in the repository (`demo/android/apk/`). The app's source is not.
 
 ## 2. Automated run (recommended)
 
@@ -198,8 +198,8 @@ curl -s http://127.0.0.1:8085/camara/health
 **T4: edge-sim and demo-bank**
 
 ```bash
-java demo-android/server/EdgeSim.java 8084 http://127.0.0.1:8085
-java -cp bank-backend-sdk/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar demo-android/server/DemoBank.java 8092
+java demo/server/EdgeSim.java 8084 http://127.0.0.1:8085
+java -cp sdk/bank-backend/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar demo/server/DemoBank.java 8092
 ```
 
 **T5: warm-up, then check the server chain without a device**
@@ -216,7 +216,7 @@ done
 
 ```bash
 QT_QPA_PLATFORM=xcb emulator -avd sa-demo -gpu swiftshader_indirect &
-adb wait-for-device; adb install -r demo-android/apk/silent-auth-demo-0.1.0-debug.apk
+adb wait-for-device; adb install -r demo/android/apk/silent-auth-demo-0.1.0-debug.apk
 adb shell dumpsys connectivity | grep -E 'Active default network|ni\{(WIFI|MOBILE)'
 # expect: both WIFI and MOBILE CONNECTED, and the active default network is the WIFI one
 adb emu network capture start manual.pcap   # written to ~/.android/avd/sa-demo.avd/console_out/

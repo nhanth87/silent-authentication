@@ -69,11 +69,11 @@ contract parity) and by `scripts/check-dependency-boundary.sh` / `check-no-sctp.
 |---|---|
 | `sas-jss7-testapp/` | Lab **home-HLR simulator** (jSS7 coral-valley): answers MAP SAI (quintuplets), SendIMSI and PSI over SCTP :2906; control/log HTTP on :8087 (`/subscribers`, `/state`, `/messages`). |
 | `sas-diameter-testapp/` | Lab **HSS / 3GPP AAA / PCRF (Gx)** simulator (corsac-diameter) over SCTP :3868, control UI :8086 (`/api/messages`, `/api/subscriber`, `/api/binding`). Run several instances on other ports for SWx/Gx. |
-| `ue-sdk/` | Device-side tuple SDK for the JVM (Java 25): declares `AccessTech`, posts the session tuple, `CellularRequirement` fails closed. |
-| `ue-sdk-android/` | Android SDK, CAMARA NV v2 device side: `NumberVerification` sends the `prompt=none` authorization over a `requestNetwork(CELLULAR)` network (works with Wi-Fi up); TS.43 operator-token path; QR claim; session tuple. |
-| `ue-sdk-ios/` | Swift SDK, CAMARA NV v2 device side: `NumberVerification` over `NWConnection` pinned to `.cellular` (URLSession cannot pin); QR claim over cellular; `AppClipInvocation` for App Clips. |
-| `ue-sdk-web/` | Browser SDK: silent `prompt=none` authorization + callback parsing, Digital Credentials API for a SIM credential, QR-or-link hand-off (`/hand-off`), session tuple. |
-| `bank-backend-sdk/` | **Customer backend** for CAMARA NV v2 (Java 25): PKCE + state + nonce, `private_key_jwt`, DPoP, Authorization Code / CIBA / JWT bearer, `/verify` (plain + hashed), `/device-phone-number`. |
+| `sdk/ue-jvm/` | Device-side tuple SDK for the JVM (Java 25): declares `AccessTech`, posts the session tuple, `CellularRequirement` fails closed. |
+| `sdk/ue-android/` | Android SDK, CAMARA NV v2 device side: `NumberVerification` sends the `prompt=none` authorization over a `requestNetwork(CELLULAR)` network (works with Wi-Fi up); TS.43 operator-token path; QR claim; session tuple. |
+| `sdk/ue-ios/` | Swift SDK, CAMARA NV v2 device side: `NumberVerification` over `NWConnection` pinned to `.cellular` (URLSession cannot pin); QR claim over cellular; `AppClipInvocation` for App Clips. |
+| `sdk/ue-web/` | Browser SDK: silent `prompt=none` authorization + callback parsing, Digital Credentials API for a SIM credential, QR-or-link hand-off (`/hand-off`), session tuple. |
+| `sdk/bank-backend/` | **Customer backend** for CAMARA NV v2 (Java 25): PKCE + state + nonce, `private_key_jwt`, DPoP, Authorization Code / CIBA / JWT bearer, `/verify` (plain + hashed), `/device-phone-number`. |
 
 ### Tooling, gates and documents
 
@@ -148,11 +148,9 @@ Four standalone artifacts post the session tuple to the SAS. Build output
 
 ```bash
 python3 harness/run_hardness.py          # incl. H22 bearer parity + H23 license parity
-(cd ue-sdk && mvn -o test)               # JDK 25 (mise: zulu-25)
-(cd ue-sdk-android && mvn -o test)
-(cd ue-sdk-web && node --test)
-(cd ue-sdk-ios && swift test)            # macOS/Xcode; Linux CI via docker swift:5.10-jammy
-(cd bank-backend-sdk && mvn -o test)
+mvn -o -f sdk/pom.xml test               # ue-jvm + ue-android + bank-backend, JDK 25 (mise: zulu-25)
+(cd sdk/ue-web && node --test)
+(cd sdk/ue-ios && swift test)            # macOS/Xcode; Linux CI via docker swift:5.10-jammy
 ./scripts/sdk-nv2-e2e.sh                 # device SDKs vs the packaged dists
 ./scripts/camara-nv2-conformance.sh      # CAMARA NV v2 Phase 2: 50 checks vs the packaged dists
 ```

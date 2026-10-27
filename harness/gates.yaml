@@ -477,15 +477,15 @@ gates:
       sources:
         - sas-common/src/main/java/et/restlink/sas/model/AccessTech.java
         - sas-subscriber-exposure/src/main/java/et/restlink/sas/exposure/SessionTupleResource.java
-        - ue-sdk/src/main/java/et/restlink/uesdk/AccessTech.java
-        - ue-sdk-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
-        - ue-sdk-ios/Sources/UESDK/AccessTech.swift
-        - ue-sdk-web/src/session-tuple.js
+        - sdk/ue-jvm/src/main/java/et/restlink/uesdk/AccessTech.java
+        - sdk/ue-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
+        - sdk/ue-ios/Sources/UESDK/AccessTech.swift
+        - sdk/ue-web/src/session-tuple.js
       unknown_sources:
-        - ue-sdk/src/main/java/et/restlink/uesdk/AccessTech.java
-        - ue-sdk-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
-        - ue-sdk-ios/Sources/UESDK/AccessTech.swift
-        - ue-sdk-web/src/session-tuple.js
+        - sdk/ue-jvm/src/main/java/et/restlink/uesdk/AccessTech.java
+        - sdk/ue-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
+        - sdk/ue-ios/Sources/UESDK/AccessTech.swift
+        - sdk/ue-web/src/session-tuple.js
 
   - id: H23
     title: the dual license is stated in every place that binds a user
@@ -523,20 +523,20 @@ gates:
         - sas-ecs-host/README.md
         - sas-jss7-testapp/README.md
         - sas-diameter-testapp/README.md
-        - ue-sdk/README.md
-        - ue-sdk-android/README.md
-        - ue-sdk-ios/README.md
-        - ue-sdk-web/README.md
-        - bank-backend-sdk/README.md
+        - sdk/ue-jvm/README.md
+        - sdk/ue-android/README.md
+        - sdk/ue-ios/README.md
+        - sdk/ue-web/README.md
+        - sdk/bank-backend/README.md
       poms:
         - pom.xml
-        - ue-sdk/pom.xml
-        - ue-sdk-android/pom.xml
-        - bank-backend-sdk/pom.xml
+        - sdk/ue-jvm/pom.xml
+        - sdk/ue-android/pom.xml
+        - sdk/bank-backend/pom.xml
         - sas-jss7-testapp/pom.xml
         - sas-diameter-testapp/pom.xml
       npm:
-        - ue-sdk-web/package.json
+        - sdk/ue-web/package.json
       forbid_in_license_section:
         - "(?i)licensed under the (MIT|Apache|BSD|ISC)"
         - "(?i)released under the (MIT|Apache|BSD|ISC)"

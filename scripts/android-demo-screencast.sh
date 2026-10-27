@@ -94,8 +94,8 @@ export PATH="$OUT/bin:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/
 export XDG_CONFIG_HOME="$OUT/wsconf" HISTFILE=/dev/null TMPDIR="$OUT/run" HOST_UID=$(id -u) HOST_GID=$(id -g)
 export CAMARA_API='camara.path matches "^/(authorize|token|camara/)"'
 
-export SIMS="$ROOT/sas-diameter-testapp/target" BANK_JAR="$ROOT/bank-backend-sdk/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar"
-export DEMO="$ROOT/demo-android/server" APK="$ROOT/demo-android/apk/silent-auth-demo-0.1.0-debug.apk"
+export SIMS="$ROOT/sas-diameter-testapp/target" BANK_JAR="$ROOT/sdk/bank-backend/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar"
+export DEMO="$ROOT/demo/server" APK="$ROOT/demo/android/apk/silent-auth-demo-0.1.0-debug.apk"
 export ECS_OPTS="-Dsas.transport.resolver=sd -Dsas.transport.sd.peer-port=3870 -Dsas.transport.sd.stale-after-ms=5000"
 export CAMARA_OPTS='-Dsas.security.token-validation-enabled=true -Dsas.oauth.authorize.trust-src-header=true -Dsas.oauth.clients-json={"clients":[{"client_id":"bank-lab","token_endpoint_auth_method":"none","grant_types":["authorization_code"],"redirect_uris":["https://bank.example/cb"],"scopes":["number-verification:verify","number-verification:device-phone-number:read","sim-swap:check","sim-swap:retrieve-date"],"purposes":["dpv:FraudPreventionAndDetection"]}]}'
 export CAMARA_VIEW='(http.request or http.response or diameter.cmd.code == 257 or diameter.cmd.code == 272 or sctp.chunk_type == 1) and not ip.addr == 10.99.0.1 and not diameter.Result-Code == 5030 and not diameter.Framed-IP-Address[0:3] == 0a:63:63'

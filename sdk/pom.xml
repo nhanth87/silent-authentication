@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>et.restlink</groupId>
+  <artifactId>sas-sdk</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>sas-sdk</name>
+  <description>Builds the Java SDKs in one run: ue-jvm (Java 25), ue-android (Java 8
+    bytecode, minSdk 24) and bank-backend (Java 25). Aggregator only, not a parent:
+    each SDK keeps a standalone pom so it can be built and published on its own.
+    Not part of the root sas-core reactor, so the server build never pulls in the
+    SDKs. ue-ios (SwiftPM) and ue-web (npm) build with their own tools.</description>
+
+  <licenses>
+    <license>
+      <name>GNU Affero General Public License v3.0 or later (Community edition)</name>
+      <url>https://www.gnu.org/licenses/agpl-3.0.html</url>
+      <distribution>manual</distribution>
+      <comments>Dual licensed work; SPDX expression:
+        AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0. This entry is
+        the AGPL Community grant only: copyleft, and AGPL section 13 also covers
+        serving the software over a network. Production rights without copyleft,
+        private builds, a permissive client option and L1/L2 SLA come from the
+        proprietary Operator license held by the copyright owner; see LICENSE.md.
+      </comments>
+    </license>
+  </licenses>
+
+  <modules>
+    <module>ue-jvm</module>
+    <module>ue-android</module>
+    <module>bank-backend</module>
+  </modules>
+</project>

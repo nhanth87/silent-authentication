@@ -15,10 +15,10 @@ SDK thiết bị thật của Restlink nằm ở:
 
 | Tầng | Package / đường dẫn thật |
 |---|---|
-| Core SDK (JVM) | `ue-sdk/src/main/java/et/restlink/uesdk/` — `Connector`, `AccessTech`, `CellularRequirement`, `SessionTupleClient`, `SessionTupleCollector` |
-| Android | `ue-sdk-android/` — hiện thực `Connector` bằng `android.net.Network.openConnection(URL)` |
-| iOS | `ue-sdk-ios/` — Swift, `NWPathMonitor` + `NWConnection` |
-| Web | `ue-sdk-web/src/session-tuple.js` |
+| Core SDK (JVM) | `sdk/ue-jvm/src/main/java/et/restlink/uesdk/` — `Connector`, `AccessTech`, `CellularRequirement`, `SessionTupleClient`, `SessionTupleCollector` |
+| Android | `sdk/ue-android/` — hiện thực `Connector` bằng `android.net.Network.openConnection(URL)` |
+| iOS | `sdk/ue-ios/` — Swift, `NWPathMonitor` + `NWConnection` |
+| Web | `sdk/ue-web/src/session-tuple.js` |
 
 ---
 
@@ -63,7 +63,7 @@ Nguồn yêu cầu: `docs/request_nâng cấp_sdk_android_ios_web_lên_camara_v2
 | Android: chọn đúng cellular khi Wi-Fi bật | `ue-sdk-android` → `Connector` = `Network.openConnection(URL)` | ✅ đúng cơ chế |
 | iOS: **không** ép được qua `URLSession` | `ue-sdk-ios` dùng `NWConnection` + `NWPathMonitor` | ⚠️ `URLSessionConfiguration.requiredInterfaceType` **không tồn tại**; `requiredInterfaceType` nằm trên `NWParameters` và ràng buộc `NWConnection`, không ràng buộc `URLSession` |
 | Fail-closed khi không chứng minh được cellular | `CellularRequirement.check()` → `CellularUnavailableException` | ✅ không bao giờ lặng lẽ rớt xuống Wi-Fi |
-| Web: quan sát `navigator.connection`, fail-closed | `ue-sdk-web/src/session-tuple.js` | ✅ |
+| Web: quan sát `navigator.connection`, fail-closed | `sdk/ue-web/src/session-tuple.js` | ✅ |
 
 ---
 
@@ -150,10 +150,10 @@ Camera trên desktop không có SIM nên IP-match không thể chạy. Bank hi�
 | Store (so 120 s, lazy expiry, không thread) | `sas-api/src/main/java/et/restlink/sas/qrsession/QrSessionStore.java` |
 | Resource `POST /qr-session/v1`, `POST /{id}/claim`, `GET /{id}` | `sas-api/src/main/java/et/restlink/sas/qrsession/QrSessionResource.java` |
 | Wire shapes | `sas-api/src/main/java/et/restlink/sas/qrsession/QrSessionRequests.java` |
-| Core SDK (JVM) | `ue-sdk/src/main/java/et/restlink/uesdk/QrSessionClient.java` + `JsonReader.java` |
-| Android (qua `CellularBearer`) | `ue-sdk-android/src/main/java/et/restlink/uesdk/android/QrSessionClient.java` |
-| iOS | `ue-sdk-ios/Sources/UESDK/QrSessionClient.swift` |
-| Web (chỉ tạo + poll) | `ue-sdk-web/src/qr-session.js` + `qr-session-state.js` + `qr-session.d.ts` |
+| Core SDK (JVM) | `sdk/ue-jvm/src/main/java/et/restlink/uesdk/QrSessionClient.java` + `JsonReader.java` |
+| Android (qua `CellularBearer`) | `sdk/ue-android/src/main/java/et/restlink/uesdk/android/QrSessionClient.java` |
+| iOS | `sdk/ue-ios/Sources/UESDK/QrSessionClient.swift` |
+| Web (chỉ tạo + poll) | `sdk/ue-web/src/qr-session.js` + `qr-session-state.js` + `qr-session.d.ts` |
 | Thiết kế + bằng chứng chạy thật | `docs/design/camara-qr-handoff.md` |
 
 Kết quả kiểm chứng trên dist đã đóng gói (HLR sim SCTP :2906):

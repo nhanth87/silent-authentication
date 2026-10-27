@@ -14,7 +14,7 @@ The device half of NV v2: carry the bank backend's OIDC authorization request
 (`prompt=none`, PKCE S256) over the **cellular interface** and hand the code back.
 The backend redeems it and calls `POST /number-verification/v2/verify`, and that
 answer is the verdict. Design and evidence:
-[`../docs/design/camara-nv2-device-sdk.md`](../docs/design/camara-nv2-device-sdk.md).
+[`../../docs/design/camara-nv2-device-sdk.md`](../../docs/design/camara-nv2-device-sdk.md).
 
 ```swift
 var configuration = NumberVerification.Configuration()
@@ -251,7 +251,7 @@ Design and verification: `docs/design/camara-qr-handoff.md`.
 
 ## License
 
-Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../../LICENSE.md)).
 
 `SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
 

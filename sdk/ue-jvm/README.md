@@ -146,7 +146,7 @@ Design and verification: `docs/design/camara-qr-handoff.md`.
 
 ## License
 
-Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../LICENSE.md)).
+Dual-licensed — **pick exactly one** (full terms: [`LICENSE.md`](../../LICENSE.md)).
 
 `SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-Silent-Auth-Operator-1.0`
 

@@ -8,7 +8,7 @@
 #   FRESH_SNAPSHOT=1 ...                     # cold boot and re-save the emulator snapshot
 #
 # Needs: dist/ + dist-ecs/, sas-jss7-testapp + sas-diameter-testapp + bank-backend-sdk
-# jars, the demo APK (demo-android/apk/, or a local build), AVD "sa-demo", and no other
+# jars, the demo APK (demo/android/apk/, or a local build), AVD "sa-demo", and no other
 # emulator running that AVD. No root: everything runs in a private user + network
 # namespace, so tcpdump works and nothing clashes with ports on the host.
 #
@@ -61,9 +61,9 @@ JAVA_HOME="${JAVA_HOME:-$HOME/.local/share/mise/installs/java/zulu-25}"
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export JAVA_HOME ANDROID_HOME PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 # A local build of the app wins; otherwise the APK published in the repository.
-APK="$ROOT/demo-android/app/build/outputs/apk/debug/app-debug.apk"
-[[ -f "$APK" ]] || APK="$ROOT/demo-android/apk/silent-auth-demo-0.1.0-debug.apk"
-BANK_JAR="$ROOT/bank-backend-sdk/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar"
+APK="$ROOT/demo/android/app/build/outputs/apk/debug/app-debug.apk"
+[[ -f "$APK" ]] || APK="$ROOT/demo/android/apk/silent-auth-demo-0.1.0-debug.apk"
+BANK_JAR="$ROOT/sdk/bank-backend/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar"
 SIM_JAR="$ROOT/sas-diameter-testapp/target/sas-diameter-testapp.jar"
 HLR_JAR="$ROOT/sas-jss7-testapp/target/sas-jss7-testapp.jar"
 for f in "$APK" "$BANK_JAR" "$SIM_JAR" "$HLR_JAR" "$ROOT/dist/run.sh" "$ROOT/dist-ecs/run.sh"; do
@@ -216,8 +216,8 @@ stack_up() { # profile
   start camara env -C "$ROOT/dist" SAS_LOG_DIR="$LOGS/camara-logs" \
     SAS_JAVA_OPTS="-Dsas.security.token-validation-enabled=true -Dsas.security.accept-hs256=false -Dsas.oauth.authorize.trust-src-header=true -Dsas.oauth.clients-json=$CLIENTS" \
     ./run.sh
-  start edge-sim java "$ROOT/demo-android/server/EdgeSim.java" 8084 http://127.0.0.1:8085
-  start demo-bank java -cp "$BANK_JAR" "$ROOT/demo-android/server/DemoBank.java" 8092
+  start edge-sim java "$ROOT/demo/server/EdgeSim.java" 8084 http://127.0.0.1:8085
+  start demo-bank java -cp "$BANK_JAR" "$ROOT/demo/server/DemoBank.java" 8092
   up http://127.0.0.1:28086/
   if [[ "$core" == full ]]; then up http://127.0.0.1:8087/health; up http://127.0.0.1:8086/; fi
   # stale-after-ms=5000 (default 60000): scenario D must not be answered from A's cached binding.

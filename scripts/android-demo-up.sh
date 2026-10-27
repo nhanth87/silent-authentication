@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Server side of the Android emulator demo (demo-android/). LAB ONLY.
+# Server side of the Android emulator demo (demo/android/). LAB ONLY.
 #
 #   ./scripts/android-demo-up.sh        # needs dist/ + dist-ecs/ + bank-backend-sdk built; Ctrl-C stops all
 #
@@ -15,8 +15,8 @@ LOGS="$ROOT/target/android-demo"
 mkdir -p "$LOGS"
 JAVA_HOME="${JAVA_HOME:-$HOME/.local/share/mise/installs/java/zulu-25}"
 export JAVA_HOME PATH="$JAVA_HOME/bin:$PATH"
-BANK_JAR="$ROOT/bank-backend-sdk/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar"
-[[ -f "$BANK_JAR" ]] || { echo "build bank-backend-sdk first: (cd bank-backend-sdk && mvn package)"; exit 2; }
+BANK_JAR="$ROOT/sdk/bank-backend/target/bank-backend-sdk-0.1.0-SNAPSHOT.jar"
+[[ -f "$BANK_JAR" ]] || { echo "build bank-backend-sdk first: (cd sdk/bank-backend && mvn package)"; exit 2; }
 
 for p in 8084 8085 8092 8095; do
   if ss -ltn "sport = :$p" | grep -q LISTEN; then echo "port $p is already in use"; exit 2; fi
@@ -50,9 +50,9 @@ up() {
 up http://127.0.0.1:8095/entitlement/status
 up http://127.0.0.1:8085/camara/health
 
-java "$ROOT/demo-android/server/EdgeSim.java" 8084 http://127.0.0.1:8085 > "$LOGS/edge-sim.log" 2>&1 &
+java "$ROOT/demo/server/EdgeSim.java" 8084 http://127.0.0.1:8085 > "$LOGS/edge-sim.log" 2>&1 &
 pids+=($!)
-java -cp "$BANK_JAR" "$ROOT/demo-android/server/DemoBank.java" 8092 > "$LOGS/demo-bank.log" 2>&1 &
+java -cp "$BANK_JAR" "$ROOT/demo/server/DemoBank.java" 8092 > "$LOGS/demo-bank.log" 2>&1 &
 pids+=($!)
 up_post() {
   for _ in $(seq 1 30); do

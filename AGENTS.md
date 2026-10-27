@@ -35,11 +35,13 @@ main/
 ├── sas-ecs-host/             ← BINARY sas-ecs :8095 (EcsBootstrap, EntitlementSbb) — TS.43 ECS
 ├── sas-diameter-testapp/     ← lab HSS/AAA/PCRF(Gx) Diameter simulator (corsac), :3868
 ├── sas-jss7-testapp/         ← lab home-HLR simulator (jSS7 coral-valley), SCTP :2906
-├── ue-sdk/                   ← device-side tuple SDK (Java 25, JVM) — AccessTech, Connector
-├── ue-sdk-android/           ← Android SDK: pins its socket to the cellular Network
-├── ue-sdk-ios/               ← Swift SDK: NWPathMonitor/CoreTelephony bearer gate
-├── ue-sdk-web/               ← browser SDK: observes navigator.connection, fails closed
-├── bank-backend-sdk/         ← customer backend for CAMARA NV v2 (PKCE, private_key_jwt, DPoP) — standalone build
+├── sdk/                      ← client SDKs; sdk/pom.xml builds the three Java ones (not in the root reactor)
+│   ├── ue-jvm/               ← device-side tuple SDK (Java 25, JVM) — AccessTech, Connector
+│   ├── ue-android/           ← Android SDK: pins its socket to the cellular Network
+│   ├── ue-ios/               ← Swift SDK: NWPathMonitor/CoreTelephony bearer gate
+│   ├── ue-web/               ← browser SDK: observes navigator.connection, fails closed
+│   └── bank-backend/         ← customer backend for CAMARA NV v2 (PKCE, private_key_jwt, DPoP)
+├── demo/                     ← Android emulator demo: android/ (app source local-only, apk/ published), server/ (EdgeSim, DemoBank)
 ├── scripts/                  ← package-dist.sh + run.sh (Quarkus fast-jar dist)
 ├── harness/                  ← gates.yaml + run_hardness.py + preflight_prod.py (prod gate)
 └── slides/                   ← PPTX/SVG pitch assets (gitignored local artifact)
@@ -85,13 +87,12 @@ scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapte
 scripts/check-no-sctp.sh <pid> [label]       # runtime: a process owns no SCTP socket (used by the smokes)
 
 # UE SDKs (CAMARA NV v2 device side: docs/design/camara-nv2-device-sdk.md)
-(cd ue-sdk && mvn -o test) && (cd ue-sdk-android && mvn -o test)
-(cd ue-sdk-web && node --test)
-(cd ue-sdk-ios && swift test)                # macOS; on Linux via docker:
-(cd ue-sdk-ios && docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w \
+mvn -o -f sdk/pom.xml test                   # ue-jvm + ue-android + bank-backend
+(cd sdk/ue-web && node --test)
+(cd sdk/ue-ios && swift test)                # macOS; on Linux via docker:
+(cd sdk/ue-ios && docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w \
    swift:5.10-jammy swift test)              # NWConnection path compiled out on Linux
 scripts/sdk-nv2-e2e.sh                       # Android (JVM) + Web SDK vs PACKAGED dists, user netns
-(cd bank-backend-sdk && mvn -o test)         # customer-backend reference (standalone)
 scripts/camara-nv2-conformance.sh            # CAMARA NV v2 Phase 2: 50 checks vs PACKAGED dists
 
 # Lab signalling simulators (standalone; run AFTER building them)

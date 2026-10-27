@@ -12,7 +12,7 @@
 #   Android SDK (JVM): scripts/sdk-e2e/Nv2AndroidE2E.java   cases A-E
 #   Web SDK (node):    scripts/sdk-e2e/nv2-web-e2e.mjs      cases A-D
 # The iOS SDK has no runtime here (Network.framework is Apple-only); its unit
-# tests run on Linux with `swift test` (see ue-sdk-ios/README.md).
+# tests run on Linux with `swift test` (see sdk/ue-ios/README.md).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ "${SDK_E2E_INNER:-}" != 1 ]]; then
@@ -55,7 +55,7 @@ up http://127.0.0.1:8085/camara/health
 
 rc=0
 echo "######## Android SDK (ue-sdk-android on the JVM)"
-java -cp "$ROOT/ue-sdk-android/target/classes" "$ROOT/scripts/sdk-e2e/Nv2AndroidE2E.java" || rc=1
+java -cp "$ROOT/sdk/ue-android/target/classes" "$ROOT/scripts/sdk-e2e/Nv2AndroidE2E.java" || rc=1
 echo
 echo "######## Web SDK (ue-sdk-web on node)"
 node "$ROOT/scripts/sdk-e2e/nv2-web-e2e.mjs" || rc=1
