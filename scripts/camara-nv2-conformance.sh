@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CAMARA Number Verification v2 conformance (request Phase 2) against the PACKAGED
+# CAMARA Number Verification v2 conformance (request Phase 2), plus SIM Swap v2, against the PACKAGED
 # dists, driven by the shipped bank-backend-sdk (customer backend) and
 # ue-sdk-android (device).
 #

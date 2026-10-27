@@ -73,7 +73,7 @@ contract parity) and by `scripts/check-dependency-boundary.sh` / `check-no-sctp.
 | `sdk/ue-android/` | Android SDK, CAMARA NV v2 device side: `NumberVerification` sends the `prompt=none` authorization over a `requestNetwork(CELLULAR)` network (works with Wi-Fi up); TS.43 operator-token path; QR claim; session tuple. |
 | `sdk/ue-ios/` | Swift SDK, CAMARA NV v2 device side: `NumberVerification` over `NWConnection` pinned to `.cellular` (URLSession cannot pin); QR claim over cellular; `AppClipInvocation` for App Clips. |
 | `sdk/ue-web/` | Browser SDK: silent `prompt=none` authorization + callback parsing, Digital Credentials API for a SIM credential, QR-or-link hand-off (`/hand-off`), session tuple. |
-| `sdk/bank-backend/` | **Customer backend** for CAMARA NV v2 (Java 25): PKCE + state + nonce, `private_key_jwt`, DPoP, Authorization Code / CIBA / JWT bearer, `/verify` (plain + hashed), `/device-phone-number`. |
+| `sdk/bank-backend/` | **Customer backend** for CAMARA NV v2 and SIM Swap v2 (Java 25): PKCE + state + nonce, `private_key_jwt`, DPoP, Authorization Code / CIBA / JWT bearer, `/verify` (plain + hashed), `/device-phone-number`, SIM Swap `/check` + `/retrieve-date`. |
 
 ### Tooling, gates and documents
 
@@ -152,7 +152,7 @@ mvn -o -f sdk/pom.xml test               # ue-jvm + ue-android + bank-backend, J
 (cd sdk/ue-web && node --test)
 (cd sdk/ue-ios && swift test)            # macOS/Xcode; Linux CI via docker swift:5.10-jammy
 ./scripts/sdk-nv2-e2e.sh                 # device SDKs vs the packaged dists
-./scripts/camara-nv2-conformance.sh      # CAMARA NV v2 Phase 2: 50 checks vs the packaged dists
+./scripts/camara-nv2-conformance.sh      # CAMARA NV v2 Phase 2 + SIM Swap v2: 55 checks vs the packaged dists
 ```
 
 See [`docs/design/cellular-bearer-login.md`](docs/design/cellular-bearer-login.md).

@@ -15,6 +15,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,6 +36,8 @@ import java.util.UUID;
  *                             authorization_code + code_verifier + private_key_jwt [+ DPoP]
  *  4  verify(token, number) → POST /number-verification/v2/verify   {devicePhoneNumberVerified}
  *     devicePhoneNumber(t)  → GET  /number-verification/v2/device-phone-number
+ *     simSwapCheck(t, h)    → POST /sim-swap/v2/check {maxAge}              {swapped}
+ *     simSwapRetrieveDate(t)→ POST /sim-swap/v2/retrieve-date               {latestSimChange}
  *  alt  ciba(loginHint)     → /bc-authorize + poll /token  (operatortoken:, ipport:, tel:)
  *  alt  jwtBearer(subject)  → /token grant_type=jwt-bearer  (operatortoken:, tel:)
  * </pre>
@@ -52,6 +57,10 @@ public final class NumberVerificationBackend {
 
     public static final String SCOPE_VERIFY = "number-verification:verify";
     public static final String SCOPE_DEVICE_PHONE_NUMBER = "number-verification:device-phone-number:read";
+    public static final String SCOPE_SIM_SWAP_CHECK = "sim-swap:check";
+    public static final String SCOPE_SIM_SWAP_RETRIEVE_DATE = "sim-swap:retrieve-date";
+    /** CAMARA SIM Swap v2 {@code maxAge} upper bound, in hours. */
+    public static final int SIM_SWAP_MAX_AGE_LIMIT = 2400;
     static final String CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
     static final String JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
     static final String CIBA_GRANT = "urn:openid:params:grant-type:ciba";
@@ -76,6 +85,12 @@ public final class NumberVerificationBackend {
 
     /** A redeemed authorization: the token and the bank user session that started it. */
     public record Completed(AccessToken token, String userSession) {}
+
+    /**
+     * {@code latestSimChange} is null when the provider reports no change it knows of;
+     * {@code monitoredPeriod} (days the provider keeps SIM-change history) is null when not sent.
+     */
+    public record SimSwapDate(Instant latestSimChange, Integer monitoredPeriod) {}
 
     private final Config config;
     private final PendingAuthorizations pending;
@@ -212,6 +227,79 @@ public final class NumberVerificationBackend {
             throw NvApiException.of(r.statusCode(), body);
         }
         return body.get("devicePhoneNumber");
+    }
+
+    // -------------------------------------------------------------- the SIM Swap API
+
+    /**
+     * {@code POST /sim-swap/v2/check {maxAge}}: true when the SIM changed within the last
+     * {@code maxAgeHours} hours (1 to 2400). Use the token of a login whose scopes included
+     * {@link #SCOPE_SIM_SWAP_CHECK}; the number is the one the token was issued for.
+     */
+    public boolean simSwapCheck(AccessToken token, int maxAgeHours) throws IOException, InterruptedException {
+        return simSwapCheck(token, null, maxAgeHours);
+    }
+
+    /**
+     * As {@link #simSwapCheck(AccessToken, int)}, with an explicit E.164 {@code phoneNumber}
+     * for a token that carries no user (2-legged). A 3-legged token plus a number is
+     * refused by the provider ({@code 422 UNNECESSARY_IDENTIFIER}).
+     *
+     * @throws NvApiException the CAMARA error, or {@code invalid_response} when the answer
+     *                        has no {@code swapped} boolean (never read as "not swapped")
+     */
+    public boolean simSwapCheck(AccessToken token, String phoneNumber, int maxAgeHours)
+            throws IOException, InterruptedException {
+        if (maxAgeHours < 1 || maxAgeHours > SIM_SWAP_MAX_AGE_LIMIT) {
+            throw new IllegalArgumentException("maxAge must be between 1 and " + SIM_SWAP_MAX_AGE_LIMIT + " hours");
+        }
+        Map<String, String> answer = simSwapCall(token, "check", phoneNumber, "\"maxAge\":" + maxAgeHours);
+        String swapped = answer.get("swapped");
+        if (!"true".equals(swapped) && !"false".equals(swapped)) {
+            throw new NvApiException(200, "invalid_response", "no swapped boolean");
+        }
+        return "true".equals(swapped);
+    }
+
+    /**
+     * {@code POST /sim-swap/v2/retrieve-date}: when the SIM last changed. Use the token of a
+     * login whose scopes included {@link #SCOPE_SIM_SWAP_RETRIEVE_DATE}; {@code phoneNumber}
+     * only for a 2-legged token, otherwise null.
+     *
+     * @throws NvApiException the CAMARA error, or {@code invalid_response} for a date that is
+     *                        not RFC 3339 with an offset
+     */
+    public SimSwapDate simSwapRetrieveDate(AccessToken token, String phoneNumber)
+            throws IOException, InterruptedException {
+        Map<String, String> answer = simSwapCall(token, "retrieve-date", phoneNumber, null);
+        String latest = answer.get("latestSimChange");
+        String monitored = answer.get("monitoredPeriod");
+        try {
+            return new SimSwapDate(latest == null ? null : OffsetDateTime.parse(latest).toInstant(),
+                    monitored == null ? null : Integer.valueOf(monitored));
+        } catch (DateTimeParseException | NumberFormatException e) {
+            throw new NvApiException(200, "invalid_response", "latestSimChange or monitoredPeriod malformed");
+        }
+    }
+
+    private Map<String, String> simSwapCall(AccessToken token, String operation, String phoneNumber, String extra)
+            throws IOException, InterruptedException {
+        String url = config.apiRoot() + "/sim-swap/v2/" + operation;
+        StringBuilder body = new StringBuilder("{");
+        if (phoneNumber != null) {
+            body.append("\"phoneNumber\":\"").append(FlatJson.escape(phoneNumber)).append('"');
+        }
+        if (extra != null) {
+            body.append(body.length() > 1 ? "," : "").append(extra);
+        }
+        HttpResponse<String> r = send(authorized(HttpRequest.newBuilder(URI.create(url)), token, "POST", url)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body.append('}').toString())));
+        Map<String, String> answer = json(r);
+        if (r.statusCode() != 200) {
+            throw NvApiException.of(r.statusCode(), answer);
+        }
+        return answer;
     }
 
     /** CAMARA {@code hashedPhoneNumber}: lower-case hex SHA-256 of the E.164 string ({@code +} included). */

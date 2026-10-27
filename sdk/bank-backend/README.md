@@ -1,10 +1,10 @@
-# CAMARA NV v2 bank backend SDK
+# CAMARA v2 bank backend SDK
 
 `et.restlink:bank-backend-sdk` is the **customer backend** half of CAMARA Number
-Verification v2 (request Phase 1.4). It covers everything the bank's server does
+Verification v2 (request Phase 1.4) and SIM Swap v2. It covers everything the bank's server does
 and nothing the device should. It uses `java.net.http` only, has zero third-party
-runtime dependencies and targets Java 25. The device half lives in `ue-sdk-android`,
-`ue-sdk-ios` and `ue-sdk-web`. Design:
+runtime dependencies and targets Java 25. The device half lives in `../ue-android`,
+`../ue-ios` and `../ue-web`. Design:
 [`../../docs/design/camara-nv2-phase1-2.md`](../../docs/design/camara-nv2-phase1-2.md).
 
 ```java
@@ -33,6 +33,12 @@ boolean verified = nv.verify(done.token(), claimedNumber);   // or verifyHashed(
 | `jwtBearer(subject, scope)` | `POST /token` `grant_type=jwt-bearer`, assertion `sub=operatortoken:…` |
 | `verify` / `verifyHashed` | `POST /number-verification/v2/verify` with `phoneNumber`, or `hashedPhoneNumber` = SHA-256 hex of the E.164 number |
 | `devicePhoneNumber` | `GET /number-verification/v2/device-phone-number` |
+| `simSwapCheck(token[, phoneNumber], maxAgeHours)` | `POST /sim-swap/v2/check {maxAge}` (1 to 2400 h) → `swapped`; `phoneNumber` only with a 2-legged token |
+| `simSwapRetrieveDate(token, phoneNumber)` | `POST /sim-swap/v2/retrieve-date` → `SimSwapDate(latestSimChange, monitoredPeriod)` |
+
+SIM Swap uses the same login: `start(session, null, SCOPE_SIM_SWAP_CHECK)` (or
+`SCOPE_SIM_SWAP_RETRIEVE_DATE`), the device SDK runs the URL over cellular, then
+`complete()` gives the token for the call. A token is good for one CAMARA call.
 
 Rules the SDK enforces:
 
@@ -44,7 +50,7 @@ Rules the SDK enforces:
 - **DPoP.** A DPoP-bound token always goes out with `Authorization: DPoP` and a
   fresh proof carrying `ath`. If the provider answers with a Bearer token, the SDK
   keeps it as Bearer (CAMARA: DPoP support is the provider's choice).
-- **Strict verdict.** `verify` is true only for an explicit `true`. Any other
+- **Strict verdict.** `verify` and `simSwapCheck` are true only for an explicit `true`. Any other
   answer is false or an `NvApiException` carrying the CAMARA or OAuth code.
 - **Nothing is logged.** `AccessToken.toString()` redacts the token.
 - **Per-instance state.** `PendingAuthorizations` lives in memory, one per

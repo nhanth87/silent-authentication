@@ -93,7 +93,7 @@ mvn -o -f sdk/pom.xml test                   # ue-jvm + ue-android + bank-backen
 (cd sdk/ue-ios && docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w \
    swift:5.10-jammy swift test)              # NWConnection path compiled out on Linux
 scripts/sdk-nv2-e2e.sh                       # Android (JVM) + Web SDK vs PACKAGED dists, user netns
-scripts/camara-nv2-conformance.sh            # CAMARA NV v2 Phase 2: 50 checks vs PACKAGED dists
+scripts/camara-nv2-conformance.sh            # CAMARA NV v2 Phase 2 + SIM Swap v2: 55 checks vs PACKAGED dists
 
 # Lab signalling simulators (standalone; run AFTER building them)
 java -jar sas-diameter-testapp/target/sas-diameter-testapp.jar   # HSS/AAA/Gx :3868

@@ -34,6 +34,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -90,7 +92,7 @@ public class Nv2Conformance {
                 + key.publicJwks() + ",\"grant_types\":[\"authorization_code\",\"urn:openid:params:grant-type:ciba\","
                 + "\"urn:ietf:params:oauth:grant-type:jwt-bearer\",\"client_credentials\"],"
                 + "\"redirect_uris\":[\"https://bank.example/cb\"],\"scopes\":[\"number-verification:verify\","
-                + "\"number-verification:device-phone-number:read\",\"sim-swap:check\"],\"purposes\":[\"" + PURPOSE + "\"]"
+                + "\"number-verification:device-phone-number:read\",\"sim-swap:check\",\"sim-swap:retrieve-date\"],\"purposes\":[\"" + PURPOSE + "\"]"
                 + (dpopBound ? ",\"dpop_bound_access_tokens\":true" : "") + "}";
     }
 
@@ -299,6 +301,33 @@ public class Nv2Conformance {
             check("127.0.0.1 → access_denied", false, "got a code");
         } catch (et.restlink.uesdk.android.AuthorizationException e) {
             check("127.0.0.1 → access_denied", "access_denied".equals(e.error()), e.error());
+        }
+
+        // ---------------------------------------------------------- SIM Swap v2
+        heading("SIM Swap v2: bank-backend-sdk, device step by the Android SDK over the cell bearer");
+        // The lab SIM-change evidence (sas-ecs) dates the last SIM change 10 days back.
+        boolean in72h = nv.simSwapCheck(authCode(nv, MSISDN, true, NumberVerificationBackend.SCOPE_SIM_SWAP_CHECK), 72);
+        check("check {maxAge:72} → swapped false", !in72h, "swapped=" + in72h);
+        boolean in720h = nv.simSwapCheck(authCode(nv, MSISDN, true, NumberVerificationBackend.SCOPE_SIM_SWAP_CHECK), 720);
+        check("check {maxAge:720} → swapped true", in720h, "swapped=" + in720h);
+        Instant latest = nv.simSwapRetrieveDate(
+                authCode(nv, MSISDN, true, NumberVerificationBackend.SCOPE_SIM_SWAP_RETRIEVE_DATE), null).latestSimChange();
+        long daysAgo = latest == null ? -1 : Duration.between(latest, Instant.now()).toDays();
+        check("retrieve-date → latestSimChange about 10 days back", daysAgo >= 9 && daysAgo <= 11, String.valueOf(latest));
+        AccessToken swapWithNumber = authCode(nv, MSISDN, true, NumberVerificationBackend.SCOPE_SIM_SWAP_CHECK);
+        try {
+            nv.simSwapCheck(swapWithNumber, MSISDN, 240);
+            check("3-legged token + phoneNumber → 422 UNNECESSARY_IDENTIFIER", false, "accepted");
+        } catch (NvApiException e) {
+            check("3-legged token + phoneNumber → 422 UNNECESSARY_IDENTIFIER",
+                    e.status() == 422 && "UNNECESSARY_IDENTIFIER".equals(e.code()), e.status() + " " + e.code());
+        }
+        AccessToken nvToken = authCode(nv, MSISDN, true, NumberVerificationBackend.SCOPE_VERIFY);
+        try {
+            nv.simSwapCheck(nvToken, 240);
+            check("NV token at /sim-swap/v2/check → 403", false, "accepted");
+        } catch (NvApiException e) {
+            check("NV token at /sim-swap/v2/check → 403", e.status() == 403, e.status() + " " + e.code());
         }
     }
 

@@ -48,6 +48,9 @@ class NumberVerificationBackendTest {
     private String tokenType = "Bearer";
     private String verifyAnswer = "{\"devicePhoneNumberVerified\":true}";
     private int verifyStatus = 200;
+    private String simSwapAnswer = "{\"swapped\":false}";
+    private int simSwapStatus = 200;
+    private String dateAnswer = "{\"latestSimChange\":\"2026-10-20T08:15:00Z\",\"monitoredPeriod\":120}";
 
     @BeforeEach
     void start() throws IOException {
@@ -64,6 +67,14 @@ class NumberVerificationBackendTest {
         server.createContext("/camara/number-verification/v2/verify", ex -> {
             record(ex);
             reply(ex, verifyStatus, verifyAnswer);
+        });
+        server.createContext("/camara/sim-swap/v2/check", ex -> {
+            record(ex);
+            reply(ex, simSwapStatus, simSwapAnswer);
+        });
+        server.createContext("/camara/sim-swap/v2/retrieve-date", ex -> {
+            record(ex);
+            reply(ex, 200, dateAnswer);
         });
         server.createContext("/camara/number-verification/v2/device-phone-number", ex -> {
             record(ex);
@@ -231,6 +242,47 @@ class NumberVerificationBackendTest {
         assertEquals(403, e.status());
         assertEquals("+251911111111", nv.devicePhoneNumber(t));
         assertEquals("GET", headers.get(4).get(":method"));
+    }
+
+    @Test
+    void simSwapCheckIsTrueOnlyForAnExplicitTrue() throws Exception {
+        NumberVerificationBackend nv = backend(null, null, new PendingAuthorizations());
+        AccessToken t = new AccessToken("at", false, 300, null, null);
+        assertFalse(nv.simSwapCheck(t, 24));
+        assertEquals("{\"maxAge\":24}", forms.get(0).get(":body"), "3-legged: the token names the line");
+        assertEquals("Bearer at", headers.get(0).get("authorization"));
+        assertNotNull(headers.get(0).get("x-correlator"));
+        simSwapAnswer = "{\"swapped\":true}";
+        assertTrue(nv.simSwapCheck(t, "+251911111111", 240));
+        assertEquals("{\"phoneNumber\":\"+251911111111\",\"maxAge\":240}", forms.get(1).get(":body"));
+        simSwapAnswer = "{}";
+        assertThrows(NvApiException.class, () -> nv.simSwapCheck(t, 24), "no answer is not 'not swapped'");
+        simSwapStatus = 404;
+        simSwapAnswer = "{\"status\":404,\"code\":\"IDENTIFIER_NOT_FOUND\",\"message\":\"x\"}";
+        NvApiException e = assertThrows(NvApiException.class, () -> nv.simSwapCheck(t, 24));
+        assertEquals("IDENTIFIER_NOT_FOUND", e.code());
+        assertEquals(404, e.status());
+        assertThrows(IllegalArgumentException.class, () -> nv.simSwapCheck(t, 0));
+        assertThrows(IllegalArgumentException.class, () -> nv.simSwapCheck(t, 2401));
+        assertEquals(4, forms.size(), "an out-of-range maxAge never reaches the provider");
+    }
+
+    @Test
+    void simSwapRetrieveDateParsesRfc3339() throws Exception {
+        NumberVerificationBackend nv = backend(null, null, new PendingAuthorizations());
+        AccessToken t = new AccessToken("at", false, 300, null, null);
+        var d = nv.simSwapRetrieveDate(t, null);
+        assertEquals(Instant.parse("2026-10-20T08:15:00Z"), d.latestSimChange());
+        assertEquals(120, d.monitoredPeriod());
+        assertEquals("{}", forms.get(0).get(":body"));
+        dateAnswer = "{\"latestSimChange\":\"2026-10-20T11:15:00+03:00\"}";
+        d = nv.simSwapRetrieveDate(t, null);
+        assertEquals(Instant.parse("2026-10-20T08:15:00Z"), d.latestSimChange());
+        assertNull(d.monitoredPeriod());
+        dateAnswer = "{\"latestSimChange\":null,\"monitoredPeriod\":120}";
+        assertNull(nv.simSwapRetrieveDate(t, null).latestSimChange());
+        dateAnswer = "{\"latestSimChange\":\"yesterday\"}";
+        assertThrows(NvApiException.class, () -> nv.simSwapRetrieveDate(t, null));
     }
 
     @Test

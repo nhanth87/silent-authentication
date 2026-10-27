@@ -266,7 +266,7 @@ python3 harness/run_hardness.py                               # 38/38 gates
 python3 harness/run_hardness.py --mutations                   # mutation self-tests
 python3 harness/preflight_prod.py --selftest                  # 47/47 scenarios
 ./scripts/package-dist.sh all
-./scripts/camara-nv2-conformance.sh                           # CAMARA NV v2 Phase 2: 50 checks
+./scripts/camara-nv2-conformance.sh                           # CAMARA NV v2 Phase 2 + SIM Swap v2: 55 checks
 ./scripts/sdk-nv2-e2e.sh                                      # Android + Web SDK against the dists
 ./scripts/android-demo-e2e.sh                                 # Android app on the emulator + simulators, pcaps
 ./scripts/android-demo-screencast.sh                          # the same, filmed: Hyprland, terminals, Wireshark, emulator

@@ -15,10 +15,7 @@ import et.restlink.nvbackend.PendingAuthorizations;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
@@ -80,8 +77,8 @@ public class DemoBank {
                 return;
             }
             String[] scopes = switch (mode.get()) {
-                case "simswap" -> new String[] {"sim-swap:check"};
-                case "simswap-date" -> new String[] {"sim-swap:retrieve-date"};
+                case "simswap" -> new String[] {NumberVerificationBackend.SCOPE_SIM_SWAP_CHECK};
+                case "simswap-date" -> new String[] {NumberVerificationBackend.SCOPE_SIM_SWAP_RETRIEVE_DATE};
                 default -> new String[] {NumberVerificationBackend.SCOPE_VERIFY,
                         NumberVerificationBackend.SCOPE_DEVICE_PHONE_NUMBER};
             };
@@ -123,7 +120,7 @@ public class DemoBank {
                 AccessToken token = nv.complete(code, state).token();
                 String op = mode.get();
                 if (op.startsWith("simswap")) {
-                    simSwap(ex, http, token, op, maxAge.get());
+                    simSwap(ex, nv, token, op, maxAge.get());
                     return;
                 }
                 boolean verified = switch (op) {
@@ -148,26 +145,19 @@ public class DemoBank {
         System.out.println("[demo-bank] :" + port + "  authorize(device)=" + AUTHORIZE + "  camara(host)=" + CAMARA);
     }
 
-    /** CAMARA SIM Swap v2 with the login's token; bank-backend-sdk has no SIM Swap call. */
-    static void simSwap(HttpExchange ex, HttpClient http, AccessToken token, String op, int maxAge)
+    /** CAMARA SIM Swap v2 with the login's token: check (a recent swap blocks the login) or retrieve-date. */
+    static void simSwap(HttpExchange ex, NumberVerificationBackend nv, AccessToken token, String op, int maxAge)
             throws IOException, InterruptedException {
-        boolean check = op.equals("simswap");
-        HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create(CAMARA + "/camara/sim-swap/v2/"
-                        + (check ? "check" : "retrieve-date")))
-                .header("Authorization", "Bearer " + token.value())
-                .header("x-correlator", UUID.randomUUID().toString())
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(5))
-                .POST(HttpRequest.BodyPublishers.ofString(check ? "{\"maxAge\":" + maxAge + "}" : "{}"))
-                .build(), HttpResponse.BodyHandlers.ofString());
-        String body = r.body();
-        System.out.println("[demo-bank] complete: " + op + " -> " + r.statusCode() + " " + body);
-        if (r.statusCode() != 200) {
-            reply(ex, 200, "{\"verified\":false,\"error\":\"sim_swap_" + r.statusCode() + "\"}");
-        } else if (check && body.matches("(?s).*\"swapped\"\\s*:\\s*true.*")) {
+        if (op.equals("simswap-date")) {
+            NumberVerificationBackend.SimSwapDate d = nv.simSwapRetrieveDate(token, null);
+            System.out.println("[demo-bank] complete: " + op + " -> latestSimChange=" + d.latestSimChange());
+            reply(ex, 200, "{\"verified\":true,\"operation\":\"" + op + "\"}");
+        } else if (nv.simSwapCheck(token, maxAge)) {
             // A SIM changed within maxAge hours: the bank does not trust the line, OTP instead.
+            System.out.println("[demo-bank] complete: " + op + " maxAge=" + maxAge + "h -> swapped=true");
             reply(ex, 200, "{\"verified\":false,\"error\":\"sim_swapped_recently\",\"operation\":\"" + op + "\"}");
         } else {
+            System.out.println("[demo-bank] complete: " + op + " maxAge=" + maxAge + "h -> swapped=false");
             reply(ex, 200, "{\"verified\":true,\"operation\":\"" + op + "\"}");
         }
     }
