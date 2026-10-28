@@ -6,13 +6,16 @@ ships on its own; artifact and package names are independent of this folder.
 | Folder | Artifact | Runs in | Build / test |
 |---|---|---|---|
 | `bank-backend/` | `et.restlink:bank-backend-sdk` | the bank's server (Java 25) | `mvn -o -f sdk/pom.xml test` |
-| `ue-android/` | `et.restlink:ue-sdk-android` | Android app (Java 8 bytecode, minSdk 24) | `mvn -o -f sdk/pom.xml test` |
+| `ue-android/` | `et.restlink:ue-sdk-android` | Android app (Java 8 bytecode, minSdk 24), or a plain JVM | `mvn -o -f sdk/pom.xml test` |
 | `ue-ios/` | Swift package `UESDK` | iOS 14+ app, App Clip | `(cd sdk/ue-ios && swift test)` |
 | `ue-web/` | `@restlink/ue-sdk-web` | browser (ES2020) | `(cd sdk/ue-web && node --test)` |
-| `ue-jvm/` | `et.restlink:ue-sdk` | JVM device (Java 25) | `mvn -o -f sdk/pom.xml test` |
 
-`sdk/pom.xml` builds the three Java SDKs in one run. It is an aggregator, not a
-parent, and it is not part of the root `sas-core` build.
+`sdk/pom.xml` builds the two Java SDKs in one run. It is an aggregator, not a
+parent, and it is not part of the root `sas-core` build. The JVM tuple SDK
+(`et.restlink:ue-sdk`) was merged into `ue-android` on 2026-10-28: its
+interface-based `SessionTupleCollector` and `AccessTech.fromInterfaceName` live
+there now, and `ue-android` has no Android dependency at compile time, so it
+also serves a device that runs a plain JVM.
 
 ## CAMARA v2
 
@@ -28,7 +31,6 @@ scope, so the same device step serves Number Verification and SIM Swap.
 | `ue-android` | device step over `requestNetwork(CELLULAR)` | same device step |
 | `ue-ios` | device step over `NWConnection` pinned to `.cellular` | same device step |
 | `ue-web` | device step from the browser, SIM credential via the Digital Credentials API | same device step |
-| `ue-jvm` | none: session tuple and QR claim only | none |
 
 **Wi-Fi only.** Without a cellular path the device needs a GSMA TS.43 operator
 token (`OperatorTokenSource`). An ordinary app cannot run EAP-AKA against the
@@ -36,7 +38,7 @@ SIM, so the token has to come from the operator's app, an OS credential service,
 or, in the lab, sas-ecs. With no token the SDK fails closed
 (`CellularUnavailableException`) and the bank falls back to OTP.
 
-**Tested so far.** Unit tests for all five; `scripts/sdk-nv2-e2e.sh` and
+**Tested so far.** Unit tests for all four; `scripts/sdk-nv2-e2e.sh` and
 `scripts/camara-nv2-conformance.sh` run ue-android, ue-web and bank-backend
 against the packaged servers; `scripts/android-demo-e2e.sh` runs the demo APK on
 an emulator. Not yet run: ue-android on a real phone with a real SIM, and the

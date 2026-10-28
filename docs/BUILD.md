@@ -14,7 +14,6 @@ from the repository root unless stated otherwise.
 | iOS SDK (Swift package `UESDK`, iOS 14+) | `sdk/ue-ios/` | Swift package | none |
 | Web SDK (ES2020, zero deps) | `sdk/ue-web/` | `restlink-ue-sdk-web-0.3.0.tgz` | none |
 | Customer-backend SDK (Java 25) | `sdk/bank-backend/` | `target/bank-backend-sdk-0.1.0-SNAPSHOT.jar` | none |
-| JVM device SDK (session tuple) | `sdk/ue-jvm/` | `target/ue-sdk-0.1.0-SNAPSHOT.jar` | none |
 | **sas-camara**: CAMARA gateway + OAuth AS (:8085) | `sas-host/` | `dist/` | micro-jainslee |
 | **sas-ecs**: entitlement server + core-network adapter (:8095) | `sas-ecs-host/` | `dist-ecs/` | micro-jainslee, jSS7, sctp, corsac-diameter |
 | Lab HLR simulator (MAP over SCTP :2906) | `sas-jss7-testapp/` | `target/sas-jss7-testapp.jar` | jSS7, sctp |
@@ -260,7 +259,7 @@ Order matters: unit tests, then gates, then the packaged end-to-end runs.
 
 ```bash
 mvn -o test                                                   # all server modules
-mvn -o -f sdk/pom.xml test     # ue-jvm + ue-android + bank-backend in one run
+mvn -o -f sdk/pom.xml test     # ue-android + bank-backend in one run
 (cd sdk/ue-web && node --test)
 python3 harness/run_hardness.py                               # 38/38 gates
 python3 harness/run_hardness.py --mutations                   # mutation self-tests

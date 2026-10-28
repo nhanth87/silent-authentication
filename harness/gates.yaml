@@ -477,12 +477,10 @@ gates:
       sources:
         - sas-common/src/main/java/et/restlink/sas/model/AccessTech.java
         - sas-subscriber-exposure/src/main/java/et/restlink/sas/exposure/SessionTupleResource.java
-        - sdk/ue-jvm/src/main/java/et/restlink/uesdk/AccessTech.java
         - sdk/ue-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
         - sdk/ue-ios/Sources/UESDK/AccessTech.swift
         - sdk/ue-web/src/session-tuple.js
       unknown_sources:
-        - sdk/ue-jvm/src/main/java/et/restlink/uesdk/AccessTech.java
         - sdk/ue-android/src/main/java/et/restlink/uesdk/android/AccessTech.java
         - sdk/ue-ios/Sources/UESDK/AccessTech.swift
         - sdk/ue-web/src/session-tuple.js
@@ -523,14 +521,12 @@ gates:
         - sas-ecs-host/README.md
         - sas-jss7-testapp/README.md
         - sas-diameter-testapp/README.md
-        - sdk/ue-jvm/README.md
         - sdk/ue-android/README.md
         - sdk/ue-ios/README.md
         - sdk/ue-web/README.md
         - sdk/bank-backend/README.md
       poms:
         - pom.xml
-        - sdk/ue-jvm/pom.xml
         - sdk/ue-android/pom.xml
         - sdk/bank-backend/pom.xml
         - sas-jss7-testapp/pom.xml

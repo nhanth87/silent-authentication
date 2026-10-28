@@ -21,7 +21,7 @@ The grant below covers the **entire tree**, component by component:
 | `sas-entitlement` | TS.43 / Wi-Fi entitlement track | yes |
 | `sas-host` | Quarkus app: SLEE bootstrap, RAs, CDR, admin dashboard | yes |
 | `sas-jss7-testapp` / `sas-diameter-testapp` | lab SS7 / Diameter simulators | yes |
-| `ue-sdk`, `ue-sdk-android`, `ue-sdk-ios`, `ue-sdk-web` | device-side tuple SDKs | yes |
+| `ue-sdk-android`, `ue-sdk-ios`, `ue-sdk-web` | device-side tuple SDKs | yes |
 | `harness/`, `docs/`, `slides/`, `proposal/` | gates, design/research docs, decks | yes (see "Spec material" below) |
 
 ## Option 1 — AGPL-3.0 (Community)

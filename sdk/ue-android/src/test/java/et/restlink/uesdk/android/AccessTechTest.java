@@ -1,11 +1,11 @@
 /*
- * Silent Auth UE SDK — Restlink (Ethiopia).
+ * Silent Auth UE SDK (Android) — Restlink (Ethiopia).
  * Tests: AccessTech classification + cellular requirement fail-closed rules.
  *
  * Copyright (c) 2026 Tran Nhan (nhanth87). All rights reserved.
  */
 
-package et.restlink.uesdk;
+package et.restlink.uesdk.android;
 
 import org.junit.jupiter.api.Test;
 
@@ -31,12 +31,14 @@ class AccessTechTest {
         assertEquals(AccessTech.GS_2G3G, AccessTech.fromInterfaceName("rmnet_data3"));
         assertEquals(AccessTech.GS_2G3G, AccessTech.fromInterfaceName("ccmapi0"));
         assertEquals(AccessTech.GS_2G3G, AccessTech.fromInterfaceName("pdp_ip0"));
+        assertEquals(AccessTech.GS_2G3G, AccessTech.fromInterfaceName("wwan0"));
         assertEquals(AccessTech.WIFI, AccessTech.fromInterfaceName("wlan0"));
         assertEquals(AccessTech.WIFI, AccessTech.fromInterfaceName("en0"));
         assertEquals(AccessTech.FIXED, AccessTech.fromInterfaceName("eth0"));
-        // VPN/tunnel interfaces say nothing about the underlying radio.
+        assertEquals(AccessTech.UNKNOWN, AccessTech.fromInterfaceName("lo"));
         assertEquals(AccessTech.UNKNOWN, AccessTech.fromInterfaceName("tun0"));
         assertEquals(AccessTech.UNKNOWN, AccessTech.fromInterfaceName(null));
+        assertEquals(AccessTech.UNKNOWN, AccessTech.fromInterfaceName("  "));
     }
 
     @Test
@@ -53,31 +55,25 @@ class AccessTechTest {
         CellularRequirement.CELLULAR.check(AccessTech.NR);
         CellularRequirement.CELLULAR_4G_PLUS.check(AccessTech.LTE);
 
-        assertThrows(CellularRequirement.CellularBearerException.class,
+        assertThrows(CellularUnavailableException.class,
                 () -> CellularRequirement.CELLULAR.check(AccessTech.WIFI));
         // 2G/3G is cellular but is not an EPS/5GS bearer.
-        assertThrows(CellularRequirement.CellularBearerException.class,
+        assertThrows(CellularUnavailableException.class,
                 () -> CellularRequirement.CELLULAR_4G_PLUS.check(AccessTech.GS_2G3G));
         // Unknown must never satisfy a cellular demand.
-        assertThrows(CellularRequirement.CellularBearerException.class,
+        assertThrows(CellularUnavailableException.class,
                 () -> CellularRequirement.CELLULAR.check(AccessTech.UNKNOWN));
+        assertThrows(CellularUnavailableException.class,
+                () -> CellularRequirement.CELLULAR.check(null));
     }
 
     @Test
-    void bearerExceptionCarriesTheDecisionContext() {
-        var ex = assertThrows(CellularRequirement.CellularBearerException.class,
+    void unavailableExceptionCarriesTheDecisionContext() {
+        CellularUnavailableException ex = assertThrows(CellularUnavailableException.class,
                 () -> CellularRequirement.CELLULAR_4G_PLUS.check(AccessTech.WIFI));
         assertEquals(CellularRequirement.CELLULAR_4G_PLUS, ex.requirement());
         assertEquals(AccessTech.WIFI, ex.observed());
         assertTrue(ex.getMessage().contains("fall back"),
                 "message must tell the integrator this is a fallback signal");
-    }
-
-    @Test
-    void wireNamesMatchTheSasEnum() {
-        for (AccessTech tech : new AccessTech[] {AccessTech.GS_2G3G, AccessTech.LTE,
-                AccessTech.NR, AccessTech.WIFI}) {
-            assertEquals(tech.name(), tech.wireName().toUpperCase(java.util.Locale.ROOT));
-        }
     }
 }

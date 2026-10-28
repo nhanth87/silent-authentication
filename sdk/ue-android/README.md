@@ -178,6 +178,24 @@ your MSISDN. If the radio cannot be read the SDK declares `GS_2G3G`
 (conservative — MAP PSI still answers for LTE/NR subscribers) and never guesses
 `LTE`/`NR`.
 
+### Without a radio API: plain JVM (formerly `et.restlink:ue-sdk`)
+
+The jar needs no Android class to load, so a device that runs a plain JVM (an
+IoT gateway or a laptop with a cellular modem) uses the same SDK.
+`SessionTupleCollector` reads the network interfaces instead of the radio and
+classifies them with `AccessTech.fromInterfaceName` (`rmnet*`, `ccmapi*`,
+`pdp_ip*` and `wwan*` are cellular, declared `GS_2G3G`; `wlan*` and `en*` are
+`WIFI`; tunnels and loopback are `UNKNOWN`):
+
+```java
+TupleSnapshot t = new SessionTupleCollector().collectCellular(CellularRequirement.CELLULAR);
+// a cellular interface address wins over Wi-Fi; Wi-Fi only → CellularUnavailableException
+```
+
+A JVM cannot pin a socket to the modem, so the SAS call still leaves over the
+default route; give `SessionTupleClient` a `Connector` that binds to the modem
+when the host routes by source address.
+
 ## Build / test
 
 

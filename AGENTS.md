@@ -35,8 +35,7 @@ main/
 ├── sas-ecs-host/             ← BINARY sas-ecs :8095 (EcsBootstrap, EntitlementSbb) — TS.43 ECS
 ├── sas-diameter-testapp/     ← lab HSS/AAA/PCRF(Gx) Diameter simulator (corsac), :3868
 ├── sas-jss7-testapp/         ← lab home-HLR simulator (jSS7 coral-valley), SCTP :2906
-├── sdk/                      ← client SDKs; sdk/pom.xml builds the three Java ones (not in the root reactor)
-│   ├── ue-jvm/               ← device-side tuple SDK (Java 25, JVM) — AccessTech, Connector
+├── sdk/                      ← client SDKs; sdk/pom.xml builds the two Java ones (not in the root reactor)
 │   ├── ue-android/           ← Android SDK: pins its socket to the cellular Network
 │   ├── ue-ios/               ← Swift SDK: NWPathMonitor/CoreTelephony bearer gate
 │   ├── ue-web/               ← browser SDK: observes navigator.connection, fails closed
@@ -87,7 +86,7 @@ scripts/check-dependency-boundary.sh         # sas-ecs ships the operator adapte
 scripts/check-no-sctp.sh <pid> [label]       # runtime: a process owns no SCTP socket (used by the smokes)
 
 # UE SDKs (CAMARA NV v2 device side: docs/design/camara-nv2-device-sdk.md)
-mvn -o -f sdk/pom.xml test                   # ue-jvm + ue-android + bank-backend
+mvn -o -f sdk/pom.xml test                   # ue-android + bank-backend
 (cd sdk/ue-web && node --test)
 (cd sdk/ue-ios && swift test)                # macOS; on Linux via docker:
 (cd sdk/ue-ios && docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w \

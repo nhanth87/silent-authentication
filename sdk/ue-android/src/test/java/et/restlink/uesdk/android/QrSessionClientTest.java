@@ -1,11 +1,11 @@
 /*
- * Silent Auth UE SDK — Restlink (Ethiopia).
- * Device-side session-tuple collector. Java 25. R&D only — never production.
+ * Silent Auth UE SDK (Android) — Restlink (Ethiopia).
+ * Tests: QR payload parsing, claim body, verdict reading, fail-closed claim.
  *
  * Copyright (c) 2026 Tran Nhan (nhanth87). All rights reserved.
  */
 
-package et.restlink.uesdk;
+package et.restlink.uesdk.android;
 
 import org.junit.jupiter.api.Test;
 
@@ -37,8 +37,7 @@ class QrSessionClientTest {
 
     @Test
     void parsesAPayloadCarriedInAUrl() throws Exception {
-        assertEquals(ID, QrSessionClient.parsePayload("https://bank.example/q?p=silentauth://qr-session/"
-                + ID));
+        assertEquals(ID, QrSessionClient.parsePayload("https://bank.example/q?p=silentauth://qr-session/" + ID));
     }
 
     @Test
@@ -50,8 +49,7 @@ class QrSessionClientTest {
         assertThrows(IOException.class, () -> QrSessionClient.parsePayload("not-a-session"));
         assertThrows(IOException.class,
                 () -> QrSessionClient.parsePayload("silentauth://qr-session/../../etc/passwd"));
-        assertThrows(IOException.class, () -> QrSessionClient.parsePayload(
-                "3f2504e0-4f89-11d3-9a0c-0305e82c3301/extra"));
+        assertThrows(IOException.class, () -> QrSessionClient.parsePayload(ID + "/extra"));
     }
 
     @Test
@@ -66,10 +64,8 @@ class QrSessionClientTest {
 
     @Test
     void claimBodyOmitsAbsentFields() {
-        assertEquals("{\"accessTech\":\"LTE\"}",
-                QrSessionClient.claimBody(null, AccessTech.LTE, null));
-        assertEquals("{}",
-                QrSessionClient.claimBody(null, AccessTech.UNKNOWN, null));
+        assertEquals("{\"accessTech\":\"LTE\"}", QrSessionClient.claimBody(null, AccessTech.LTE, null));
+        assertEquals("{}", QrSessionClient.claimBody(null, AccessTech.UNKNOWN, null));
         assertEquals("{\"msisdn\":\"+251911111111\",\"accessTech\":\"NR\"}",
                 QrSessionClient.claimBody("+251911111111", AccessTech.NR, null));
     }
@@ -92,13 +88,10 @@ class QrSessionClientTest {
     void approvedRequiresAnExplicitTrueAndResolved() {
         assertTrue(new QrSessionClient.ClaimResult(ID, QrSessionClient.QrState.RESOLVED,
                 Boolean.TRUE, null).approved());
-
         assertFalse(new QrSessionClient.ClaimResult(ID, QrSessionClient.QrState.RESOLVED,
-                Boolean.FALSE, "SIM_SWAP_SUSPECT").approved(),
-                "an explicit false is not an approval");
+                Boolean.FALSE, "SIM_SWAP_SUSPECT").approved(), "an explicit false is not an approval");
         assertFalse(new QrSessionClient.ClaimResult(ID, QrSessionClient.QrState.PENDING,
-                Boolean.TRUE, null).approved(),
-                "a true that is not RESOLVED is not an approval");
+                Boolean.TRUE, null).approved(), "a true that is not RESOLVED is not an approval");
         assertFalse(new QrSessionClient.ClaimResult(ID, QrSessionClient.QrState.PENDING,
                 null, null).approved(), "pending carries no verdict at all");
         assertFalse(new QrSessionClient.ClaimResult(ID, QrSessionClient.QrState.UNKNOWN,
@@ -109,77 +102,60 @@ class QrSessionClientTest {
 
     @Test
     void readerParsesTheFieldsTheSdkAsksFor() {
-        JsonReader.Result r = JsonReader.Result.of(200,
-                "{\"sessionId\":\"" + ID + "\",\"state\":\"RESOLVED\","
-                        + "\"devicePhoneNumberVerified\":true,\"fallbackReason\":null}");
-
-        assertEquals(ID, r.get("sessionId"));
-        assertEquals("RESOLVED", r.get("state"));
+        QrSessionClient.Flat r = QrSessionClient.Flat.of("{\"sessionId\":\"" + ID + "\",\"state\":\"RESOLVED\","
+                + "\"devicePhoneNumberVerified\":true,\"fallbackReason\":null}");
+        assertEquals(ID, r.string("sessionId"));
+        assertEquals("RESOLVED", r.string("state"));
         assertEquals(Boolean.TRUE, r.bool("devicePhoneNumberVerified"));
-        assertNull(r.get("fallbackReason"));
+        assertNull(r.string("fallbackReason"));
     }
 
     @Test
     void readerSeparatesAbsentFromFalse() {
-        JsonReader.Result absent = JsonReader.Result.of(200, "{\"state\":\"PENDING\"}");
-        assertNull(absent.bool("devicePhoneNumberVerified"),
+        assertNull(QrSessionClient.Flat.of("{\"state\":\"PENDING\"}").bool("devicePhoneNumberVerified"),
                 "an absent verdict must not be read as false, or as true");
-
-        JsonReader.Result explicitFalse = JsonReader.Result.of(200,
-                "{\"devicePhoneNumberVerified\":false}");
-        assertEquals(Boolean.FALSE, explicitFalse.bool("devicePhoneNumberVerified"));
+        assertEquals(Boolean.FALSE,
+                QrSessionClient.Flat.of("{\"devicePhoneNumberVerified\":false}").bool("devicePhoneNumberVerified"));
     }
 
     @Test
     void readerRefusesMalformedBodiesInsteadOfGuessing() {
-        assertNull(JsonReader.Result.of(200, null).get("state"));
-        assertNull(JsonReader.Result.of(200, "").get("state"));
-        assertNull(JsonReader.Result.of(200, "not json at all").get("state"));
-        assertNull(JsonReader.Result.of(200, "{\"state\":").get("state"));
-        assertNull(JsonReader.Result.of(200, "{\"nested\":{\"state\":\"RESOLVED\"}}").get("state"),
+        assertNull(QrSessionClient.Flat.of(null).string("state"));
+        assertNull(QrSessionClient.Flat.of("").string("state"));
+        assertNull(QrSessionClient.Flat.of("not json at all").string("state"));
+        assertNull(QrSessionClient.Flat.of("{\"state\":").string("state"));
+        assertNull(QrSessionClient.Flat.of("{\"nested\":{\"state\":\"RESOLVED\"}}").string("state"),
                 "a nested object is out of scope; the reader must not reach into it");
-        assertNull(JsonReader.Result.of(200, "[1,2,3]").get("state"));
+        assertNull(QrSessionClient.Flat.of("[1,2,3]").string("state"));
     }
 
     @Test
     void readerUnescapesStrings() {
-        JsonReader.Result r = JsonReader.Result.of(200,
-                "{\"fallbackReason\":\"a\\\"b\\\\c\\nd\"}");
-        assertEquals("a\"b\\c\nd", r.get("fallbackReason"));
+        assertEquals("a\"b\\c\nd",
+                QrSessionClient.Flat.of("{\"fallbackReason\":\"a\\\"b\\\\c\\nd\"}").string("fallbackReason"));
     }
 
     @Test
     void readerReadsNumbersAndDefaultsOnGarbage() {
-        assertEquals(120L, JsonReader.Result.of(200, "{\"expiresInSeconds\":120}")
-                .number("expiresInSeconds"));
-        assertEquals(-1L, JsonReader.Result.of(200, "{\"expiresInSeconds\":\"soon\"}")
-                .number("expiresInSeconds"));
-        assertEquals(-1L, JsonReader.Result.of(200, "{}").number("expiresInSeconds"));
+        assertEquals(120L, QrSessionClient.Flat.of("{\"expiresInSeconds\":120}").number("expiresInSeconds"));
+        assertEquals(-1L, QrSessionClient.Flat.of("{\"expiresInSeconds\":\"soon\"}").number("expiresInSeconds"));
+        assertEquals(-1L, QrSessionClient.Flat.of("{}").number("expiresInSeconds"));
     }
 
     // ---- fail-closed on the device ----
 
     @Test
-    void aWifiPhoneCannotClaimWithoutAnOperatorToken() {
+    void noBearerCannotClaimWithoutAnOperatorToken() {
         QrSessionClient client = new QrSessionClient();
-        assertThrows(CellularRequirement.CellularBearerException.class, () -> client.claim(
-                "http://127.0.0.1:8085", ID, AccessTech.WIFI,
-                CellularRequirement.CELLULAR, null, null, null, Connector.DEFAULT));
+        assertThrows(CellularUnavailableException.class, () -> client.claim(
+                "http://127.0.0.1:8085", ID, null, CellularRequirement.CELLULAR, null, null, null));
     }
 
     @Test
-    void anOperatorTokenLetsAWifiPhoneProceed() throws Exception {
-        // A redeemed TS.43 token is a cryptographic proof, so the cellular gate
-        // does not apply: the request is built and the server decides.
-        assertEquals("{\"accessTech\":\"WIFI\",\"operatorToken\":\"tk\"}",
-                QrSessionClient.claimBody(null, AccessTech.WIFI, "tk"));
-    }
-
-    @Test
-    void unknownBearerCannotClaim() {
+    void unboundBearerCannotClaimWithoutAnOperatorToken() {
+        // Off-device the radio reads UNKNOWN: an unpinned route must never claim.
         QrSessionClient client = new QrSessionClient();
-        assertThrows(CellularRequirement.CellularBearerException.class, () -> client.claim(
-                "http://127.0.0.1:8085", ID, AccessTech.UNKNOWN,
-                CellularRequirement.CELLULAR, null, null, null, Connector.DEFAULT));
+        assertThrows(CellularUnavailableException.class, () -> client.claim(
+                "http://127.0.0.1:8085", ID, CellularBearer.unbound(null), null, null, null, null));
     }
 }

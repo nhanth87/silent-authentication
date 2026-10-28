@@ -52,6 +52,39 @@ public enum AccessTech {
     }
 
     /**
+     * Classifies a network interface name per Linux/Android/iOS conventions, for
+     * {@link SessionTupleCollector} where no radio API is available (plain JVM).
+     * Anything not recognised is {@link #UNKNOWN}.
+     */
+    public static AccessTech fromInterfaceName(String ifName) {
+        if (ifName == null || ifName.trim().length() == 0) {
+            return UNKNOWN;
+        }
+        String n = ifName.toLowerCase(Locale.ROOT);
+        // Android cellular data: rmnet_data*/rmnet*, ccmapi* (RIL), pdp_ip* (Tizen/older),
+        // wwan* (general cellular). iOS cellular is pdp_ip0.
+        if (n.startsWith("rmnet") || n.startsWith("ccmapi") || n.startsWith("pdp_ip")
+                || n.startsWith("wwan") || n.startsWith("gsm") || n.startsWith("cdma")) {
+            // Cellular, generation not readable from the name alone. GS_2G3G is the
+            // conservative declaration: it routes the SAS Verifier to MAP PSI, which
+            // answers for 2G-5G subscribers, whereas a wrong LTE declaration would
+            // route to S6a and miss on a 2G/3G-only device.
+            return GS_2G3G;
+        }
+        // Wi-Fi: Android wlan*, macOS/iOS en*, legacy airport.
+        if (n.startsWith("wlan") || n.startsWith("wl") || n.startsWith("en")
+                || n.startsWith("ath") || n.startsWith("airport")) {
+            return WIFI;
+        }
+        // Wired.
+        if (n.startsWith("eth") || n.startsWith("ib")) {
+            return FIXED;
+        }
+        // Loopback, tunnels, bridges and VPNs say nothing about the underlying radio.
+        return UNKNOWN;
+    }
+
+    /**
      * Maps {@code android.telephony.TelephonyManager.NETWORK_TYPE_*} to this
      * enum using the documented public values.
      *

@@ -721,7 +721,7 @@ public final class SubscriberBindingResourceAdaptor {
 - MAP SendIMSI(MSISDN) → return IMSI (hardcoded test data; fail if MSISDN not in test set).
 - New endpoint: read IMSI state, to validate SQN transitions during test.
 
-**`ue-sdk` (JVM/Android — the only SDK that may do EAP-AKA):**
+**`ue-sdk-android` (Android, also runs on a plain JVM — the only SDK that may do EAP-AKA):**
 
 - `Ts43Client(networkUrl, appId, terminalId)`.
 - `doEapAka(imsi, usim)` loop: GET challenge → parse `AT_RAND`/`AT_AUTN`/`AT_MAC` →
@@ -827,7 +827,7 @@ curl -v http://localhost:8095/ts43?vers=1&app=ei.et&EAP_ID=00$(printf '%X' 25191
 # → GET 200 with EAP-Request/AKA-Challenge
 #   extract AT_RAND, AT_AUTN
 
-# UE sim (mock or `ue-sdk` client) computes RES||MAC
+# UE sim (mock or `ue-sdk-android` client) computes RES||MAC
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"eap-relay-packet":"<b64 of EAP-Response>"}' \
   http://localhost:8095/ts43
@@ -1063,7 +1063,7 @@ or the R-flip becomes a rewrite and the fallback is worthless.
 
 - `sas-diameter-testapp`: MAR/SAA, SAR/SAA, AUTS resync, Milenage vectors.
 - `sas-jss7-testapp`: SAI quintet, AUTS resync, SendIMSI, state validation.
-- `ue-sdk` `Ts43Client`: GET challenge, POST response, loop until SUCCESS or FAILURE.
+- `ue-sdk-android` `Ts43Client`: GET challenge, POST response, loop until SUCCESS or FAILURE.
 - Prove script: start simulators, run SAS, E2E test, stop, verify secrets zeroized, no logs.
 - ADR closure verification: confirm D1–D5 answers documented.
 
